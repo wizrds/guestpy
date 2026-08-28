@@ -50,6 +50,7 @@ GuestPy has no default features. Enable only the optional behavior the applicati
 | `embedded` | Enables embedded guest-source bundles. |
 | `serde` | Enables serde-backed Rust data conversion. |
 | `tokio` | Enables Tokio cancellation support and filesystem guest-source bundles. |
+| `bytes` | Enables `Bytes` conversion for guest data. |
 
 ## Quick start
 
