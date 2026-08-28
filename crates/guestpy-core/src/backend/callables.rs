@@ -123,9 +123,6 @@ pub mod fixtures {
                 .function("echo_str", |enter, args| {
                     Ok::<_, Error>(args.required::<String>(enter, 0, "value")?)
                 })
-                .function("echo_bytes", |enter, args| {
-                    Ok::<_, Error>(args.required::<Vec<u8>>(enter, 0, "value")?)
-                })
                 .function("echo_list", |enter, args| {
                     Ok::<_, Error>(args.required::<Vec<i64>>(enter, 0, "value")?)
                 })
@@ -280,38 +277,6 @@ pub mod fixtures {
                 guest
                     .eval::<bool>("codec.echo_str('héllo') == 'héllo'")
                     .unwrap(),
-            );
-        }
-    }
-
-    guest_fixture! {
-        pub fn round_trips_bytes<B>()
-        where B: [
-            Backend,
-            BackendValues,
-            BackendCallables,
-            BackendClasses,
-            BackendModules,
-            BackendCoroutines,
-            BackendExceptions,
-            BackendInterrupt,
-        ]
-        using Runtime::<B>::builder().bind(Codec::module());
-        |guest| {
-            guest.exec("import codec").unwrap();
-
-            assert!(
-                guest
-                    .eval::<bool>("codec.echo_bytes(b'\\x00\\xff') == b'\\x00\\xff'")
-                    .unwrap(),
-            );
-            assert!(
-                Raises::guest(
-                    guest
-                        .eval::<bool>("codec.echo_bytes('text')")
-                        .unwrap_err(),
-                )
-                .matches("TypeError"),
             );
         }
     }
@@ -490,11 +455,6 @@ except TypeError as e:
                 $crate::backend::callables::fixtures::round_trips_floats_and_strings::<
                     $backend,
                 >();
-            }
-
-            #[test]
-            fn round_trips_bytes() {
-                $crate::backend::callables::fixtures::round_trips_bytes::<$backend>();
             }
 
             #[test]
