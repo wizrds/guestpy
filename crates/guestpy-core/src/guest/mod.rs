@@ -353,8 +353,14 @@ where
         Ok(())
     }
 
-    fn realised(&self, dotted: &str) -> Result<Module<B>, Error> {
-        self.enter(|enter| Module::from_guest(enter, Imports::new(enter).module(dotted)?))
+    pub fn import(&self, dotted: &str) -> Result<Module<B>, Error> {
+        self.enter(|enter| {
+            Module::from_guest(
+                enter,
+                Imports::new(enter)
+                    .module(dotted)?
+            )
+        })
     }
 
     pub fn load(&self, bundle: &Bundle) -> Result<Module<B>, Error> {
@@ -364,7 +370,7 @@ where
             .to_owned();
 
         self.enter(|enter| Imports::new(enter).mount(bundle, &root))?;
-        self.realised(&root)
+        self.import(&root)
     }
 
     pub fn guest_module(&self, name: &str, source: &str) -> Result<Module<B>, Error> {
@@ -376,7 +382,7 @@ where
             return Err(Error::import(name, "no host module of that name is bound to this guest"));
         }
 
-        self.realised(name)
+        self.import(name)
     }
 
     pub fn exec(&self, source: &str) -> Result<(), Error> {
