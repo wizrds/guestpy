@@ -1,0 +1,26 @@
+[package]
+name = "guestpy"
+version.workspace = true
+edition.workspace = true
+description.workspace = true
+repository.workspace = true
+license.workspace = true
+readme.workspace = true
+
+[dependencies]
+guestpy-core = { path = "../guestpy-core", version = "0.0.0", default-features = false }
+guestpy-macros = { path = "../guestpy-macros", version = "0.0.0", default-features = false }
+guestpy-rustpython = { path = "../guestpy-rustpython", version = "0.0.0", default-features = false, optional = true }
+guestpy-pyo3 = { path = "../guestpy-pyo3", version = "0.0.0", default-features = false, optional = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt", "time"] }
+serde = { workspace = true, features = ["derive"] }
+
+[features]
+default = []
+rustpython = ["dep:guestpy-rustpython"]
+pyo3 = ["dep:guestpy-pyo3"]
+embedded = ["guestpy-core/embedded"]
+serde = ["guestpy-core/serde"]
+tokio = ["guestpy-core/tokio"]

@@ -1,0 +1,22 @@
+[package]
+name = "guestpy-rustpython"
+version.workspace = true
+edition.workspace = true
+description.workspace = true
+repository.workspace = true
+license.workspace = true
+readme.workspace = true
+
+[dependencies]
+guestpy-core = { path = "../guestpy-core", version = "0.0.0", default-features = false }
+thiserror = { workspace = true }
+
+rustpython-vm = { git = "https://github.com/RustPython/RustPython", rev = "25e76af" }
+rustpython-stdlib = { git = "https://github.com/RustPython/RustPython", rev = "25e76af" }
+rustpython-pylib = { git = "https://github.com/RustPython/RustPython", rev = "25e76af", features = ["freeze-stdlib"] }
+
+[features]
+default = []
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt", "time"] }

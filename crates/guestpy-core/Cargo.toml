@@ -1,0 +1,26 @@
+[package]
+name = "guestpy-core"
+version.workspace = true
+edition.workspace = true
+description.workspace = true
+repository.workspace = true
+license.workspace = true
+readme.workspace = true
+
+[dependencies]
+futures = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["rt", "time"] }
+
+include_dir = { workspace = true, optional = true }
+tokio-util = { workspace = true, optional = true }
+serde = { workspace = true, optional = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt", "time"] }
+
+[features]
+default = []
+embedded = ["dep:include_dir"]
+serde = ["dep:serde"]
+tokio = ["dep:tokio-util", "tokio/fs"]
