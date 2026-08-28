@@ -1,3 +1,6 @@
+#[cfg(feature = "bytes")]
+use bytes::Bytes;
+
 use crate::{
     backend::{Backend, BackendValues},
     errors::Error,
@@ -121,11 +124,11 @@ where
     type Owned = Self;
 
     fn from_guest<'py>(enter: &Enter<'py, B>, value: B::Value<'py>) -> Result<Self::Owned, Error> {
-        if B::is_none(enter.token(), &value) {
-            Ok(())
-        } else {
-            Err(Error::type_mismatch("None", &B::type_name(enter.token(), &value)))
+        if !B::is_none(enter.token(), &value) {
+            return Err(Error::type_mismatch("None", &B::type_name(enter.token(), &value)));
         }
+
+        Ok(())
     }
 }
 
@@ -145,11 +148,11 @@ where
     type Owned = Self;
 
     fn from_guest<'py>(enter: &Enter<'py, B>, value: B::Value<'py>) -> Result<Self::Owned, Error> {
-        if B::is_bool(enter.token(), &value) {
-            B::as_bool(enter.token(), &value)
-        } else {
-            Err(Error::type_mismatch("bool", &B::type_name(enter.token(), &value)))
+        if !B::is_bool(enter.token(), &value) {
+            return Err(Error::type_mismatch("bool", &B::type_name(enter.token(), &value)));
         }
+
+        B::as_bool(enter.token(), &value)
     }
 }
 
@@ -261,11 +264,11 @@ where
     type Owned = Self;
 
     fn from_guest<'py>(enter: &Enter<'py, B>, value: B::Value<'py>) -> Result<Self::Owned, Error> {
-        if B::is_str(enter.token(), &value) {
-            B::as_str(enter.token(), &value)
-        } else {
-            Err(Error::type_mismatch("str", &B::type_name(enter.token(), &value)))
+        if !B::is_str(enter.token(), &value) {
+            return Err(Error::type_mismatch("str", &B::type_name(enter.token(), &value)));
         }
+
+        Ok(B::as_str(enter.token(), &value)?.to_string())
     }
 }
 
@@ -278,18 +281,27 @@ where
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Bytes(pub Vec<u8>);
-
+#[cfg(feature = "bytes")]
 impl<B> ToGuest<B> for Bytes
 where
     B: Backend + BackendValues,
 {
     fn to_guest<'py>(self, enter: &Enter<'py, B>) -> Result<B::Value<'py>, Error> {
-        Ok(B::bytes(enter.token(), &self.0))
+        Ok(B::bytes(enter.token(), &self.as_ref()))
     }
 }
 
+#[cfg(feature = "bytes")]
+impl<B> ToGuest<B> for &Bytes
+where
+    B: Backend + BackendValues,
+{
+    fn to_guest<'py>(self, enter: &Enter<'py, B>) -> Result<B::Value<'py>, Error> {
+        Ok(B::bytes(enter.token(), self.as_ref()))
+    }
+}
+
+#[cfg(feature = "bytes")]
 impl<B> FromGuest<B> for Bytes
 where
     B: Backend + BackendValues,
@@ -297,11 +309,11 @@ where
     type Owned = Self;
 
     fn from_guest<'py>(enter: &Enter<'py, B>, value: B::Value<'py>) -> Result<Self::Owned, Error> {
-        if B::is_bytes(enter.token(), &value) {
-            Ok(Self(B::as_bytes(enter.token(), &value)?))
-        } else {
-            Err(Error::type_mismatch("bytes", &B::type_name(enter.token(), &value)))
+        if !B::is_bytes(enter.token(), &value) {
+            return Err(Error::type_mismatch("bytes", &B::type_name(enter.token(), &value)));
         }
+
+        Ok(Self::from(B::as_bytes(enter.token(), &value)?))
     }
 }
 

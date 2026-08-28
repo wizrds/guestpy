@@ -93,7 +93,6 @@ pub mod fixtures {
         },
         errors::{Error, GuestException},
         host::module::ModuleSpec,
-        marshal::primitives::Bytes,
         runtime::Runtime,
     };
 
@@ -125,7 +124,7 @@ pub mod fixtures {
                     Ok::<_, Error>(args.required::<String>(enter, 0, "value")?)
                 })
                 .function("echo_bytes", |enter, args| {
-                    Ok::<_, Error>(args.required::<Bytes>(enter, 0, "value")?)
+                    Ok::<_, Error>(args.required::<Vec<u8>>(enter, 0, "value")?)
                 })
                 .function("echo_list", |enter, args| {
                     Ok::<_, Error>(args.required::<Vec<i64>>(enter, 0, "value")?)

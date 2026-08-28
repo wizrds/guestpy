@@ -42,12 +42,12 @@ pub trait FromGuestMut<'py, B: Backend> {
 #[cfg(test)]
 mod tests {
     use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+    use bytes::Bytes;
 
     use super::{
         FromGuest, ToGuest,
         args::{ToGuestArgs, ToGuestKwargs},
         collections::Iterable,
-        primitives::Bytes,
     };
     use crate::{
         backend::tests::Stub,
@@ -96,6 +96,7 @@ mod tests {
         to::<&str>();
         to::<Bytes>();
         from::<Bytes>();
+        to::<&Bytes>();
         to::<&[u8]>();
         to::<Vec<i64>>();
         from::<Vec<i64>>();

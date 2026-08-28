@@ -1,5 +1,6 @@
 //! Re-exports the public guestpy API.
 
+#[allow(unused_imports)]
 pub use guestpy_core::{
     backend::{
         Backend, BackendCallables, BackendClasses, BackendCoroutines, BackendExceptions,
