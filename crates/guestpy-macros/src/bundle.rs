@@ -2,9 +2,68 @@ use std::path::PathBuf;
 
 use proc_macro2::TokenStream;
 use quote::quote;
-use syn::{LitStr, Path};
+use syn::{
+    Ident,
+    LitStr,
+    Path,
+    Token,
+    parse::{Parse, ParseStream},
+};
 
 use crate::path::CratePath;
+
+struct BundleInput {
+    path: LitStr,
+    crate_path: Option<Path>,
+}
+
+impl Parse for BundleInput {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let path = input.parse()?;
+
+        if input.is_empty() {
+            return Ok(Self {
+                path,
+                crate_path: None,
+            });
+        }
+
+        input.parse::<Token![,]>()?;
+
+        if input.is_empty() {
+            return Ok(Self {
+                path,
+                crate_path: None,
+            });
+        }
+
+        let option = input.parse::<Ident>()?;
+
+        if option != "crate_path" {
+            return Err(syn::Error::new(
+                option.span(),
+                "expected `crate_path`",
+            ));
+        }
+
+        input.parse::<Token![=]>()?;
+
+        let crate_path = input.parse()?;
+
+        if !input.is_empty() {
+            input.parse::<Token![,]>()?;
+        }
+
+        if !input.is_empty() {
+            return Err(input.error("unexpected bundle option"));
+        }
+
+        Ok(Self {
+            path,
+            crate_path: Some(crate_path),
+        })
+    }
+}
 
 #[derive(Debug)]
 pub(crate) struct BundleMacro {
@@ -15,7 +74,10 @@ pub(crate) struct BundleMacro {
 
 impl BundleMacro {
     pub(crate) fn new(tokens: TokenStream) -> syn::Result<Self> {
-        let path = syn::parse2::<LitStr>(tokens)?;
+        let BundleInput {
+            path,
+            crate_path,
+        } = syn::parse2(tokens)?;
         let resolved = Self::resolve_path(&path)?;
         let root = resolved
             .file_name()
@@ -29,7 +91,7 @@ impl BundleMacro {
 
         Ok(Self {
             root: LitStr::new(root, path.span()),
-            crate_path: CratePath::new(None).resolve(),
+            crate_path: CratePath::new(crate_path).resolve(),
             path,
         })
     }
@@ -130,6 +192,59 @@ mod tests {
 
         assert!(output.contains("Dir :: new (\"plugin\""));
         assert!(output.contains("Bundle :: from_embedded"));
+    }
+
+    #[test]
+    fn preserves_an_explicit_crate_path() {
+        let output = BundleMacro::new(quote!(
+            "fixtures/plugin",
+            crate_path = custom::guestpy,
+        ))
+        .unwrap()
+        .expand()
+        .to_string();
+
+        assert!(output.contains(
+            "use custom :: guestpy :: embed :: __include_dir as include_dir",
+        ));
+        assert!(output.contains(
+            "custom :: guestpy :: embed :: Dir < 'static >",
+        ));
+        assert!(output.contains(
+            "custom :: guestpy :: embed :: __include_dir_macro !",
+        ));
+        assert!(output.contains(
+            "custom :: guestpy :: bundle :: Bundle :: from_embedded",
+        ));
+    }
+
+    #[test]
+    fn accepts_a_trailing_comma() {
+        BundleMacro::new(quote!("fixtures/plugin",))
+            .unwrap();
+    }
+
+    #[test]
+    fn rejects_an_unknown_option() {
+        let error = BundleMacro::new(quote!(
+            "fixtures/plugin",
+            guestpy_path = custom::guestpy,
+        ))
+        .unwrap_err();
+
+        assert_eq!(error.to_string(), "expected `crate_path`");
+    }
+
+    #[test]
+    fn rejects_a_duplicate_crate_path() {
+        let error = BundleMacro::new(quote!(
+            "fixtures/plugin",
+            crate_path = first::guestpy,
+            crate_path = second::guestpy,
+        ))
+        .unwrap_err();
+
+        assert_eq!(error.to_string(), "unexpected bundle option");
     }
 
     #[test]
