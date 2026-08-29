@@ -56,10 +56,8 @@ pub struct BundleId(NonZeroU64);
 impl BundleId {
     fn next() -> Self {
         Self(
-            NonZeroU64::new(
-                NEXT_BUNDLE_ID.fetch_add(1, Ordering::Relaxed),
-            )
-            .expect("bundle IDs begin at one"),
+            NonZeroU64::new(NEXT_BUNDLE_ID.fetch_add(1, Ordering::Relaxed))
+                .expect("bundle IDs begin at one"),
         )
     }
 
@@ -164,18 +162,15 @@ impl BundleBuilder {
         let root = path
             .file_name()
             .and_then(|name| name.to_str())
-            .ok_or_else(|| {
-                Error::bundle(
-                    path.display().to_string(),
-                    "path has no UTF-8 name",
-                )
-            })?;
+            .ok_or_else(|| Error::bundle(path.display().to_string(), "path has no UTF-8 name"))?;
 
         let is_package = fs::try_exists(path.join("__init__.py"))
             .await
             .unwrap_or(false);
-        
-        let prefix = is_package.then(|| root.to_owned()).unwrap_or_default();
+
+        let prefix = is_package
+            .then(|| root.to_owned())
+            .unwrap_or_default();
 
         let mut builder = Self::default();
         let mut directories = vec![(path.to_owned(), prefix)];
@@ -205,10 +200,7 @@ impl BundleBuilder {
                 if entry.file_type().await?.is_dir() {
                     directories.push((entry.path(), relative));
                 } else {
-                    builder.insert_entry(
-                        &relative,
-                        &fs::read(entry.path()).await?,
-                    )?;
+                    builder.insert_entry(&relative, &fs::read(entry.path()).await?)?;
                 }
             }
         }
@@ -222,20 +214,14 @@ impl BundleBuilder {
             .path()
             .file_name()
             .and_then(|name| name.to_str())
-            .ok_or_else(|| {
-                Error::bundle(
-                    "<embedded>",
-                    "path has no UTF-8 name",
-                )
-            })?;
-        let is_package = dir
-            .entries()
-            .iter()
-            .any(|entry| matches!(
+            .ok_or_else(|| Error::bundle("<embedded>", "path has no UTF-8 name"))?;
+        let is_package = dir.entries().iter().any(|entry| {
+            matches!(
                 entry,
                 DirEntry::File(file)
                     if file.path().file_name().and_then(|name| name.to_str()) == Some("__init__.py")
-            ));
+            )
+        });
 
         let mut builder = Self::default();
         builder.insert_embedded_dir(is_package.then_some(root), dir)?;
@@ -292,14 +278,8 @@ impl BundleBuilder {
 
         self.files
             .insert(origin.clone(), Arc::from(source.as_bytes()));
-        self.modules.insert(
-            dotted.to_owned(),
-            BundleModule {
-                source,
-                origin,
-                package,
-            },
-        );
+        self.modules
+            .insert(dotted.to_owned(), BundleModule { source, origin, package });
     }
 
     #[cfg(any(feature = "tokio", feature = "embedded"))]
@@ -391,7 +371,8 @@ impl BundleBuilder {
         let path = path.replace('\\', "/");
         let bytes = bytes.into();
 
-        self.data.insert(path.clone(), bytes.clone());
+        self.data
+            .insert(path.clone(), bytes.clone());
         self.files.insert(path, bytes);
 
         self
@@ -536,7 +517,9 @@ mod tests {
             br#"{"enabled":true}"#,
         );
 
-        let files = bundle.files().collect::<std::collections::HashMap<_, _>>();
+        let files = bundle
+            .files()
+            .collect::<std::collections::HashMap<_, _>>();
 
         assert!(files.contains_key("plugin/__init__.py"));
         assert!(files.contains_key("plugin/util.py"));
@@ -557,7 +540,9 @@ mod tests {
         let bundle = Bundle::from_dir(fixture.root())
             .await
             .unwrap();
-        let files = bundle.files().collect::<std::collections::HashMap<_, _>>();
+        let files = bundle
+            .files()
+            .collect::<std::collections::HashMap<_, _>>();
 
         assert_eq!(files.get("plugin/extension.so"), Some(&b"so-bytes".as_slice()));
         assert_eq!(files.get("plugin/extension.pyd"), Some(&b"pyd-bytes".as_slice()));
@@ -595,7 +580,9 @@ mod tests {
             br#"{"enabled":true}"#,
         );
 
-        let files = bundle.files().collect::<std::collections::HashMap<_, _>>();
+        let files = bundle
+            .files()
+            .collect::<std::collections::HashMap<_, _>>();
 
         assert_eq!(files.get("plugin/extension.so"), Some(&b"so-bytes".as_slice()));
         assert_eq!(files.get("plugin/extension.pyd"), Some(&b"pyd-bytes".as_slice()));
@@ -681,13 +668,12 @@ mod tests {
                 .is_package(),
         );
 
-        let files = bundle.files().collect::<std::collections::HashMap<_, _>>();
+        let files = bundle
+            .files()
+            .collect::<std::collections::HashMap<_, _>>();
 
         assert_eq!(files.get("plugin/__init__.py"), Some(&b"".as_slice()));
-        assert_eq!(
-            files.get("plugin/handlers/http.py"),
-            Some(&b"".as_slice()),
-        );
+        assert_eq!(files.get("plugin/handlers/http.py"), Some(&b"".as_slice()),);
     }
 
     #[test]
@@ -736,12 +722,11 @@ mod tests {
                 .is_none()
         );
 
-        let files = bundle.files().collect::<std::collections::HashMap<_, _>>();
+        let files = bundle
+            .files()
+            .collect::<std::collections::HashMap<_, _>>();
 
-        assert_eq!(
-            files.get("plugin/data/config.json"),
-            Some(&b"{\"enabled\": true}".as_slice()),
-        );
+        assert_eq!(files.get("plugin/data/config.json"), Some(&b"{\"enabled\": true}".as_slice()),);
     }
 
     #[test]

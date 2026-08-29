@@ -152,10 +152,8 @@ async def values():
 
             #[tokio::test]
             async fn controls_an_async_generator() {
-                $crate::backend::coroutines::fixtures::controls_an_async_generator::<
-                    $backend,
-                >()
-                .await;
+                $crate::backend::coroutines::fixtures::controls_an_async_generator::<$backend>()
+                    .await;
             }
         };
     }

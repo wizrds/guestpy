@@ -193,10 +193,7 @@ where
             self.guest.clone(),
             B::detach(
                 enter.token(),
-                operation(
-                    enter.token(),
-                    &B::attach(enter.token(), &self.owned),
-                )?,
+                operation(enter.token(), &B::attach(enter.token(), &self.owned))?,
             ),
         ))
     }

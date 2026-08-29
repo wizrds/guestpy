@@ -15,13 +15,10 @@ pub use exceptions::BackendExceptions;
 pub use interrupt::BackendInterrupt;
 pub use library::BackendLibrary;
 pub use modules::BackendModules;
-pub use native_extensions::{
-    NativeExtensionContext,
-    NativeExtensionLoader,
-    NoNativeExtensions,
-    PreparedNativeExtensions,
-};
 pub(crate) use native_extensions::PreparedNativeExtensionsOf;
+pub use native_extensions::{
+    NativeExtensionContext, NativeExtensionLoader, NoNativeExtensions, PreparedNativeExtensions,
+};
 pub use values::BackendValues;
 
 use crate::errors::Error;
@@ -120,14 +117,8 @@ pub mod fixtures {
     use std::collections::HashMap;
 
     use super::{
-        Backend,
-        BackendCallables,
-        BackendClasses,
-        BackendCoroutines,
-        BackendExceptions,
-        BackendInterrupt,
-        BackendModules,
-        BackendValues,
+        Backend, BackendCallables, BackendClasses, BackendCoroutines, BackendExceptions,
+        BackendInterrupt, BackendModules, BackendValues,
     };
     use crate::{
         errors::Error,
@@ -251,16 +242,14 @@ result = sync_host.double(sync_host.answer)
 
             #[test]
             fn calls_a_host_function_passed_as_an_argument() {
-                $crate::backend::fixtures::calls_a_host_function_passed_as_an_argument::<
-                    $backend,
-                >();
+                $crate::backend::fixtures::calls_a_host_function_passed_as_an_argument::<$backend>(
+                );
             }
 
             #[test]
             fn runs_with_only_synchronous_capability_bounds() {
-                $crate::backend::fixtures::runs_with_only_synchronous_capability_bounds::<
-                    $backend,
-                >();
+                $crate::backend::fixtures::runs_with_only_synchronous_capability_bounds::<$backend>(
+                );
             }
         };
     }

@@ -80,7 +80,12 @@ where
         }
 
         self.selector_timeout.set(None);
-        B::call(enter.token(), &B::get_attr(enter.token(), &asyncio_loop, "_run_once")?, &[], &[])?;
+        B::call(
+            enter.token(),
+            &B::get_attr(enter.token(), &asyncio_loop, "_run_once")?,
+            &[],
+            &[],
+        )?;
 
         Ok(match self.selector_timeout.get() {
             Some(delay) if delay <= 0.0 => Progress::Ready,

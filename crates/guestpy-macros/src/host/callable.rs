@@ -535,13 +535,10 @@ mod tests {
                 Ok(())
             }
         };
-        let output = Callable::parse(
-            &mut method,
-            String::from("call"),
-        )
-        .unwrap()
-        .argument_setup()
-        .to_string();
+        let output = Callable::parse(&mut method, String::from("call"))
+            .unwrap()
+            .argument_setup()
+            .to_string();
 
         assert!(output.contains("required :: < i64 >"));
         assert!(output.contains("optional :: < String >"));

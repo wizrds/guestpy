@@ -277,9 +277,7 @@ impl<B: Backend> Guest<B> {
     }
 
     pub(crate) fn realisation(&self) -> &RealisationCache<B> {
-        self.inner
-            .runtime
-            .realisation()
+        self.inner.runtime.realisation()
     }
 
     pub(crate) fn bindings(&self) -> &GuestBindings<B> {
@@ -354,13 +352,7 @@ where
     }
 
     pub fn import(&self, dotted: &str) -> Result<Module<B>, Error> {
-        self.enter(|enter| {
-            Module::from_guest(
-                enter,
-                Imports::new(enter)
-                    .module(dotted)?
-            )
-        })
+        self.enter(|enter| Module::from_guest(enter, Imports::new(enter).module(dotted)?))
     }
 
     pub fn load(&self, bundle: &Bundle) -> Result<Module<B>, Error> {
@@ -435,9 +427,7 @@ where
         }
 
         if self.inner.async_driver.is_initialized() {
-            return Err(Error::unexpected(
-                "cannot close guest while its async driver is active",
-            ));
+            return Err(Error::unexpected("cannot close guest while its async driver is active"));
         }
 
         self.enter_cleanup(|enter| self.clear_context(enter))?;

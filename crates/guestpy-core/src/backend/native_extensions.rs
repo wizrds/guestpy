@@ -71,9 +71,7 @@ impl UnsupportedNativeExtensions {
             .or_else(|| normalized.strip_suffix(".pyd"))
             .or_else(|| normalized.strip_suffix(".dylib"))?;
 
-        let mut parts = stripped
-            .split('/')
-            .collect::<Vec<_>>();
+        let mut parts = stripped.split('/').collect::<Vec<_>>();
         let filename = parts.pop()?;
         let basename = filename
             .split_once('.')
@@ -109,9 +107,7 @@ impl<B: Backend> NativeExtensionLoader<B> for NoNativeExtensions {
 
 impl<B: Backend> PreparedNativeExtensions<B> for UnsupportedNativeExtensions {
     fn names(&self) -> impl Iterator<Item = &str> {
-        self.claims
-            .iter()
-            .map(String::as_str)
+        self.claims.iter().map(String::as_str)
     }
 
     fn realise<'py>(
@@ -137,29 +133,21 @@ impl<B: Backend> PreparedNativeExtensions<B> for UnsupportedNativeExtensions {
 #[cfg(test)]
 mod tests {
     use super::{
-        NativeExtensionLoader,
-        PreparedNativeExtensions,
-        UnsupportedNativeExtensions,
-        NoNativeExtensions,
-        NativeExtensionContext,
+        NativeExtensionContext, NativeExtensionLoader, NoNativeExtensions,
+        PreparedNativeExtensions, UnsupportedNativeExtensions,
     };
     use crate::{backend::tests::Stub, bundle::Bundle};
 
     #[test]
     fn identifies_a_simple_native_module() {
-        assert_eq!(
-            UnsupportedNativeExtensions::claim("module.so").as_deref(),
-            Some("module"),
-        );
+        assert_eq!(UnsupportedNativeExtensions::claim("module.so").as_deref(), Some("module"),);
     }
 
     #[test]
     fn removes_a_conservative_abi_suffix() {
         assert_eq!(
-            UnsupportedNativeExtensions::claim(
-                "package/_native.cpython-313-x86_64-linux-gnu.so",
-            )
-            .as_deref(),
+            UnsupportedNativeExtensions::claim("package/_native.cpython-313-x86_64-linux-gnu.so",)
+                .as_deref(),
             Some("package._native"),
         );
     }
@@ -183,17 +171,17 @@ mod tests {
             .build()
             .unwrap();
         let prepared =
-            <NoNativeExtensions as NativeExtensionLoader<Stub>>::prepare((), &bundle)
-                .unwrap();
+            <NoNativeExtensions as NativeExtensionLoader<Stub>>::prepare((), &bundle).unwrap();
         let error = prepared
-            .realise(
-                NativeExtensionContext::<Stub>::new((), Vec::new()),
-                "package._native",
-            )
+            .realise(NativeExtensionContext::<Stub>::new((), Vec::new()), "package._native")
             .unwrap_err();
 
         assert!(error.to_string().contains("stub"));
-        assert!(error.to_string().contains("package._native"));
+        assert!(
+            error
+                .to_string()
+                .contains("package._native")
+        );
     }
 
     #[test]
@@ -204,8 +192,7 @@ mod tests {
             .build()
             .unwrap();
         let prepared =
-            <NoNativeExtensions as NativeExtensionLoader<Stub>>::prepare((), &bundle)
-                .unwrap();
+            <NoNativeExtensions as NativeExtensionLoader<Stub>>::prepare((), &bundle).unwrap();
 
         assert_eq!(
             PreparedNativeExtensions::<Stub>::source_origin(

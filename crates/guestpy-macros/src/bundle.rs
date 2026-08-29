@@ -3,10 +3,7 @@ use std::path::PathBuf;
 use proc_macro2::TokenStream;
 use quote::quote;
 use syn::{
-    Ident,
-    LitStr,
-    Path,
-    Token,
+    Ident, LitStr, Path, Token,
     parse::{Parse, ParseStream},
 };
 
@@ -22,28 +19,19 @@ impl Parse for BundleInput {
         let path = input.parse()?;
 
         if input.is_empty() {
-            return Ok(Self {
-                path,
-                crate_path: None,
-            });
+            return Ok(Self { path, crate_path: None });
         }
 
         input.parse::<Token![,]>()?;
 
         if input.is_empty() {
-            return Ok(Self {
-                path,
-                crate_path: None,
-            });
+            return Ok(Self { path, crate_path: None });
         }
 
         let option = input.parse::<Ident>()?;
 
         if option != "crate_path" {
-            return Err(syn::Error::new(
-                option.span(),
-                "expected `crate_path`",
-            ));
+            return Err(syn::Error::new(option.span(), "expected `crate_path`"));
         }
 
         input.parse::<Token![=]>()?;
@@ -58,10 +46,7 @@ impl Parse for BundleInput {
             return Err(input.error("unexpected bundle option"));
         }
 
-        Ok(Self {
-            path,
-            crate_path: Some(crate_path),
-        })
+        Ok(Self { path, crate_path: Some(crate_path) })
     }
 }
 
@@ -74,19 +59,13 @@ pub(crate) struct BundleMacro {
 
 impl BundleMacro {
     pub(crate) fn new(tokens: TokenStream) -> syn::Result<Self> {
-        let BundleInput {
-            path,
-            crate_path,
-        } = syn::parse2(tokens)?;
+        let BundleInput { path, crate_path } = syn::parse2(tokens)?;
         let resolved = Self::resolve_path(&path)?;
         let root = resolved
             .file_name()
             .and_then(|name| name.to_str())
             .ok_or_else(|| {
-                syn::Error::new(
-                    path.span(),
-                    "embedded bundle path has no UTF-8 directory name",
-                )
+                syn::Error::new(path.span(), "embedded bundle path has no UTF-8 directory name")
             })?;
 
         Ok(Self {
@@ -109,17 +88,13 @@ impl BundleMacro {
             let Some((variable, rest)) = Self::variable(&tail[1..]) else {
                 return Err(syn::Error::new(
                     path.span(),
-                    format!(
-                        "unable to parse environment variable in {tail:?}"
-                    ),
+                    format!("unable to parse environment variable in {tail:?}"),
                 ));
             };
             let replacement = std::env::var(variable).map_err(|_| {
                 syn::Error::new(
                     path.span(),
-                    format!(
-                        "environment variable {variable:?} is not defined"
-                    ),
+                    format!("environment variable {variable:?} is not defined"),
                 )
             })?;
 
@@ -139,9 +114,7 @@ impl BundleMacro {
             let valid = if index == 0 {
                 character == '_' || character.is_ascii_alphabetic()
             } else {
-                character == '_'
-                    || character.is_ascii_alphabetic()
-                    || character.is_ascii_digit()
+                character == '_' || character.is_ascii_alphabetic() || character.is_ascii_digit()
             };
 
             if !valid {
@@ -155,11 +128,7 @@ impl BundleMacro {
     }
 
     pub(crate) fn expand(self) -> TokenStream {
-        let Self {
-            path,
-            root,
-            crate_path,
-        } = self;
+        let Self { path, root, crate_path } = self;
 
         quote! {{
             use #crate_path::embed::__include_dir as include_dir;
@@ -196,41 +165,26 @@ mod tests {
 
     #[test]
     fn preserves_an_explicit_crate_path() {
-        let output = BundleMacro::new(quote!(
-            "fixtures/plugin",
-            crate_path = custom::guestpy,
-        ))
-        .unwrap()
-        .expand()
-        .to_string();
+        let output = BundleMacro::new(quote!("fixtures/plugin", crate_path = custom::guestpy,))
+            .unwrap()
+            .expand()
+            .to_string();
 
-        assert!(output.contains(
-            "use custom :: guestpy :: embed :: __include_dir as include_dir",
-        ));
-        assert!(output.contains(
-            "custom :: guestpy :: embed :: Dir < 'static >",
-        ));
-        assert!(output.contains(
-            "custom :: guestpy :: embed :: __include_dir_macro !",
-        ));
-        assert!(output.contains(
-            "custom :: guestpy :: bundle :: Bundle :: from_embedded",
-        ));
+        assert!(output.contains("use custom :: guestpy :: embed :: __include_dir as include_dir",));
+        assert!(output.contains("custom :: guestpy :: embed :: Dir < 'static >",));
+        assert!(output.contains("custom :: guestpy :: embed :: __include_dir_macro !",));
+        assert!(output.contains("custom :: guestpy :: bundle :: Bundle :: from_embedded",));
     }
 
     #[test]
     fn accepts_a_trailing_comma() {
-        BundleMacro::new(quote!("fixtures/plugin",))
-            .unwrap();
+        BundleMacro::new(quote!("fixtures/plugin",)).unwrap();
     }
 
     #[test]
     fn rejects_an_unknown_option() {
-        let error = BundleMacro::new(quote!(
-            "fixtures/plugin",
-            guestpy_path = custom::guestpy,
-        ))
-        .unwrap_err();
+        let error = BundleMacro::new(quote!("fixtures/plugin", guestpy_path = custom::guestpy,))
+            .unwrap_err();
 
         assert_eq!(error.to_string(), "expected `crate_path`");
     }
@@ -249,10 +203,8 @@ mod tests {
 
     #[test]
     fn rejects_a_missing_environment_variable() {
-        let error = BundleMacro::new(
-            quote!("$GUESTPY_BUNDLE_MISSING_VARIABLE/plugin"),
-        )
-        .unwrap_err();
+        let error =
+            BundleMacro::new(quote!("$GUESTPY_BUNDLE_MISSING_VARIABLE/plugin")).unwrap_err();
 
         assert!(
             error
@@ -263,8 +215,7 @@ mod tests {
 
     #[test]
     fn rejects_a_path_without_a_directory_name() {
-        let error = BundleMacro::new(quote!("/"))
-            .unwrap_err();
+        let error = BundleMacro::new(quote!("/")).unwrap_err();
 
         assert!(
             error

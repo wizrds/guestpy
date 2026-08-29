@@ -420,14 +420,7 @@ extern crate self as guestpy;
 pub mod prelude;
 
 pub use guestpy_core::*;
-pub use guestpy_macros::{
-    FromGuest,
-    ToGuest,
-    guest_class,
-    guest_module,
-    host_class,
-    host_module,
-};
+pub use guestpy_macros::{FromGuest, ToGuest, guest_class, guest_module, host_class, host_module};
 
 #[cfg(feature = "embedded")]
 pub use guestpy_macros::bundle;
@@ -558,10 +551,8 @@ mod tests {
         B: Backend + BackendValues,
     {
         fn get(&self, path: String) -> Result<Response<B>, Error> {
-            self.instance.call::<_, Response<B>>(
-                "get",
-                (path,),
-            )
+            self.instance
+                .call::<_, Response<B>>("get", (path,))
         }
     }
 
@@ -584,23 +575,13 @@ mod tests {
             enter: &Enter<'py, B>,
             value: <B as Backend>::Value<'py>,
         ) -> Result<Self::Owned, Error> {
-            <Instance<B> as FromGuest<B>>::from_guest(
-                enter,
-                value,
-            )
-            .map(Self::new)
+            <Instance<B> as FromGuest<B>>::from_guest(enter, value).map(Self::new)
         }
     }
 
     impl<B: Backend> ToGuest<B> for ManualClient<B> {
-        fn to_guest<'py>(
-            self,
-            enter: &Enter<'py, B>,
-        ) -> Result<<B as Backend>::Value<'py>, Error> {
-            ToGuest::to_guest(
-                self.into_instance(),
-                enter,
-            )
+        fn to_guest<'py>(self, enter: &Enter<'py, B>) -> Result<<B as Backend>::Value<'py>, Error> {
+            ToGuest::to_guest(self.into_instance(), enter)
         }
     }
 

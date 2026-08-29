@@ -207,14 +207,8 @@ struct HostClassDefinition {
 }
 
 impl HostClassMacro {
-    pub(crate) fn new(
-        args: TokenStream,
-        mut item: ItemImpl,
-    ) -> Result<Self, HostMacroError> {
-        let definition = HostClassDefinition::from_impl(
-            args,
-            &mut item,
-        )?;
+    pub(crate) fn new(args: TokenStream, mut item: ItemImpl) -> Result<Self, HostMacroError> {
+        let definition = HostClassDefinition::from_impl(args, &mut item)?;
 
         Ok(Self { item, definition })
     }
@@ -231,14 +225,9 @@ impl HostClassMacro {
 }
 
 impl HostClassDefinition {
-    fn from_impl(
-        args: TokenStream,
-        item: &mut ItemImpl,
-    ) -> Result<Self, HostMacroError> {
+    fn from_impl(args: TokenStream, item: &mut ItemImpl) -> Result<Self, HostMacroError> {
         let target = HostTarget::from_impl(item, "host_class")?;
-        let options = ClassOptions::from_list(
-            &NestedMeta::parse_meta_list(args)?,
-        )?;
+        let options = ClassOptions::from_list(&NestedMeta::parse_meta_list(args)?)?;
         let mut constructor = None;
         let mut members = Vec::new();
 
@@ -296,7 +285,11 @@ impl HostClassDefinition {
                 .name
                 .unwrap_or_else(|| target.name()),
             crate_path: CratePath::new(options.crate_path).resolve(),
-            extends: options.extends.iter().cloned().collect(),
+            extends: options
+                .extends
+                .iter()
+                .cloned()
+                .collect(),
             constructor,
             members,
         })

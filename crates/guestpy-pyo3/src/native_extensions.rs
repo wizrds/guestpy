@@ -56,7 +56,10 @@ impl CPythonNativeExtensionStore {
             .and_then(|rlock| rlock.call0())
             .map_err(|error| CPython::guest(py, error))?;
 
-        Ok(Self { root, import_lock: Object::new(lock.unbind()) })
+        Ok(Self {
+            root,
+            import_lock: Object::new(lock.unbind()),
+        })
     }
 }
 
@@ -164,9 +167,7 @@ impl CPythonNativeExtensions {
             .iter()
             .find(|suffix| path.ends_with(suffix.as_str()))?;
         let stripped = &path[..path.len() - suffix.len()];
-        let mut parts = stripped
-            .split('/')
-            .collect::<Vec<_>>();
+        let mut parts = stripped.split('/').collect::<Vec<_>>();
         let basename = parts.pop()?;
 
         if !parts
@@ -192,9 +193,7 @@ impl CPythonNativeExtensions {
             .strip_suffix(".so")
             .or_else(|| path.strip_suffix(".pyd"))
             .or_else(|| path.strip_suffix(".dylib"))?;
-        let mut parts = stripped
-            .split('/')
-            .collect::<Vec<_>>();
+        let mut parts = stripped.split('/').collect::<Vec<_>>();
         let filename = parts.pop()?;
         let basename = filename
             .split_once('.')
@@ -250,13 +249,7 @@ impl CPythonNativeExtensions {
             fs::write(&path, contents)?;
 
             if let Some(name) = Self::compatible_name(relative, suffixes) {
-                modules.insert(
-                    name,
-                    NativeArtifact {
-                        path,
-                        contents: Arc::from(contents),
-                    },
-                );
+                modules.insert(name, NativeArtifact { path, contents: Arc::from(contents) });
             } else if let Some(name) = Self::incompatible_name(relative) {
                 incompatible
                     .entry(name)
@@ -265,7 +258,11 @@ impl CPythonNativeExtensions {
             }
         }
 
-        Ok(MaterializedBundle { root: root.to_owned(), modules, incompatible })
+        Ok(MaterializedBundle {
+            root: root.to_owned(),
+            modules,
+            incompatible,
+        })
     }
 
     fn materialize(
@@ -533,7 +530,10 @@ impl PreparedNativeExtensions<CPython> for PreparedCPythonExtensions {
             ));
         }
 
-        Err(Error::import(dotted, "the prepared bundle has no native extension of that name"))
+        Err(Error::import(
+            dotted,
+            "the prepared bundle has no native extension of that name",
+        ))
     }
 
     fn source_origin(&self, relative: &str) -> Option<String> {
@@ -684,7 +684,10 @@ class FailureLoader:
         assert_eq!(
             CPythonNativeExtensions::compatible_name(
                 "plugin/_native.cpython-313-x86_64-linux-gnu.so",
-                &[".cpython-313-x86_64-linux-gnu.so".to_owned(), ".so".to_owned()],
+                &[
+                    ".cpython-313-x86_64-linux-gnu.so".to_owned(),
+                    ".so".to_owned()
+                ],
             ),
             Some("plugin._native".to_owned()),
         );
@@ -699,7 +702,10 @@ class FailureLoader:
             ),
             None,
         );
-        assert_eq!(CPythonNativeExtensions::incompatible_name("plugin/.libs/libdependency.so"), None);
+        assert_eq!(
+            CPythonNativeExtensions::incompatible_name("plugin/.libs/libdependency.so"),
+            None
+        );
     }
 
     #[test]
@@ -725,7 +731,12 @@ class FailureLoader:
                 <CPythonNativeExtensions as NativeExtensionLoader<CPython>>::prepare(py, &bundle)
                     .unwrap();
 
-            assert!(prepared.bundle.modules.contains_key("plugin._native"));
+            assert!(
+                prepared
+                    .bundle
+                    .modules
+                    .contains_key("plugin._native")
+            );
             assert!(
                 prepared
                     .bundle
@@ -736,8 +747,13 @@ class FailureLoader:
                     .exists()
             );
             assert!(
-                std::fs::read(&prepared.bundle.root.join("plugin/.libs/libdependency.so"))
-                    .unwrap()
+                std::fs::read(
+                    &prepared
+                        .bundle
+                        .root
+                        .join("plugin/.libs/libdependency.so")
+                )
+                .unwrap()
                     == b"dependency-bytes"
             );
         });
@@ -913,7 +929,8 @@ class FailureLoader:
                 .unwrap()
                 .call1((&parent_name,))
                 .unwrap();
-            let context = NativeExtensionContext::new(py, vec![(parent_name.clone(), parent.clone())]);
+            let context =
+                NativeExtensionContext::new(py, vec![(parent_name.clone(), parent.clone())]);
             let module = PreparedCPythonExtensions::execute_loader(
                 py,
                 &context,
@@ -972,7 +989,8 @@ class FailureLoader:
                 .set_item(&parent_name, &parent)
                 .unwrap();
 
-            let context = NativeExtensionContext::new(py, vec![(parent_name.clone(), parent.clone())]);
+            let context =
+                NativeExtensionContext::new(py, vec![(parent_name.clone(), parent.clone())]);
 
             PreparedCPythonExtensions::execute_loader(
                 py,
@@ -1123,7 +1141,9 @@ class FailureLoader:
             );
             assert!(modules.get_item(&missing_name).is_err());
 
-            modules.del_item(&existing_name).unwrap();
+            modules
+                .del_item(&existing_name)
+                .unwrap();
         });
     }
 
@@ -1179,11 +1199,7 @@ class FailureLoader:
                 super::LoadedExtension {
                     origin: artifact.path.clone(),
                     contents: Arc::from(b"different-bytes".as_slice()),
-                    module: crate::engine::Object::new(
-                        PyDict::new(py)
-                            .into_any()
-                            .unbind(),
-                    ),
+                    module: crate::engine::Object::new(PyDict::new(py).into_any().unbind()),
                 },
             )
             .unwrap();

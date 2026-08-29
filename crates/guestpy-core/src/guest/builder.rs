@@ -99,9 +99,7 @@ where
         let id = GuestId::new(runtime.take_next_id());
 
         for module in &self.modules {
-            runtime
-                .realisation()
-                .absorb(module);
+            runtime.realisation().absorb(module);
         }
 
         B::enter(runtime.engine(), |token| {

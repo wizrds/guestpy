@@ -31,21 +31,14 @@ struct GuestModuleDefinition {
 }
 
 impl GuestModuleMacro {
-    pub(crate) fn new(
-        tokens: TokenStream,
-    ) -> Result<Self, GuestMacroError> {
+    pub(crate) fn new(tokens: TokenStream) -> Result<Self, GuestMacroError> {
         let GuestFacadeDsl {
             mut attributes,
             visibility,
             name,
             members,
-        } = GuestFacadeDsl::parse(
-            tokens,
-            GuestFacadeKind::Module,
-        )?;
-        let options = GuestModuleOptions::from_list(
-            &HelperAttributes::take(&mut attributes)?,
-        )?;
+        } = GuestFacadeDsl::parse(tokens, GuestFacadeKind::Module)?;
+        let options = GuestModuleOptions::from_list(&HelperAttributes::take(&mut attributes)?)?;
 
         Ok(Self {
             definition: GuestModuleDefinition {
@@ -67,12 +60,7 @@ impl GuestModuleMacro {
 
 impl GuestModuleDefinition {
     fn render(self) -> TokenStream {
-        let Self {
-            visibility,
-            name,
-            crate_path,
-            members,
-        } = self;
+        let Self { visibility, name, crate_path, members } = self;
         let receiver = Ident::new("module", Span::call_site());
         let methods = members
             .iter()

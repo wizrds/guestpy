@@ -222,14 +222,8 @@ struct HostModuleDefinition {
 }
 
 impl HostModuleMacro {
-    pub(crate) fn new(
-        args: TokenStream,
-        mut item: ItemImpl,
-    ) -> Result<Self, HostMacroError> {
-        let definition = HostModuleDefinition::from_impl(
-            args,
-            &mut item,
-        )?;
+    pub(crate) fn new(args: TokenStream, mut item: ItemImpl) -> Result<Self, HostMacroError> {
+        let definition = HostModuleDefinition::from_impl(args, &mut item)?;
 
         Ok(Self { item, definition })
     }
@@ -246,14 +240,9 @@ impl HostModuleMacro {
 }
 
 impl HostModuleDefinition {
-    fn from_impl(
-        args: TokenStream,
-        item: &mut ItemImpl,
-    ) -> Result<Self, HostMacroError> {
+    fn from_impl(args: TokenStream, item: &mut ItemImpl) -> Result<Self, HostMacroError> {
         let target = HostTarget::from_impl(item, "host_module")?;
-        let options = ModuleOptions::from_list(
-            &NestedMeta::parse_meta_list(args)?,
-        )?;
+        let options = ModuleOptions::from_list(&NestedMeta::parse_meta_list(args)?)?;
         let mut members = Vec::new();
 
         for element in &mut item.items {
@@ -552,9 +541,9 @@ impl HostModuleDefinition {
         } else {
             quote!()
         };
-        let has_async_function = members.iter().any(|member| {
-            matches!(member, ModuleMember::Function(callable) if callable.asynchronous())
-        });
+        let has_async_function = members.iter().any(
+            |member| matches!(member, ModuleMember::Function(callable) if callable.asynchronous()),
+        );
         let has_class = !classes.is_empty();
         let needs_exceptions = has_async_function || !exceptions.is_empty();
         let async_bound = has_async_function.then(|| {
@@ -566,9 +555,9 @@ impl HostModuleDefinition {
         let class_bound = has_class.then(|| quote!(+ #crate_path::backend::BackendClasses));
         let exception_bound =
             needs_exceptions.then(|| quote!(+ #crate_path::backend::BackendExceptions));
-        let class_definition_bounds = classes.iter().map(|class| {
-            quote!(#class: #crate_path::host::class::HostClassDefinition<B>,)
-        });
+        let class_definition_bounds = classes
+            .iter()
+            .map(|class| quote!(#class: #crate_path::host::class::HostClassDefinition<B>,));
 
         quote! {
             impl #impl_generics #target #where_clause {

@@ -7,9 +7,8 @@ use crate::{
     scope::Enter,
 };
 
-pub(crate) type ModuleGetter<B> = Rc<
-    dyn for<'py, 'e> Fn(&DeclarationContext<'py, 'e, B>) -> Result<Val<'py, B>, Error>,
->;
+pub(crate) type ModuleGetter<B> =
+    Rc<dyn for<'py, 'e> Fn(&DeclarationContext<'py, 'e, B>) -> Result<Val<'py, B>, Error>>;
 
 pub(crate) trait DeclareMember<B: Backend> {
     fn realise<'py>(

@@ -58,12 +58,7 @@ where
         context: &DeclarationContext<'py, '_, B>,
         name: &str,
     ) -> Result<Val<'py, B>, Error> {
-        B::method(
-            context.enter().token(),
-            name,
-            None,
-            context.method_raw_body(self.body.clone()),
-        )
+        B::method(context.enter().token(), name, None, context.method_raw_body(self.body.clone()))
     }
 }
 
@@ -120,7 +115,10 @@ where
             context.enter().token(),
             name,
             None,
-            context.enter().guest().raw_body(self.body.clone()),
+            context
+                .enter()
+                .guest()
+                .raw_body(self.body.clone()),
         )?;
 
         context.wrap_builtin("staticmethod", function)
@@ -135,7 +133,11 @@ struct ClassPropertyDeclaration<B: Backend> {
 
 impl<B: Backend> ClassPropertyDeclaration<B> {
     fn new() -> Self {
-        Self { get: RefCell::new(None), set: RefCell::new(None), del: RefCell::new(None) }
+        Self {
+            get: RefCell::new(None),
+            set: RefCell::new(None),
+            del: RefCell::new(None),
+        }
     }
 
     fn set_get(&self, get: MethodBody<B>) {

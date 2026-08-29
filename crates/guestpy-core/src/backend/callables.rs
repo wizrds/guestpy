@@ -80,11 +80,7 @@ pub trait BackendCallables: Backend + BackendValues {
 
 #[doc(hidden)]
 pub mod fixtures {
-    use std::{
-        cell::RefCell,
-        collections::HashMap,
-        rc::Rc,
-    };
+    use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
     use crate::{
         backend::{
@@ -127,14 +123,10 @@ pub mod fixtures {
                     Ok::<_, Error>(args.required::<Vec<i64>>(enter, 0, "value")?)
                 })
                 .function("echo_pair", |enter, args| {
-                    Ok::<_, Error>(
-                        args.required::<(i64, String)>(enter, 0, "value")?,
-                    )
+                    Ok::<_, Error>(args.required::<(i64, String)>(enter, 0, "value")?)
                 })
                 .function("echo_map", |enter, args| {
-                    Ok::<_, Error>(
-                        args.required::<HashMap<String, i64>>(enter, 0, "value")?,
-                    )
+                    Ok::<_, Error>(args.required::<HashMap<String, i64>>(enter, 0, "value")?)
                 })
                 .function("echo_opt", |enter, args| {
                     Ok::<_, Error>(args.required::<Option<i64>>(enter, 0, "value")?)
@@ -145,12 +137,8 @@ pub mod fixtures {
                             + args.required::<i64>(enter, 1, "right")?,
                     )
                 })
-                .function("boom", |_, _| {
-                    Err::<i64, _>(Error::conversion("deliberate failure"))
-                })
-                .async_function("later", |_, _| {
-                    Ok::<_, Error>(async { Ok::<_, Error>(1_i64) })
-                })
+                .function("boom", |_, _| Err::<i64, _>(Error::conversion("deliberate failure")))
+                .async_function("later", |_, _| Ok::<_, Error>(async { Ok::<_, Error>(1_i64) }))
         }
     }
 

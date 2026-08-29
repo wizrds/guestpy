@@ -174,7 +174,7 @@ impl Backend for RustPython {
 #[cfg(test)]
 mod tests {
     use guestpy_core::{
-        backend::{Backend, BackendCallables, BackendClasses, BackendValues, BackendModules},
+        backend::{Backend, BackendCallables, BackendClasses, BackendModules, BackendValues},
         bundle::Bundle,
         driver::Progress,
         errors::Error,
@@ -448,7 +448,12 @@ VALUE = 21
             .exec("import plugin.util")
             .unwrap();
 
-        assert_eq!(guest.eval::<i64>("plugin.util.VALUE * 2").unwrap(), 42);
+        assert_eq!(
+            guest
+                .eval::<i64>("plugin.util.VALUE * 2")
+                .unwrap(),
+            42
+        );
     }
 
     #[test]
@@ -466,7 +471,11 @@ VALUE = 21
 
         assert!(error.matches("NotImplementedError"));
         assert!(error.message().contains("rustpython"));
-        assert!(error.message().contains("plugin._native"));
+        assert!(
+            error
+                .message()
+                .contains("plugin._native")
+        );
     }
 
     #[test]

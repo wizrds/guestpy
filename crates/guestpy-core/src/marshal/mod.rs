@@ -41,8 +41,8 @@ pub trait FromGuestMut<'py, B: Backend> {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
     use bytes::Bytes;
+    use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
     use super::{
         FromGuest, ToGuest,

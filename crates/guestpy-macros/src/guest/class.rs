@@ -33,21 +33,14 @@ struct GuestClassDefinition {
 }
 
 impl GuestClassMacro {
-    pub(crate) fn new(
-        tokens: TokenStream,
-    ) -> Result<Self, GuestMacroError> {
+    pub(crate) fn new(tokens: TokenStream) -> Result<Self, GuestMacroError> {
         let GuestFacadeDsl {
             mut attributes,
             visibility,
             name,
             members,
-        } = GuestFacadeDsl::parse(
-            tokens,
-            GuestFacadeKind::Class,
-        )?;
-        let options = GuestClassOptions::from_list(
-            &HelperAttributes::take(&mut attributes)?,
-        )?;
+        } = GuestFacadeDsl::parse(tokens, GuestFacadeKind::Class)?;
+        let options = GuestClassOptions::from_list(&HelperAttributes::take(&mut attributes)?)?;
 
         Ok(Self {
             definition: GuestClassDefinition {

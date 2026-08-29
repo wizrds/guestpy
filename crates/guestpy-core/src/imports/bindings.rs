@@ -6,11 +6,7 @@ use std::{
 
 use crate::{
     backend::{
-        Backend,
-        NativeExtensionLoader,
-        PreparedNativeExtensions,
-        PreparedNativeExtensionsOf,
-        Tok,
+        Backend, NativeExtensionLoader, PreparedNativeExtensions, PreparedNativeExtensionsOf, Tok,
     },
     bundle::{Bundle, BundleId},
     catalog::Catalog,
@@ -46,21 +42,13 @@ impl<B: Backend> GuestBindings<B> {
     ) -> Result<Self, Error> {
         let mut specs = HashMap::new();
 
-        for module in catalog
-            .modules()
-            .iter()
-            .chain(modules)
-        {
+        for module in catalog.modules().iter().chain(modules) {
             specs.insert(module.name().to_owned(), module.clone());
         }
 
         let mut native_specs = HashMap::new();
 
-        for native in catalog
-            .natives()
-            .iter()
-            .chain(natives)
-        {
+        for native in catalog.natives().iter().chain(natives) {
             native_specs.insert(native.name().to_owned(), native.clone());
 
             for alias in native.aliases() {
@@ -72,11 +60,7 @@ impl<B: Backend> GuestBindings<B> {
         let mut prepared = HashMap::new();
         let mut extensions = HashMap::new();
 
-        for bundle in catalog
-            .bundles()
-            .iter()
-            .chain(bundles)
-        {
+        for bundle in catalog.bundles().iter().chain(bundles) {
             Self::prepare_bundle(token, bundle, &mut sources, &mut prepared, &mut extensions)?;
         }
 
@@ -219,7 +203,9 @@ impl<B: Backend> GuestBindings<B> {
             None => {}
         }
 
-        let BindingState { sources, prepared, extensions, loaded, .. } = &mut *state;
+        let BindingState {
+            sources, prepared, extensions, loaded, ..
+        } = &mut *state;
 
         Self::prepare_bundle(token, bundle, sources, prepared, extensions)?;
 
@@ -415,10 +401,7 @@ mod tests {
     fn native_bundle(root: &str, native: &str) -> Bundle {
         Bundle::builder()
             .package(root, "")
-            .data(
-                &format!("{root}/{native}.cpython-313-x86_64-linux-gnu.so"),
-                b"".to_vec(),
-            )
+            .data(&format!("{root}/{native}.cpython-313-x86_64-linux-gnu.so"), b"".to_vec())
             .build()
             .unwrap()
     }
@@ -430,12 +413,7 @@ mod tests {
         let guest_bundle = native_bundle("plugin", "native");
         let bindings = GuestBindings::new(
             (),
-            &Fixtures::catalog(
-                Vec::new(),
-                Vec::new(),
-                vec![runtime_bundle],
-                HashSet::new(),
-            ),
+            &Fixtures::catalog(Vec::new(), Vec::new(), vec![runtime_bundle], HashSet::new()),
             &[],
             &[],
             std::slice::from_ref(&guest_bundle),
@@ -444,11 +422,17 @@ mod tests {
         .unwrap();
 
         assert!(Rc::ptr_eq(
-            &bindings.extension("plugin.native").unwrap(),
-            &bindings.prepared(guest_bundle.id()).unwrap(),
+            &bindings
+                .extension("plugin.native")
+                .unwrap(),
+            &bindings
+                .prepared(guest_bundle.id())
+                .unwrap(),
         ));
         assert!(!Rc::ptr_eq(
-            &bindings.extension("plugin.native").unwrap(),
+            &bindings
+                .extension("plugin.native")
+                .unwrap(),
             &bindings.prepared(runtime_id).unwrap(),
         ));
     }
@@ -483,7 +467,9 @@ mod tests {
 
         assert!(Rc::ptr_eq(
             &bindings.prepared(bundle.id()).unwrap(),
-            &bindings.extension("plugin.native").unwrap(),
+            &bindings
+                .extension("plugin.native")
+                .unwrap(),
         ));
     }
 
@@ -496,7 +482,11 @@ mod tests {
             .mount((), &native_bundle("plugin", "native"), "plugin")
             .unwrap();
 
-        assert!(bindings.extension("plugin.native").is_some());
+        assert!(
+            bindings
+                .extension("plugin.native")
+                .is_some()
+        );
     }
 
     #[test]
@@ -541,6 +531,10 @@ mod tests {
             bindings.mount((), &native_bundle("plugin", "native"), "plugin"),
             Err(Error::NameInUse { ref name }) if name == "plugin",
         ));
-        assert!(bindings.extension("plugin.native").is_none());
+        assert!(
+            bindings
+                .extension("plugin.native")
+                .is_none()
+        );
     }
 }
