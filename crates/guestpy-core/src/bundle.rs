@@ -1,4 +1,4 @@
-//! Virtual Python source bundles.
+//! Virtual Python filesystem bundles.
 
 use std::{
     collections::BTreeMap,
@@ -45,6 +45,7 @@ struct BundleInner {
     root: Option<String>,
     modules: BTreeMap<String, BundleModule>,
     data: BTreeMap<String, Arc<[u8]>>,
+    files: BTreeMap<String, Arc<[u8]>>,
 }
 
 static NEXT_BUNDLE_ID: AtomicU64 = AtomicU64::new(1);
@@ -55,11 +56,13 @@ pub struct BundleId(NonZeroU64);
 impl BundleId {
     fn next() -> Self {
         Self(
-            NonZeroU64::new(
-                NEXT_BUNDLE_ID.fetch_add(1, Ordering::Relaxed),
-            )
-            .expect("bundle IDs begin at one"),
+            NonZeroU64::new(NEXT_BUNDLE_ID.fetch_add(1, Ordering::Relaxed))
+                .expect("bundle IDs begin at one"),
         )
+    }
+
+    pub fn value(self) -> u64 {
+        self.0.get()
     }
 }
 
@@ -113,6 +116,13 @@ impl Bundle {
         self.0.data.get(path)
     }
 
+    pub fn files(&self) -> impl Iterator<Item = (&str, &[u8])> {
+        self.0
+            .files
+            .iter()
+            .map(|(path, contents)| (path.as_str(), contents.as_ref()))
+    }
+
     pub(crate) fn names(&self) -> impl Iterator<Item = &str> {
         self.0
             .modules
@@ -132,6 +142,7 @@ impl Debug for Bundle {
             .field("id", &self.id())
             .field("root", &self.root())
             .field("modules", &self.0.modules.len())
+            .field("files", &self.0.files.len())
             .finish()
     }
 }
@@ -140,6 +151,7 @@ impl Debug for Bundle {
 pub struct BundleBuilder {
     modules: BTreeMap<String, BundleModule>,
     data: BTreeMap<String, Arc<[u8]>>,
+    files: BTreeMap<String, Arc<[u8]>>,
     error: Option<Error>,
 }
 
@@ -150,18 +162,13 @@ impl BundleBuilder {
         let root = path
             .file_name()
             .and_then(|name| name.to_str())
-            .ok_or_else(|| {
-                Error::bundle(
-                    path.display().to_string(),
-                    "path has no UTF-8 name",
-                )
-            })?;
+            .ok_or_else(|| Error::bundle(path.display().to_string(), "path has no UTF-8 name"))?;
 
         let is_package = fs::try_exists(path.join("__init__.py"))
             .await
             .unwrap_or(false);
-        
-        let prefix = is_package.then(|| root.to_owned()).unwrap_or_default();
+
+        let prefix = if is_package { root.to_owned() } else { Default::default() };
 
         let mut builder = Self::default();
         let mut directories = vec![(path.to_owned(), prefix)];
@@ -191,10 +198,7 @@ impl BundleBuilder {
                 if entry.file_type().await?.is_dir() {
                     directories.push((entry.path(), relative));
                 } else {
-                    builder.insert_entry(
-                        &relative,
-                        &fs::read(entry.path()).await?,
-                    )?;
+                    builder.insert_entry(&relative, &fs::read(entry.path()).await?)?;
                 }
             }
         }
@@ -208,20 +212,14 @@ impl BundleBuilder {
             .path()
             .file_name()
             .and_then(|name| name.to_str())
-            .ok_or_else(|| {
-                Error::bundle(
-                    "<embedded>",
-                    "path has no UTF-8 name",
-                )
-            })?;
-        let is_package = dir
-            .entries()
-            .iter()
-            .any(|entry| matches!(
+            .ok_or_else(|| Error::bundle("<embedded>", "path has no UTF-8 name"))?;
+        let is_package = dir.entries().iter().any(|entry| {
+            matches!(
                 entry,
                 DirEntry::File(file)
                     if file.path().file_name().and_then(|name| name.to_str()) == Some("__init__.py")
-            ));
+            )
+        });
 
         let mut builder = Self::default();
         builder.insert_embedded_dir(is_package.then_some(root), dir)?;
@@ -274,33 +272,24 @@ impl BundleBuilder {
             return;
         }
 
-        self.modules.insert(
-            dotted.to_owned(),
-            BundleModule {
-                source,
-                origin: Self::origin(dotted, package),
-                package,
-            },
-        );
+        let origin = Self::origin(dotted, package);
+
+        self.files
+            .insert(origin.clone(), Arc::from(source.as_bytes()));
+        self.modules
+            .insert(dotted.to_owned(), BundleModule { source, origin, package });
     }
 
     #[cfg(any(feature = "tokio", feature = "embedded"))]
     fn insert_entry(&mut self, relative: &str, contents: &[u8]) -> Result<(), Error> {
         let normalized = relative.replace('\\', "/");
+        let contents = Arc::<[u8]>::from(contents);
 
-        if normalized.ends_with(".so")
-            || normalized.ends_with(".pyd")
-            || normalized.ends_with(".dylib")
-        {
-            return Err(Error::bundle(
-                normalized,
-                "compiled extension modules are not supported; a bundle is pure Python",
-            ));
-        }
+        self.files
+            .insert(normalized.clone(), contents.clone());
 
         if !normalized.ends_with(".py") {
-            self.data
-                .insert(normalized, Arc::from(contents));
+            self.data.insert(normalized, contents);
 
             return Ok(());
         }
@@ -334,7 +323,7 @@ impl BundleBuilder {
                 .collect::<Vec<_>>()
                 .join(".")
         };
-        let source = std::str::from_utf8(contents)
+        let source = std::str::from_utf8(contents.as_ref())
             .map_err(|_| Error::bundle(normalized.clone(), "source is not valid UTF-8"))?;
 
         self.insert_module(&dotted, Arc::from(source), package);
@@ -377,8 +366,12 @@ impl BundleBuilder {
     }
 
     pub fn data(mut self, path: &str, bytes: impl Into<Arc<[u8]>>) -> Self {
+        let path = path.replace('\\', "/");
+        let bytes = bytes.into();
+
         self.data
-            .insert(path.to_owned(), bytes.into());
+            .insert(path.clone(), bytes.clone());
+        self.files.insert(path, bytes);
 
         self
     }
@@ -416,6 +409,7 @@ impl BundleBuilder {
             root,
             modules: self.modules,
             data: self.data,
+            files: self.files,
         })))
     }
 }
@@ -475,11 +469,10 @@ mod tests {
     #[cfg(feature = "tokio")]
     impl Drop for DirectoryFixture {
         fn drop(&mut self) {
-            if let Err(error) = std::fs::remove_dir_all(&self.base) {
-                if error.kind() != std::io::ErrorKind::NotFound {
+            if let Err(error) = std::fs::remove_dir_all(&self.base)
+                && error.kind() != std::io::ErrorKind::NotFound {
                     panic!("failed to remove bundle fixture: {error}");
                 }
-            }
         }
     }
 
@@ -520,21 +513,40 @@ mod tests {
                 .as_ref(),
             br#"{"enabled":true}"#,
         );
+
+        let files = bundle
+            .files()
+            .collect::<std::collections::HashMap<_, _>>();
+
+        assert!(files.contains_key("plugin/__init__.py"));
+        assert!(files.contains_key("plugin/util.py"));
+        assert!(files.contains_key("plugin/data.json"));
     }
 
     #[cfg(feature = "tokio")]
     #[tokio::test]
-    async fn from_dir_rejects_compiled_extensions() {
+    async fn from_dir_preserves_compiled_artifacts() {
         let fixture = DirectoryFixture::new();
 
-        fixture.write("extension.so", b"");
+        fixture.write("__init__.py", b"");
+        fixture.write("extension.so", b"so-bytes");
+        fixture.write("extension.pyd", b"pyd-bytes");
+        fixture.write("extension.dylib", b"dylib-bytes");
+        fixture.write(".libs/libdependency.so", b"dependency-bytes");
 
-        assert!(
-            Bundle::from_dir(fixture.root())
-                .await
-                .unwrap_err()
-                .to_string()
-                .contains("compiled extension modules are not supported"),
+        let bundle = Bundle::from_dir(fixture.root())
+            .await
+            .unwrap();
+        let files = bundle
+            .files()
+            .collect::<std::collections::HashMap<_, _>>();
+
+        assert_eq!(files.get("plugin/extension.so"), Some(&b"so-bytes".as_slice()));
+        assert_eq!(files.get("plugin/extension.pyd"), Some(&b"pyd-bytes".as_slice()));
+        assert_eq!(files.get("plugin/extension.dylib"), Some(&b"dylib-bytes".as_slice()));
+        assert_eq!(
+            files.get("plugin/.libs/libdependency.so"),
+            Some(&b"dependency-bytes".as_slice()),
         );
     }
 
@@ -545,6 +557,10 @@ mod tests {
             DirEntry::File(File::new("__init__.py", b"VALUE = 1")),
             DirEntry::File(File::new("util.py", b"VALUE = 2")),
             DirEntry::File(File::new("data.json", br#"{"enabled":true}"#)),
+            DirEntry::File(File::new("extension.so", b"so-bytes")),
+            DirEntry::File(File::new("extension.pyd", b"pyd-bytes")),
+            DirEntry::File(File::new("extension.dylib", b"dylib-bytes")),
+            DirEntry::File(File::new(".libs/libdependency.so", b"dependency-bytes")),
         ];
         const ROOT: Dir<'static> = Dir::new("plugin", ENTRIES);
 
@@ -559,6 +575,18 @@ mod tests {
                 .unwrap()
                 .as_ref(),
             br#"{"enabled":true}"#,
+        );
+
+        let files = bundle
+            .files()
+            .collect::<std::collections::HashMap<_, _>>();
+
+        assert_eq!(files.get("plugin/extension.so"), Some(&b"so-bytes".as_slice()));
+        assert_eq!(files.get("plugin/extension.pyd"), Some(&b"pyd-bytes".as_slice()));
+        assert_eq!(files.get("plugin/extension.dylib"), Some(&b"dylib-bytes".as_slice()));
+        assert_eq!(
+            files.get("plugin/.libs/libdependency.so"),
+            Some(&b"dependency-bytes".as_slice()),
         );
     }
 
@@ -636,6 +664,13 @@ mod tests {
                 .unwrap()
                 .is_package(),
         );
+
+        let files = bundle
+            .files()
+            .collect::<std::collections::HashMap<_, _>>();
+
+        assert_eq!(files.get("plugin/__init__.py"), Some(&b"".as_slice()));
+        assert_eq!(files.get("plugin/handlers/http.py"), Some(&b"".as_slice()),);
     }
 
     #[test]
@@ -683,6 +718,12 @@ mod tests {
                 .data("plugin/data/missing.json")
                 .is_none()
         );
+
+        let files = bundle
+            .files()
+            .collect::<std::collections::HashMap<_, _>>();
+
+        assert_eq!(files.get("plugin/data/config.json"), Some(&b"{\"enabled\": true}".as_slice()),);
     }
 
     #[test]

@@ -8,16 +8,11 @@ pub(crate) struct HostTarget {
 }
 
 impl HostTarget {
-    pub(crate) fn from_impl(
-        item: &ItemImpl,
-        attribute: &str,
-    ) -> Result<Self, HostMacroError> {
+    pub(crate) fn from_impl(item: &ItemImpl, attribute: &str) -> Result<Self, HostMacroError> {
         if item.trait_.is_some() {
             return Err(syn::Error::new(
                 item.impl_token.span(),
-                format!(
-                    "#[{attribute}] applies only to inherent impl blocks"
-                ),
+                format!("#[{attribute}] applies only to inherent impl blocks"),
             )
             .into());
         }
@@ -25,9 +20,7 @@ impl HostTarget {
         let Type::Path(target) = item.self_ty.as_ref() else {
             return Err(syn::Error::new_spanned(
                 item.self_ty.as_ref(),
-                format!(
-                    "#[{attribute}] requires a named type target"
-                ),
+                format!("#[{attribute}] requires a named type target"),
             )
             .into());
         };
@@ -36,15 +29,11 @@ impl HostTarget {
             .path
             .segments
             .last()
-            .map(|segment| Self {
-                ident: segment.ident.clone(),
-            })
+            .map(|segment| Self { ident: segment.ident.clone() })
             .ok_or_else(|| {
                 syn::Error::new_spanned(
                     target,
-                    format!(
-                        "#[{attribute}] requires a named type target"
-                    ),
+                    format!("#[{attribute}] requires a named type target"),
                 )
                 .into()
             })
@@ -82,14 +71,16 @@ mod tests {
         let item = parse_quote! {
             impl Trait for Service {}
         };
-        let HostMacroError::Syntax(error) =
-            HostTarget::from_impl(&item, "host_class")
-                .unwrap_err()
+        let HostMacroError::Syntax(error) = HostTarget::from_impl(&item, "host_class").unwrap_err()
         else {
             panic!("trait target returns a syntax error");
         };
 
-        assert!(error.to_string().contains("#[host_class]"));
+        assert!(
+            error
+                .to_string()
+                .contains("#[host_class]")
+        );
     }
 
     #[test]
@@ -98,12 +89,15 @@ mod tests {
             impl (Service,) {}
         };
         let HostMacroError::Syntax(error) =
-            HostTarget::from_impl(&item, "host_module")
-                .unwrap_err()
+            HostTarget::from_impl(&item, "host_module").unwrap_err()
         else {
             panic!("unnamed target returns a syntax error");
         };
 
-        assert!(error.to_string().contains("#[host_module]"));
+        assert!(
+            error
+                .to_string()
+                .contains("#[host_module]")
+        );
     }
 }

@@ -47,9 +47,9 @@ GuestPy has no default features. Enable only the optional behavior the applicati
 | --- | --- |
 | `pyo3` | Compiles in the `guestpy-pyo3` backend crate (real CPython, via the `pyo3` crate) and re-exports it as `guestpy::pyo3`. |
 | `rustpython` | Compiles in the `guestpy-rustpython` backend crate and re-exports it as `guestpy::rustpython`. |
-| `embedded` | Enables embedded guest-source bundles. |
+| `embedded` | Enables embedded guest bundles. |
 | `serde` | Enables serde-backed Rust data conversion. |
-| `tokio` | Enables Tokio cancellation support and filesystem guest-source bundles. |
+| `tokio` | Enables Tokio cancellation support and filesystem guest bundles. |
 | `bytes` | Enables `Bytes` conversion for guest data. |
 
 ## Quick start
@@ -227,9 +227,15 @@ let module = guest.load(&bundle)?;
 assert_eq!(module.function("run")?.call::<_, i64>(())?, 42);
 ```
 
-Build a bundle from modules, packages, and optional data, then load it directly or bind it so guest
-code can import it. The `embedded` and `tokio` features provide additional source-loading options when
-an application needs them.
+Build a bundle from modules, packages, data, or a complete installed Python directory, then load
+it directly or bind it so guest code can import it. Pure Python files remain portable across
+backends. Compiled native modules must match the selected backend, interpreter ABI, operating
+system, and architecture. CPython native modules are process-global, so separate guests cannot
+load different binaries under the same dotted module name. RustPython reports an unsupported
+error only when guest code imports a bundled native module.
+
+The `embedded` and `tokio` features provide embedded and filesystem bundle construction when an
+application needs them.
 
 ## Typed guest facades
 

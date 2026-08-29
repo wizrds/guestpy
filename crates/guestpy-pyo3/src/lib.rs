@@ -11,6 +11,7 @@ pub mod interrupt;
 pub mod library;
 pub mod marker;
 pub mod modules;
+pub mod native_extensions;
 pub mod values;
 
 pub use engine::{CPython, Config};

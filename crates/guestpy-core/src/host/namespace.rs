@@ -5,8 +5,7 @@ use std::{future::Future, marker::PhantomData, rc::Rc};
 use crate::{
     backend::{
         Backend, BackendCallables, BackendCoroutines, BackendExceptions, BackendModules,
-        BackendValues, Val,
-        callables::PendingValue,
+        BackendValues, Val, callables::PendingValue,
     },
     errors::Error,
     handle::Value,
@@ -247,7 +246,8 @@ where
     }
 
     pub(crate) fn push(&mut self, name: &str, member: Member<B>) -> &mut Self {
-        self.members.push((name.to_owned(), member));
+        self.members
+            .push((name.to_owned(), member));
 
         self
     }

@@ -32,8 +32,7 @@ impl HostObject {
 impl HostObject {
     fn of<'py>(value: &Val<'py, CPython>) -> Result<Bound<'py, Self>, Error> {
         value
-            .cast::<Self>()
-            .map(Bound::clone)
+            .cast::<Self>().cloned()
             .map_err(|_| Error::type_mismatch("host class instance", "object"))
     }
 

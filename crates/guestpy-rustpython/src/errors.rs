@@ -13,7 +13,7 @@ pub(crate) trait NativeErrors {
     fn to_native(vm: &VirtualMachine, error: Error) -> PyBaseExceptionRef;
 
     fn guest(vm: &VirtualMachine, raw: PyBaseExceptionRef) -> Error {
-        Error::Guest(Self::from_native(vm, raw))
+        Error::guest(Self::from_native(vm, raw))
     }
 }
 

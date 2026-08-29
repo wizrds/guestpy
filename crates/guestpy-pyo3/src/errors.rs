@@ -23,7 +23,7 @@ pub(crate) trait NativeErrors {
     fn to_native(py: Python<'_>, error: Error) -> PyErr;
 
     fn guest(py: Python<'_>, raw: PyErr) -> Error {
-        Error::Guest(Self::from_native(py, raw))
+        Error::guest(Self::from_native(py, raw))
     }
 }
 

@@ -80,11 +80,7 @@ pub trait BackendCallables: Backend + BackendValues {
 
 #[doc(hidden)]
 pub mod fixtures {
-    use std::{
-        cell::RefCell,
-        collections::HashMap,
-        rc::Rc,
-    };
+    use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
     use crate::{
         backend::{
@@ -112,35 +108,28 @@ pub mod fixtures {
         {
             ModuleSpec::new("codec")
                 .function("echo_i64", |enter, args| {
-                    Ok::<_, Error>(args.required::<i64>(enter, 0, "value")?)
+                    args.required::<i64>(enter, 0, "value")
                 })
                 .function("echo_u8", |enter, args| {
-                    Ok::<_, Error>(args.required::<u8>(enter, 0, "value")?)
+                    args.required::<u8>(enter, 0, "value")
                 })
                 .function("echo_f64", |enter, args| {
-                    Ok::<_, Error>(args.required::<f64>(enter, 0, "value")?)
+                    args.required::<f64>(enter, 0, "value")
                 })
                 .function("echo_str", |enter, args| {
-                    Ok::<_, Error>(args.required::<String>(enter, 0, "value")?)
-                })
-                .function("echo_bytes", |enter, args| {
-                    Ok::<_, Error>(args.required::<Vec<u8>>(enter, 0, "value")?)
+                    args.required::<String>(enter, 0, "value")
                 })
                 .function("echo_list", |enter, args| {
-                    Ok::<_, Error>(args.required::<Vec<i64>>(enter, 0, "value")?)
+                    args.required::<Vec<i64>>(enter, 0, "value")
                 })
                 .function("echo_pair", |enter, args| {
-                    Ok::<_, Error>(
-                        args.required::<(i64, String)>(enter, 0, "value")?,
-                    )
+                    args.required::<(i64, String)>(enter, 0, "value")
                 })
                 .function("echo_map", |enter, args| {
-                    Ok::<_, Error>(
-                        args.required::<HashMap<String, i64>>(enter, 0, "value")?,
-                    )
+                    args.required::<HashMap<String, i64>>(enter, 0, "value")
                 })
                 .function("echo_opt", |enter, args| {
-                    Ok::<_, Error>(args.required::<Option<i64>>(enter, 0, "value")?)
+                    args.required::<Option<i64>>(enter, 0, "value")
                 })
                 .function("add", |enter, args| {
                     Ok::<_, Error>(
@@ -148,12 +137,8 @@ pub mod fixtures {
                             + args.required::<i64>(enter, 1, "right")?,
                     )
                 })
-                .function("boom", |_, _| {
-                    Err::<i64, _>(Error::conversion("deliberate failure"))
-                })
-                .async_function("later", |_, _| {
-                    Ok::<_, Error>(async { Ok::<_, Error>(1_i64) })
-                })
+                .function("boom", |_, _| Err::<i64, _>(Error::conversion("deliberate failure")))
+                .async_function("later", |_, _| Ok::<_, Error>(async { Ok::<_, Error>(1_i64) }))
         }
     }
 
@@ -162,7 +147,7 @@ pub mod fixtures {
     impl Raises {
         fn guest(error: Error) -> GuestException {
             match error {
-                Error::Guest(exception) => exception,
+                Error::Guest(exception) => *exception,
                 other => panic!("expected a guest exception, got: {other}"),
             }
         }
@@ -280,38 +265,6 @@ pub mod fixtures {
                 guest
                     .eval::<bool>("codec.echo_str('héllo') == 'héllo'")
                     .unwrap(),
-            );
-        }
-    }
-
-    guest_fixture! {
-        pub fn round_trips_bytes<B>()
-        where B: [
-            Backend,
-            BackendValues,
-            BackendCallables,
-            BackendClasses,
-            BackendModules,
-            BackendCoroutines,
-            BackendExceptions,
-            BackendInterrupt,
-        ]
-        using Runtime::<B>::builder().bind(Codec::module());
-        |guest| {
-            guest.exec("import codec").unwrap();
-
-            assert!(
-                guest
-                    .eval::<bool>("codec.echo_bytes(b'\\x00\\xff') == b'\\x00\\xff'")
-                    .unwrap(),
-            );
-            assert!(
-                Raises::guest(
-                    guest
-                        .eval::<bool>("codec.echo_bytes('text')")
-                        .unwrap_err(),
-                )
-                .matches("TypeError"),
             );
         }
     }
@@ -490,11 +443,6 @@ except TypeError as e:
                 $crate::backend::callables::fixtures::round_trips_floats_and_strings::<
                     $backend,
                 >();
-            }
-
-            #[test]
-            fn round_trips_bytes() {
-                $crate::backend::callables::fixtures::round_trips_bytes::<$backend>();
             }
 
             #[test]

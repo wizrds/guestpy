@@ -66,6 +66,10 @@ where
     pub fn globals(&self) -> Result<Object<B>, Error> {
         self.guest.globals()
     }
+
+    pub fn import(&self, dotted: &str) -> Result<Module<B>, Error> {
+        self.guest.import(dotted)
+    }
 }
 
 pub struct Enter<'py, B: Backend> {

@@ -1,9 +1,6 @@
 use proc_macro2::TokenStream;
 use syn::{
-    Attribute,
-    Ident,
-    Visibility,
-    braced,
+    Attribute, Ident, Visibility, braced,
     parse::{ParseStream, Parser},
 };
 
@@ -33,18 +30,11 @@ pub(crate) struct GuestFacadeDsl {
 }
 
 impl GuestFacadeDsl {
-    pub(crate) fn parse(
-        tokens: TokenStream,
-        expected: GuestFacadeKind,
-    ) -> syn::Result<Self> {
-        (|input: ParseStream| Self::parse_expected(input, expected))
-            .parse2(tokens)
+    pub(crate) fn parse(tokens: TokenStream, expected: GuestFacadeKind) -> syn::Result<Self> {
+        (|input: ParseStream| Self::parse_expected(input, expected)).parse2(tokens)
     }
 
-    fn parse_expected(
-        input: ParseStream,
-        expected: GuestFacadeKind,
-    ) -> syn::Result<Self> {
+    fn parse_expected(input: ParseStream, expected: GuestFacadeKind) -> syn::Result<Self> {
         let attributes = input.call(Attribute::parse_outer)?;
         let visibility = input.parse::<Visibility>()?;
         let keyword = input.parse::<Ident>()?;
@@ -67,12 +57,7 @@ impl GuestFacadeDsl {
             members.push(content.parse::<RawGuestMember>()?);
         }
 
-        Ok(Self {
-            attributes,
-            visibility,
-            name,
-            members,
-        })
+        Ok(Self { attributes, visibility, name, members })
     }
 }
 
@@ -124,7 +109,11 @@ mod tests {
         )
         .unwrap_err();
 
-        assert!(error.to_string().contains("expected `class`"));
+        assert!(
+            error
+                .to_string()
+                .contains("expected `class`")
+        );
     }
 
     #[test]
@@ -137,6 +126,10 @@ mod tests {
         )
         .unwrap_err();
 
-        assert!(error.to_string().contains("expected `module`"));
+        assert!(
+            error
+                .to_string()
+                .contains("expected `module`")
+        );
     }
 }

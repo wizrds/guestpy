@@ -11,9 +11,9 @@ readme.workspace = true
 guestpy-core = { path = "../guestpy-core", version = "0.1.1", default-features = false }
 thiserror = { workspace = true }
 
-rustpython-vm = { git = "https://github.com/RustPython/RustPython", rev = "25e76af" }
-rustpython-stdlib = { git = "https://github.com/RustPython/RustPython", rev = "25e76af" }
-rustpython-pylib = { git = "https://github.com/RustPython/RustPython", rev = "25e76af", features = ["freeze-stdlib"] }
+rustpython-vm = { git = "https://github.com/RustPython/RustPython", rev = "86e7ede" }
+rustpython-stdlib = { git = "https://github.com/RustPython/RustPython", rev = "86e7ede" }
+rustpython-pylib = { git = "https://github.com/RustPython/RustPython", rev = "86e7ede", features = ["freeze-stdlib"] }
 
 [features]
 default = []

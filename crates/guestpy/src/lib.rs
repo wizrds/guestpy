@@ -137,9 +137,13 @@
 //! assert_eq!(module.function("run")?.call::<_, i64>(())?, 42);
 //! ```
 //!
-//! Build a bundle from modules, packages, and optional data, then load or bind it for guest imports.
-//! The `embedded` and `tokio` features provide additional source-loading options when an application
-//! needs them.
+//! Build a bundle from modules, packages, data, or a complete installed Python directory, then load
+//! or bind it for guest imports. Pure Python files remain portable across backends. Compiled native
+//! modules must match the selected backend, interpreter ABI, operating system, and architecture.
+//! CPython native modules are process-global, so separate guests cannot load different binaries
+//! under the same dotted module name. RustPython reports an unsupported error only when guest code
+//! imports a bundled native module. The `embedded` and `tokio` features provide embedded and
+//! filesystem bundle construction when an application needs them.
 //!
 //! # Typed guest facades
 //!
@@ -416,14 +420,7 @@ extern crate self as guestpy;
 pub mod prelude;
 
 pub use guestpy_core::*;
-pub use guestpy_macros::{
-    FromGuest,
-    ToGuest,
-    guest_class,
-    guest_module,
-    host_class,
-    host_module,
-};
+pub use guestpy_macros::{FromGuest, ToGuest, guest_class, guest_module, host_class, host_module};
 
 #[cfg(feature = "embedded")]
 pub use guestpy_macros::bundle;
@@ -554,10 +551,8 @@ mod tests {
         B: Backend + BackendValues,
     {
         fn get(&self, path: String) -> Result<Response<B>, Error> {
-            self.instance.call::<_, Response<B>>(
-                "get",
-                (path,),
-            )
+            self.instance
+                .call::<_, Response<B>>("get", (path,))
         }
     }
 
@@ -567,9 +562,9 @@ mod tests {
         }
     }
 
-    impl<B: Backend> Into<Instance<B>> for ManualClient<B> {
-        fn into(self) -> Instance<B> {
-            self.into_instance()
+    impl<B: Backend> From<ManualClient<B>> for Instance<B> {
+        fn from(val: ManualClient<B>) -> Self {
+            val.into_instance()
         }
     }
 
@@ -580,23 +575,13 @@ mod tests {
             enter: &Enter<'py, B>,
             value: <B as Backend>::Value<'py>,
         ) -> Result<Self::Owned, Error> {
-            <Instance<B> as FromGuest<B>>::from_guest(
-                enter,
-                value,
-            )
-            .map(Self::new)
+            <Instance<B> as FromGuest<B>>::from_guest(enter, value).map(Self::new)
         }
     }
 
     impl<B: Backend> ToGuest<B> for ManualClient<B> {
-        fn to_guest<'py>(
-            self,
-            enter: &Enter<'py, B>,
-        ) -> Result<<B as Backend>::Value<'py>, Error> {
-            ToGuest::to_guest(
-                self.into_instance(),
-                enter,
-            )
+        fn to_guest<'py>(self, enter: &Enter<'py, B>) -> Result<<B as Backend>::Value<'py>, Error> {
+            ToGuest::to_guest(self.into_instance(), enter)
         }
     }
 

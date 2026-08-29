@@ -277,9 +277,7 @@ impl<B: Backend> Guest<B> {
     }
 
     pub(crate) fn realisation(&self) -> &RealisationCache<B> {
-        self.inner
-            .runtime
-            .realisation()
+        self.inner.runtime.realisation()
     }
 
     pub(crate) fn bindings(&self) -> &GuestBindings<B> {
@@ -353,7 +351,7 @@ where
         Ok(())
     }
 
-    fn realised(&self, dotted: &str) -> Result<Module<B>, Error> {
+    pub fn import(&self, dotted: &str) -> Result<Module<B>, Error> {
         self.enter(|enter| Module::from_guest(enter, Imports::new(enter).module(dotted)?))
     }
 
@@ -364,7 +362,7 @@ where
             .to_owned();
 
         self.enter(|enter| Imports::new(enter).mount(bundle, &root))?;
-        self.realised(&root)
+        self.import(&root)
     }
 
     pub fn guest_module(&self, name: &str, source: &str) -> Result<Module<B>, Error> {
@@ -376,7 +374,7 @@ where
             return Err(Error::import(name, "no host module of that name is bound to this guest"));
         }
 
-        self.realised(name)
+        self.import(name)
     }
 
     pub fn exec(&self, source: &str) -> Result<(), Error> {
@@ -429,9 +427,7 @@ where
         }
 
         if self.inner.async_driver.is_initialized() {
-            return Err(Error::unexpected(
-                "cannot close guest while its async driver is active",
-            ));
+            return Err(Error::unexpected("cannot close guest while its async driver is active"));
         }
 
         self.enter_cleanup(|enter| self.clear_context(enter))?;
@@ -526,22 +522,12 @@ where
     }
 
     pub fn advance(&self) -> Result<Progress, Error> {
-        self.enter(|enter| {
-            drop(self.ensure_async_driver(enter)?);
-
-            Ok(())
-        })?;
-
+        self.enter(|enter| self.ensure_async_driver(enter).map(|_| ()))?;
         self.advance_with(Activation::Operation)
     }
 
     pub async fn run_until_idle(&self) -> Result<(), Error> {
-        self.enter(|enter| {
-            drop(self.ensure_async_driver(enter)?);
-
-            Ok(())
-        })?;
-
+        self.enter(|enter| self.ensure_async_driver(enter).map(|_| ()))?;
         self.drive(None, Activation::Operation)
             .await
     }

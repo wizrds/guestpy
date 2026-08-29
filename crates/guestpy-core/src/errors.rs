@@ -152,7 +152,7 @@ impl Debug for GuestException {
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("guest exception: {0}")]
-    Guest(GuestException),
+    Guest(Box<GuestException>),
 
     #[error("engine error: {message}")]
     Engine {
@@ -225,6 +225,10 @@ pub enum Error {
 }
 
 impl Error {
+    pub fn guest(exception: impl Into<GuestException>) -> Self {
+        Self::Guest(Box::new(exception.into()))
+    }
+
     pub fn engine(message: impl Into<String>) -> Self {
         Self::Engine { message: message.into(), source: None }
     }
@@ -378,7 +382,7 @@ mod tests {
     #[test]
     fn display_is_qualified() {
         assert_eq!(
-            Error::Guest(Errors::value_error()).to_string(),
+            Error::guest(Errors::value_error()).to_string(),
             "guest exception: builtins.ValueError: bad value",
         );
     }

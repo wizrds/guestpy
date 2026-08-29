@@ -6,13 +6,10 @@ use std::{
     },
 };
 
-use guestpy_core::{
-    backend::{Backend, Capabilities},
-    errors::Error,
-};
+use guestpy_core::{backend::Backend, errors::Error};
 use pyo3::{Bound, Py, PyAny, Python};
 
-use crate::values::AsDict;
+use crate::{native_extensions::CPythonNativeExtensions, values::AsDict};
 
 thread_local! {
     static ACTIVE_INTERRUPT: RefCell<Option<Arc<AtomicBool>>> = const { RefCell::new(None) };
@@ -128,14 +125,9 @@ impl Backend for CPython {
     type Value<'py> = Bound<'py, PyAny>;
     type Owned = Object;
     type Config = Config;
+    type NativeExtensions = CPythonNativeExtensions;
 
     const NAME: &'static str = "cpython";
-    const CAPABILITIES: Capabilities = Capabilities {
-        isolated_runtimes: false,
-        finalisation: false,
-        c_extensions: true,
-        memory_limit: false,
-    };
 
     fn engine(config: Self::Config) -> Result<Self::Engine, Error> {
         Engine::new(config)
@@ -241,8 +233,6 @@ mod tests {
 
     #[test]
     fn two_runtimes_share_one_interpreter() {
-        assert!(!CPython::CAPABILITIES.isolated_runtimes);
-
         let first = Runtime::<CPython>::builder()
             .build()
             .unwrap();

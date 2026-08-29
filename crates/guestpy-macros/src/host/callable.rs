@@ -245,15 +245,13 @@ impl Parameter {
         if let Some(position) = parameters
             .iter()
             .position(Self::is_rest)
-        {
-            if position + 1 != parameters.len() {
+            && position + 1 != parameters.len() {
                 return Err(syn::Error::new(
                     signature.inputs.span(),
                     "a rest parameter must be the last parameter",
                 )
                 .into());
             }
-        }
 
         Ok(parameters)
     }
@@ -535,13 +533,10 @@ mod tests {
                 Ok(())
             }
         };
-        let output = Callable::parse(
-            &mut method,
-            String::from("call"),
-        )
-        .unwrap()
-        .argument_setup()
-        .to_string();
+        let output = Callable::parse(&mut method, String::from("call"))
+            .unwrap()
+            .argument_setup()
+            .to_string();
 
         assert!(output.contains("required :: < i64 >"));
         assert!(output.contains("optional :: < String >"));

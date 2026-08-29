@@ -22,8 +22,7 @@ pub(crate) trait AsDict<'py> {
 
 impl<'py> AsDict<'py> for Bound<'py, PyAny> {
     fn as_dict(&self) -> Result<Bound<'py, PyDict>, Error> {
-        self.cast::<PyDict>()
-            .map(Bound::clone)
+        self.cast::<PyDict>().cloned()
             .map_err(|_| Error::conversion("value is not a dict"))
     }
 }
