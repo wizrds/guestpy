@@ -1,7 +1,10 @@
 use std::rc::Rc;
 
 use crate::{
-    backend::{Backend, BackendCallables, BackendModules, BackendValues},
+    backend::{
+        Backend, BackendCallables, BackendModules, BackendValues, NativeExtensionContext,
+        PreparedNativeExtensions, PreparedNativeExtensionsOf,
+    },
     bundle::Bundle,
     errors::Error,
     host::{declaration::DeclarationContext, module::ModuleSpec},
@@ -22,7 +25,12 @@ where
         Self { enter }
     }
 
-    fn code_for(&self, bundle: &Bundle, dotted: &str) -> Result<B::Value<'py>, Error> {
+    fn code_for(
+        &self,
+        bundle: &Bundle,
+        dotted: &str,
+        origin: &str,
+    ) -> Result<B::Value<'py>, Error> {
         if let Some(code) = self
             .enter
             .guest()
@@ -35,7 +43,7 @@ where
         let module = bundle
             .module(dotted)
             .ok_or_else(|| Error::import(dotted, "the bundle has no module of that name"))?;
-        let code = B::compile(self.enter.token(), module.source(), module.origin())?;
+        let code = B::compile(self.enter.token(), module.source(), origin)?;
 
         self.enter
             .guest()
@@ -58,6 +66,25 @@ where
             .guest()
             .bindings()
             .cache(dotted, B::detach(self.enter.token(), module.clone()));
+    }
+
+    fn realised_parents(&self, dotted: &str) -> Result<Vec<(String, B::Value<'py>)>, Error> {
+        let mut parents = Vec::new();
+
+        for prefix in DottedName(dotted).prefixes() {
+            if prefix == dotted {
+                break;
+            }
+
+            parents.push((
+                prefix.to_owned(),
+                self.cached(prefix).ok_or_else(|| {
+                    Error::import(dotted, format!("parent module {prefix} is not realised"))
+                })?,
+            ));
+        }
+
+        Ok(parents)
     }
 
     fn module_getattr(&self, spec: &Rc<ModuleSpec<B>>) -> Result<B::Value<'py>, Error> {
@@ -179,6 +206,17 @@ where
         let source = bundle
             .module(dotted)
             .ok_or_else(|| Error::import(dotted, "the bundle has no module of that name"))?;
+        let extensions = self
+            .enter
+            .guest()
+            .bindings()
+            .prepared(bundle.id())
+            .ok_or_else(|| {
+                Error::unexpected("a bound bundle has no prepared native-extension state")
+            })?;
+        let origin = extensions
+            .source_origin(source.origin())
+            .unwrap_or_else(|| source.origin().to_owned());
         let module =
             B::new_module(self.enter.token(), dotted, B::new_dict(self.enter.token())?, None)?;
         let dict = B::get_attr(self.enter.token(), &module, "__dict__")?;
@@ -199,7 +237,7 @@ where
             self.enter.token(),
             &dict,
             B::str(self.enter.token(), "__file__"),
-            B::str(self.enter.token(), source.origin()),
+            B::str(self.enter.token(), &origin),
         )?;
         self.seed_module_tail(
             &dict,
@@ -217,13 +255,33 @@ where
                 self.enter.token(),
                 &dict,
                 B::str(self.enter.token(), "__path__"),
-                B::list(self.enter.token(), Vec::new())?,
+                B::list(
+                    self.enter.token(),
+                    extensions
+                        .package_path(dotted)
+                        .map(|path| vec![B::str(self.enter.token(), &path)])
+                        .unwrap_or_default(),
+                )?,
             )?;
         }
 
         self.cache(dotted, &module);
+        B::exec_code(self.enter.token(), &self.code_for(bundle, dotted, &origin)?, &dict)?;
 
-        B::exec_code(self.enter.token(), &self.code_for(bundle, dotted)?, &dict)?;
+        Ok(module)
+    }
+
+    fn realise_extension(
+        &self,
+        extensions: &PreparedNativeExtensionsOf<B>,
+        dotted: &str,
+    ) -> Result<B::Value<'py>, Error> {
+        let module = extensions.realise(
+            NativeExtensionContext::new(self.enter.token(), self.realised_parents(dotted)?),
+            dotted,
+        )?;
+
+        self.cache(dotted, &module);
 
         Ok(module)
     }
@@ -254,6 +312,13 @@ where
             .source(dotted)
         {
             self.realise_bundle(&bundle, dotted)
+        } else if let Some(extensions) = self
+            .enter
+            .guest()
+            .bindings()
+            .extension(dotted)
+        {
+            self.realise_extension(&extensions, dotted)
         } else {
             return Err(Error::import(dotted, "no module of that name is available to this guest"));
         };

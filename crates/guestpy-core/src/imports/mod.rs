@@ -137,7 +137,7 @@ where
         self.enter
             .guest()
             .bindings()
-            .mount(bundle, root)
+            .mount(self.enter.token(), bundle, root)
     }
 
     pub(crate) fn module(&self, dotted: &str) -> Result<B::Value<'py>, Error> {

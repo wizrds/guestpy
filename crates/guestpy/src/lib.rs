@@ -137,9 +137,13 @@
 //! assert_eq!(module.function("run")?.call::<_, i64>(())?, 42);
 //! ```
 //!
-//! Build a bundle from modules, packages, and optional data, then load or bind it for guest imports.
-//! The `embedded` and `tokio` features provide additional source-loading options when an application
-//! needs them.
+//! Build a bundle from modules, packages, data, or a complete installed Python directory, then load
+//! or bind it for guest imports. Pure Python files remain portable across backends. Compiled native
+//! modules must match the selected backend, interpreter ABI, operating system, and architecture.
+//! CPython native modules are process-global, so separate guests cannot load different binaries
+//! under the same dotted module name. RustPython reports an unsupported error only when guest code
+//! imports a bundled native module. The `embedded` and `tokio` features provide embedded and
+//! filesystem bundle construction when an application needs them.
 //!
 //! # Typed guest facades
 //!

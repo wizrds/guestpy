@@ -9,7 +9,7 @@ use std::{
 };
 
 use guestpy_core::{
-    backend::{Backend, Capabilities},
+    backend::{Backend, NoNativeExtensions},
     errors::Error,
 };
 
@@ -106,14 +106,9 @@ impl Backend for RustPython {
     type Value<'py> = PyObjectRef;
     type Owned = PyObjectRef;
     type Config = Config;
+    type NativeExtensions = NoNativeExtensions;
 
     const NAME: &'static str = "rustpython";
-    const CAPABILITIES: Capabilities = Capabilities {
-        isolated_runtimes: true,
-        finalisation: true,
-        c_extensions: false,
-        memory_limit: false,
-    };
 
     fn engine(config: Self::Config) -> Result<Self::Engine, Error> {
         Engine::new(config)
@@ -180,6 +175,7 @@ impl Backend for RustPython {
 mod tests {
     use guestpy_core::{
         backend::{Backend, BackendCallables, BackendClasses, BackendValues, BackendModules},
+        bundle::Bundle,
         driver::Progress,
         errors::Error,
         handle::Coroutine,
@@ -194,6 +190,21 @@ mod tests {
     use std::{cell::Cell, rc::Rc};
 
     use super::{Config, RustPython};
+
+    fn mixed_bundle() -> Bundle {
+        Bundle::builder()
+            .package("plugin", "")
+            .module(
+                "plugin.util",
+                r#"
+VALUE = 21
+"#,
+            )
+            .data("plugin/_native.cpython-313-x86_64-linux-gnu.so", b"native-bytes".to_vec())
+            .data("plugin/.libs/libdependency.so", b"dependency-bytes".to_vec())
+            .build()
+            .unwrap()
+    }
 
     guestpy_core::backend::fixtures::tests!(RustPython);
 
@@ -423,5 +434,48 @@ mod tests {
         assert_eq!(guest.eval::<i64>("6 * 7").unwrap(), 42);
 
         drop(guest);
+    }
+
+    #[test]
+    fn imports_pure_python_from_a_mixed_bundle() {
+        let runtime = Runtime::<RustPython>::builder()
+            .bundle(mixed_bundle())
+            .build()
+            .unwrap();
+        let guest = runtime.guest().build().unwrap();
+
+        guest
+            .exec("import plugin.util")
+            .unwrap();
+
+        assert_eq!(guest.eval::<i64>("plugin.util.VALUE * 2").unwrap(), 42);
+    }
+
+    #[test]
+    fn native_imports_report_the_backend_as_unsupported() {
+        let runtime = Runtime::<RustPython>::builder()
+            .bundle(mixed_bundle())
+            .build()
+            .unwrap();
+        let guest = runtime.guest().build().unwrap();
+
+        let error = match guest.exec("import plugin._native") {
+            Err(Error::Guest(exception)) => exception,
+            other => panic!("expected a guest exception, got: {other:?}"),
+        };
+
+        assert!(error.matches("NotImplementedError"));
+        assert!(error.message().contains("rustpython"));
+        assert!(error.message().contains("plugin._native"));
+    }
+
+    #[test]
+    fn unused_native_dependencies_do_not_block_guest_creation() {
+        let runtime = Runtime::<RustPython>::builder()
+            .bundle(mixed_bundle())
+            .build()
+            .unwrap();
+
+        assert!(runtime.guest().build().is_ok());
     }
 }

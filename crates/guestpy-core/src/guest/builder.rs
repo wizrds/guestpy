@@ -98,14 +98,6 @@ where
         let runtime = &self.runtime.inner;
         let id = GuestId::new(runtime.take_next_id());
 
-        let bindings = GuestBindings::new(
-            runtime.catalog(),
-            &self.modules,
-            &self.natives,
-            &self.bundles,
-            &self.denied,
-        );
-
         for module in &self.modules {
             runtime
                 .realisation()
@@ -113,6 +105,14 @@ where
         }
 
         B::enter(runtime.engine(), |token| {
+            let bindings = GuestBindings::new(
+                token,
+                runtime.catalog(),
+                &self.modules,
+                &self.natives,
+                &self.bundles,
+                &self.denied,
+            )?;
             let globals = B::new_dict(token)?;
             let builtins = B::copy_dict(token, &B::builtins_dict(token)?)?;
 

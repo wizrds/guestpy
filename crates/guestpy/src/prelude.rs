@@ -4,7 +4,7 @@
 pub use guestpy_core::{
     backend::{
         Backend, BackendCallables, BackendClasses, BackendCoroutines, BackendExceptions,
-        BackendInterrupt, BackendLibrary, BackendModules, BackendValues, Capabilities, Step,
+        BackendInterrupt, BackendLibrary, BackendModules, BackendValues, Step,
         callables::{HostBody, RawBody, RawCall},
     },
     bundle::*,

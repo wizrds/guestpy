@@ -5,6 +5,7 @@ pub mod exceptions;
 pub mod interrupt;
 pub mod library;
 pub mod modules;
+pub mod native_extensions;
 pub mod values;
 
 pub use callables::BackendCallables;
@@ -14,6 +15,13 @@ pub use exceptions::BackendExceptions;
 pub use interrupt::BackendInterrupt;
 pub use library::BackendLibrary;
 pub use modules::BackendModules;
+pub use native_extensions::{
+    NativeExtensionContext,
+    NativeExtensionLoader,
+    NoNativeExtensions,
+    PreparedNativeExtensions,
+};
+pub(crate) use native_extensions::PreparedNativeExtensionsOf;
 pub use values::BackendValues;
 
 use crate::errors::Error;
@@ -29,9 +37,9 @@ pub trait Backend: Sized + 'static {
     type Value<'py>: Clone + Debug;
     type Owned: Clone + 'static;
     type Config: Default;
+    type NativeExtensions: NativeExtensionLoader<Self>;
 
     const NAME: &'static str;
-    const CAPABILITIES: Capabilities;
 
     fn engine(config: Self::Config) -> Result<Self::Engine, Error>;
     fn shutdown(engine: Self::Engine) -> Result<(), Error>;
@@ -55,14 +63,6 @@ pub trait Backend: Sized + 'static {
     fn release(owned: Self::Owned);
 
     fn owned_ptr_eq(first: &Self::Owned, second: &Self::Owned) -> bool;
-}
-
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub struct Capabilities {
-    pub isolated_runtimes: bool,
-    pub finalisation: bool,
-    pub c_extensions: bool,
-    pub memory_limit: bool,
 }
 
 pub enum Step<V> {
@@ -274,7 +274,7 @@ pub(crate) mod tests {
 
     use super::{
         Backend, BackendCallables, BackendClasses, BackendCoroutines, BackendExceptions,
-        BackendInterrupt, BackendLibrary, Capabilities, Step, Tok, Val, callables::RawBody,
+        BackendInterrupt, BackendLibrary, NoNativeExtensions, Step, Tok, Val, callables::RawBody,
         modules::BackendModules, values::BackendValues,
     };
     use crate::errors::{Error, GuestException};
@@ -304,14 +304,9 @@ pub(crate) mod tests {
         type Value<'py> = StubValue;
         type Owned = ();
         type Config = ();
+        type NativeExtensions = NoNativeExtensions;
 
         const NAME: &'static str = "stub";
-        const CAPABILITIES: Capabilities = Capabilities {
-            isolated_runtimes: false,
-            finalisation: false,
-            c_extensions: false,
-            memory_limit: false,
-        };
 
         fn engine(_: Self::Config) -> Result<Self::Engine, Error> {
             unimplemented!()
