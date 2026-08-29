@@ -748,7 +748,7 @@ class FailureLoader:
             );
             assert!(
                 std::fs::read(
-                    &prepared
+                    prepared
                         .bundle
                         .root
                         .join("plugin/.libs/libdependency.so")

@@ -108,28 +108,28 @@ pub mod fixtures {
         {
             ModuleSpec::new("codec")
                 .function("echo_i64", |enter, args| {
-                    Ok::<_, Error>(args.required::<i64>(enter, 0, "value")?)
+                    args.required::<i64>(enter, 0, "value")
                 })
                 .function("echo_u8", |enter, args| {
-                    Ok::<_, Error>(args.required::<u8>(enter, 0, "value")?)
+                    args.required::<u8>(enter, 0, "value")
                 })
                 .function("echo_f64", |enter, args| {
-                    Ok::<_, Error>(args.required::<f64>(enter, 0, "value")?)
+                    args.required::<f64>(enter, 0, "value")
                 })
                 .function("echo_str", |enter, args| {
-                    Ok::<_, Error>(args.required::<String>(enter, 0, "value")?)
+                    args.required::<String>(enter, 0, "value")
                 })
                 .function("echo_list", |enter, args| {
-                    Ok::<_, Error>(args.required::<Vec<i64>>(enter, 0, "value")?)
+                    args.required::<Vec<i64>>(enter, 0, "value")
                 })
                 .function("echo_pair", |enter, args| {
-                    Ok::<_, Error>(args.required::<(i64, String)>(enter, 0, "value")?)
+                    args.required::<(i64, String)>(enter, 0, "value")
                 })
                 .function("echo_map", |enter, args| {
-                    Ok::<_, Error>(args.required::<HashMap<String, i64>>(enter, 0, "value")?)
+                    args.required::<HashMap<String, i64>>(enter, 0, "value")
                 })
                 .function("echo_opt", |enter, args| {
-                    Ok::<_, Error>(args.required::<Option<i64>>(enter, 0, "value")?)
+                    args.required::<Option<i64>>(enter, 0, "value")
                 })
                 .function("add", |enter, args| {
                     Ok::<_, Error>(
@@ -147,7 +147,7 @@ pub mod fixtures {
     impl Raises {
         fn guest(error: Error) -> GuestException {
             match error {
-                Error::Guest(exception) => exception,
+                Error::Guest(exception) => *exception,
                 other => panic!("expected a guest exception, got: {other}"),
             }
         }

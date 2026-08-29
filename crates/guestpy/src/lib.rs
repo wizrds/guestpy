@@ -562,9 +562,9 @@ mod tests {
         }
     }
 
-    impl<B: Backend> Into<Instance<B>> for ManualClient<B> {
-        fn into(self) -> Instance<B> {
-            self.into_instance()
+    impl<B: Backend> From<ManualClient<B>> for Instance<B> {
+        fn from(val: ManualClient<B>) -> Self {
+            val.into_instance()
         }
     }
 

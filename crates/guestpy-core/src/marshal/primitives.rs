@@ -287,7 +287,7 @@ where
     B: Backend + BackendValues,
 {
     fn to_guest<'py>(self, enter: &Enter<'py, B>) -> Result<B::Value<'py>, Error> {
-        Ok(B::bytes(enter.token(), &self.as_ref()))
+        Ok(B::bytes(enter.token(), self.as_ref()))
     }
 }
 

@@ -5,7 +5,7 @@ use guestpy_core::{
     errors::{Error, GuestException},
 };
 use pyo3::{
-    Bound, PyErr, PyTypeInfo,
+    PyErr, PyTypeInfo,
     exceptions::PyBaseException,
     types::{PyAnyMethods, PyType, PyTypeMethods},
 };
@@ -60,7 +60,7 @@ impl BackendExceptions for CPython {
                 Error::sourced_conversion("exception name contains a NUL byte", error)
             })?,
             None,
-            base.map(|base| base.cast::<PyType>().map(Bound::clone))
+            base.map(|base| base.cast::<PyType>().cloned())
                 .transpose()
                 .map_err(|_| Error::type_mismatch("type", "object"))?
                 .as_ref(),

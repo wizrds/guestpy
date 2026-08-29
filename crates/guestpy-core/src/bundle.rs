@@ -168,9 +168,7 @@ impl BundleBuilder {
             .await
             .unwrap_or(false);
 
-        let prefix = is_package
-            .then(|| root.to_owned())
-            .unwrap_or_default();
+        let prefix = if is_package { root.to_owned() } else { Default::default() };
 
         let mut builder = Self::default();
         let mut directories = vec![(path.to_owned(), prefix)];
@@ -471,11 +469,10 @@ mod tests {
     #[cfg(feature = "tokio")]
     impl Drop for DirectoryFixture {
         fn drop(&mut self) {
-            if let Err(error) = std::fs::remove_dir_all(&self.base) {
-                if error.kind() != std::io::ErrorKind::NotFound {
+            if let Err(error) = std::fs::remove_dir_all(&self.base)
+                && error.kind() != std::io::ErrorKind::NotFound {
                     panic!("failed to remove bundle fixture: {error}");
                 }
-            }
         }
     }
 

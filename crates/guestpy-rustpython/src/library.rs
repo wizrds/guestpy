@@ -61,7 +61,7 @@ mod tests {
     impl Raises {
         fn guest(error: Error) -> GuestException {
             match error {
-                Error::Guest(exception) => exception,
+                Error::Guest(exception) => *exception,
                 other => panic!("expected a guest exception, got: {other}"),
             }
         }
