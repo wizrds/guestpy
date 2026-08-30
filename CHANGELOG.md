@@ -1,6 +1,12 @@
 # Changelog
 
 ---
+## [0.2.1](https://github.com/wizrds/guestpy/compare/0.2.0..0.2.1) - 2026-08-30
+
+### Bug Fixes
+
+- Support crate_path attribute in derive macros - ([dd0951a](https://github.com/wizrds/guestpy/commit/dd0951aedb76e5ca02df8644faadf82191e97e32)) - Timothy Pogue
+---
 ## [0.2.0](https://github.com/wizrds/guestpy/compare/0.1.1..0.2.0) - 2026-08-29
 
 ### Bug Fixes
