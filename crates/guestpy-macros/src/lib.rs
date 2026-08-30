@@ -16,18 +16,22 @@ use host::{HostClassMacro, HostModuleMacro};
 use proc_macro::TokenStream;
 use syn::{DeriveInput, ItemImpl, parse_macro_input};
 
-#[proc_macro_derive(ToGuest)]
+#[proc_macro_derive(ToGuest, attributes(guestpy))]
 pub fn derive_to_guest(input: TokenStream) -> TokenStream {
-    GuestDerive::new(parse_macro_input!(input as DeriveInput))
-        .to_guest()
-        .into()
+    match GuestDerive::new(&parse_macro_input!(input as DeriveInput)) {
+        Ok(derive) => derive.to_guest(),
+        Err(error) => error.write_errors(),
+    }
+    .into()
 }
 
-#[proc_macro_derive(FromGuest)]
+#[proc_macro_derive(FromGuest, attributes(guestpy))]
 pub fn derive_from_guest(input: TokenStream) -> TokenStream {
-    GuestDerive::new(parse_macro_input!(input as DeriveInput))
-        .from_guest()
-        .into()
+    match GuestDerive::new(&parse_macro_input!(input as DeriveInput)) {
+        Ok(derive) => derive.from_guest(),
+        Err(error) => error.write_errors(),
+    }
+    .into()
 }
 
 #[proc_macro_attribute]
