@@ -24,6 +24,7 @@ struct ClassOptions {
     name: Option<String>,
     rename_all: Option<RenameRule>,
     extends: PathList,
+    subscriptable: Flag,
     crate_path: Option<Path>,
 }
 
@@ -33,9 +34,13 @@ struct ClassItemOptions {
     constructor: Flag,
     method: Flag,
     async_method: Flag,
+    raw_method: Flag,
+    async_raw_method: Flag,
+    class_method: Flag,
     static_method: Flag,
     get: Flag,
     set: Flag,
+    delete: Flag,
     statics: Flag,
     constant: Flag,
     dunder: Option<String>,
@@ -48,9 +53,13 @@ impl ClassItemOptions {
             self.constructor.is_present(),
             self.method.is_present(),
             self.async_method.is_present(),
+            self.raw_method.is_present(),
+            self.async_raw_method.is_present(),
+            self.class_method.is_present(),
             self.static_method.is_present(),
             self.get.is_present(),
             self.set.is_present(),
+            self.delete.is_present(),
             self.statics.is_present(),
             self.constant.is_present(),
             self.dunder.is_some(),
@@ -64,9 +73,13 @@ impl ClassItemOptions {
 enum ClassMember {
     Method { callable: Callable, exclusive: bool },
     AsyncMethod(Callable),
+    RawMethod(Callable),
+    AsyncRawMethod(Callable),
+    ClassMethod(Callable),
     StaticMethod(Callable),
     Getter(Callable),
     Setter(Callable),
+    Deleter(Callable),
     Dunder { dunder: String, callable: Callable },
     Statics(syn::Ident),
     Constant { ident: syn::Ident, name: String },
@@ -116,6 +129,61 @@ impl ClassMember {
                     });
                 }
             }
+            Self::RawMethod(callable) => {
+                let name = callable.name();
+                let ident = callable.ident();
+                let enter = callable.enter_ident();
+                let args = callable.args_ident();
+                let bindings = callable.argument_bindings();
+                let setup = callable.argument_setup();
+
+                quote! {
+                    builder.raw_method(#name, |__guestpy_this, #enter, #args| {
+                        #setup
+
+                        Self::#ident(#(#bindings),*)
+                            .map_err(::core::convert::Into::into)
+                    });
+                }
+            }
+            Self::AsyncRawMethod(callable) => {
+                let name = callable.name();
+                let ident = callable.ident();
+                let enter = callable.enter_ident();
+                let args = callable.args_ident();
+                let bindings = callable.argument_bindings();
+                let setup = callable.argument_setup();
+
+                quote! {
+                    builder.async_raw_method(#name, |__guestpy_this, #enter, #args| {
+                        #setup
+
+                        Self::#ident(#(#bindings),*)
+                            .map_err(::core::convert::Into::into)
+                    });
+                }
+            }
+            Self::ClassMethod(callable) => {
+                let name = callable.name();
+                let ident = callable.ident();
+                let enter = callable.enter_ident();
+                let args = callable.args_ident();
+                let bindings = callable.argument_bindings();
+                let setup = callable.argument_setup();
+
+                quote! {
+                    builder.class_method(#name, |__guestpy_enter, __guestpy_class, #args| {
+                        let __guestpy_this = &<#krate::handle::Class<B> as #krate::marshal::FromGuest<B>>
+                            ::from_guest(__guestpy_enter, __guestpy_class)?;
+                        let #enter = __guestpy_enter;
+
+                        #setup
+
+                        Self::#ident(#(#bindings),*)
+                            .map_err(::core::convert::Into::into)
+                    });
+                }
+            }
             Self::StaticMethod(callable) => {
                 let name = callable.name();
                 let ident = callable.ident();
@@ -155,6 +223,20 @@ impl ClassMember {
 
                 quote! {
                     builder.setter(#name, |__guestpy_this, #enter, __guestpy_value| {
+                        __guestpy_this
+                            .#ident(#(#arguments),*)
+                            .map_err(::core::convert::Into::into)
+                    });
+                }
+            }
+            Self::Deleter(callable) => {
+                let name = callable.name();
+                let ident = callable.ident();
+                let enter = callable.enter_ident();
+                let arguments = callable.accessor_expressions();
+
+                quote! {
+                    builder.deleter(#name, |__guestpy_this, #enter| {
                         __guestpy_this
                             .#ident(#(#arguments),*)
                             .map_err(::core::convert::Into::into)
@@ -202,6 +284,7 @@ struct HostClassDefinition {
     name: String,
     crate_path: Path,
     extends: Vec<Path>,
+    subscriptable: bool,
     constructor: Option<Callable>,
     members: Vec<ClassMember>,
 }
@@ -290,6 +373,7 @@ impl HostClassDefinition {
                 .iter()
                 .cloned()
                 .collect(),
+            subscriptable: options.subscriptable.is_present(),
             constructor,
             members,
         })
@@ -349,6 +433,19 @@ impl HostClassDefinition {
             .into());
         }
 
+        if callable.uses_this()
+            && !(options.raw_method.is_present()
+                || options.async_raw_method.is_present()
+                || options.class_method.is_present())
+        {
+            return Err(syn::Error::new(
+                callable.span(),
+                "a #[guestpy(this)] parameter is only valid on a raw_method, async_raw_method, \
+                 or class_method",
+            )
+            .into());
+        }
+
         if options.constructor.is_present() {
             Self::require_receiver(&callable, Receiver::None, "a constructor")?;
 
@@ -381,6 +478,18 @@ impl HostClassDefinition {
         } else if options.async_method.is_present() {
             Self::require_receiver(&callable, Receiver::Shared, "an async_method")?;
             members.push(ClassMember::AsyncMethod(callable));
+        } else if options.raw_method.is_present() {
+            Self::require_receiver(&callable, Receiver::None, "a raw_method")?;
+            Self::require_this(&callable, "a raw_method")?;
+            members.push(ClassMember::RawMethod(callable));
+        } else if options.async_raw_method.is_present() {
+            Self::require_receiver(&callable, Receiver::None, "an async_raw_method")?;
+            Self::require_this(&callable, "an async_raw_method")?;
+            members.push(ClassMember::AsyncRawMethod(callable));
+        } else if options.class_method.is_present() {
+            Self::require_receiver(&callable, Receiver::None, "a class_method")?;
+            Self::require_this(&callable, "a class_method")?;
+            members.push(ClassMember::ClassMethod(callable));
         } else if options.static_method.is_present() {
             Self::require_receiver(&callable, Receiver::None, "a static_method")?;
             members.push(ClassMember::StaticMethod(callable));
@@ -422,6 +531,22 @@ impl HostClassDefinition {
             }
 
             members.push(ClassMember::Setter(callable));
+        } else if options.delete.is_present() {
+            Self::require_receiver(&callable, Receiver::Exclusive, "a deleter")?;
+
+            if callable
+                .parameters()
+                .iter()
+                .any(Parameter::consumes_arg)
+            {
+                return Err(syn::Error::new(
+                    callable.span(),
+                    "a #[guestpy(delete)] deleter cannot accept guest arguments",
+                )
+                .into());
+            }
+
+            members.push(ClassMember::Deleter(callable));
         } else {
             Self::require_receiver(&callable, Receiver::Shared, "a dunder")?;
             members.push(ClassMember::Dunder {
@@ -455,11 +580,30 @@ impl HostClassDefinition {
         .into())
     }
 
+    fn require_this(callable: &Callable, subject: &str) -> Result<(), HostMacroError> {
+        if callable
+            .parameters()
+            .iter()
+            .filter(|parameter| parameter.is_this())
+            .count()
+            == 1
+        {
+            return Ok(());
+        }
+
+        Err(syn::Error::new(
+            callable.span(),
+            format!("{subject} requires exactly one #[guestpy(this)] parameter"),
+        )
+        .into())
+    }
+
     fn render(self, item: &ItemImpl) -> TokenStream {
         let Self {
             name,
             crate_path,
             extends,
+            subscriptable,
             constructor,
             members,
         } = self;
@@ -499,7 +643,12 @@ impl HostClassDefinition {
         });
         let has_async_method = members
             .iter()
-            .any(|member| matches!(member, ClassMember::AsyncMethod(_)));
+            .any(|member| {
+                matches!(
+                    member,
+                    ClassMember::AsyncMethod(_) | ClassMember::AsyncRawMethod(_),
+                )
+            });
         let mut definition_generics = item.generics.clone();
 
         definition_generics
@@ -535,11 +684,12 @@ impl HostClassDefinition {
         let bases = extends
             .iter()
             .map(|base| quote!(builder.base::<#base>();));
-        let builder = if members.is_empty() && extends.is_empty() {
+        let builder = if members.is_empty() && extends.is_empty() && !subscriptable {
             quote!(_builder)
         } else {
             quote!(builder)
         };
+        let subscript = subscriptable.then(|| quote!(builder.subscriptable();));
 
         quote! {
             impl #impl_generics #crate_path::host::class::HostClass for #target #where_clause {
@@ -555,6 +705,7 @@ impl HostClassDefinition {
                 fn build(
                     #builder: &mut #crate_path::host::class::ClassBuilder<B, Self>,
                 ) {
+                    #subscript
                     #(#registrations)*
                     #(#bases)*
                 }
@@ -625,6 +776,40 @@ mod tests {
         assert!(output.contains("builder . base :: < BaseVector > ()"));
         assert!(output.contains(". finish () ?"));
         assert!(output.contains("BackendClasses"));
+    }
+
+    #[test]
+    fn generates_raw_class_and_delete_roles_and_a_subscript() {
+        let output = expand(
+            quote!(name = "Contract", subscriptable, crate_path = crate),
+            parse_quote! {
+                impl<B> Contract<B> {
+                    #[guestpy(raw_method)]
+                    fn describe(
+                        #[guestpy(this)] this: &Object<B>,
+                    ) -> Result<String, Error> {
+                        this.type_name()
+                    }
+
+                    #[guestpy(class_method)]
+                    fn of(
+                        #[guestpy(this)] cls: &Class<B>,
+                    ) -> Result<String, Error> {
+                        cls.name()
+                    }
+
+                    #[guestpy(delete)]
+                    fn clear(&mut self) -> Result<(), Error> {
+                        Ok(())
+                    }
+                }
+            },
+        );
+
+        assert!(output.contains("builder . subscriptable ()"));
+        assert!(output.contains("raw_method (\"describe\""));
+        assert!(output.contains("class_method (\"of\""));
+        assert!(output.contains("deleter (\"clear\""));
     }
 
     #[test]

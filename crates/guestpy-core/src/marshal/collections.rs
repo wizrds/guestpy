@@ -94,8 +94,11 @@ where
     type Owned = Vec<T::Owned>;
 
     fn from_guest<'py>(enter: &Enter<'py, B>, value: B::Value<'py>) -> Result<Self::Owned, Error> {
-        if !B::is_list(enter.token(), &value) {
-            return Err(Error::type_mismatch("list", &B::type_name(enter.token(), &value)));
+        if !B::is_list(enter.token(), &value) && !B::is_tuple(enter.token(), &value) {
+            return Err(Error::type_mismatch(
+                "list or tuple",
+                &B::type_name(enter.token(), &value),
+            ));
         }
 
         let iterator = B::iter(enter.token(), &value)?;

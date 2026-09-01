@@ -295,14 +295,6 @@ pub mod fixtures {
                     .eval::<bool>("codec.echo_pair((1, 'a')) == (1, 'a')")
                     .unwrap(),
             );
-            assert!(
-                Raises::guest(
-                    guest
-                        .eval::<bool>("codec.echo_list((1, 2))")
-                        .unwrap_err(),
-                )
-                .matches("TypeError"),
-            );
         }
     }
 

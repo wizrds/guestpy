@@ -53,6 +53,12 @@ pub trait BackendClasses: Backend + BackendValues + BackendCallables {
     ) -> Result<Self::RefMut<'a, C>, Error>;
 
     fn is_host_instance<'py>(token: Tok<'py, Self>, value: &Val<'py, Self>) -> bool;
+
+    fn generic_alias<'py>(
+        token: Tok<'py, Self>,
+        origin: &Val<'py, Self>,
+        arguments: &[Val<'py, Self>],
+    ) -> Result<Val<'py, Self>, Error>;
 }
 
 #[doc(hidden)]

@@ -63,6 +63,7 @@ struct ParameterOptions {
     borrow: Flag,
     borrow_mut: Flag,
     enter: Flag,
+    this: Flag,
 }
 
 impl ParameterOptions {
@@ -73,6 +74,7 @@ impl ParameterOptions {
             self.borrow.is_present(),
             self.borrow_mut.is_present(),
             self.enter.is_present(),
+            self.this.is_present(),
         ]
         .into_iter()
         .filter(|present| *present)
@@ -86,6 +88,7 @@ enum ParameterRole {
     Rest { descriptor: Type },
     Borrow { value_type: Type, mutable: bool },
     Enter,
+    This,
 }
 
 struct ResultType;
@@ -153,7 +156,7 @@ impl Parameter {
         if options.role_count() > 1 {
             return Err(syn::Error::new(
                 argument.span(),
-                "a host parameter may declare only one of kw, rest, borrow, borrow_mut, enter",
+                "a host parameter may declare only one of kw, rest, borrow, borrow_mut, enter, this",
             )
             .into());
         }
@@ -167,7 +170,9 @@ impl Parameter {
         };
 
         let value_type = argument.ty.as_ref();
-        let role = if options.enter.is_present() {
+        let role = if options.this.is_present() {
+            ParameterRole::This
+        } else if options.enter.is_present() {
             ParameterRole::Enter
         } else if options.borrow.is_present() {
             ParameterRole::Borrow {
@@ -264,11 +269,15 @@ impl Parameter {
     }
 
     pub(crate) fn consumes_arg(&self) -> bool {
-        !matches!(self.role, ParameterRole::Enter)
+        !matches!(self.role, ParameterRole::Enter | ParameterRole::This)
     }
 
     pub(crate) fn is_enter(&self) -> bool {
         matches!(self.role, ParameterRole::Enter)
+    }
+
+    pub(crate) fn is_this(&self) -> bool {
+        matches!(self.role, ParameterRole::This)
     }
 
     fn is_rest(&self) -> bool {
@@ -346,6 +355,7 @@ impl Parameter {
                 )
             }
             ParameterRole::Enter => quote!(__guestpy_enter),
+            ParameterRole::This => quote!(__guestpy_this),
         }
     }
 
@@ -364,7 +374,8 @@ impl Parameter {
             ParameterRole::Enter => quote!(__guestpy_enter),
             ParameterRole::Keyword { .. }
             | ParameterRole::Rest { .. }
-            | ParameterRole::Borrow { .. } => unreachable!(),
+            | ParameterRole::Borrow { .. }
+            | ParameterRole::This => unreachable!(),
         }
     }
 }
@@ -459,6 +470,12 @@ impl Callable {
                 .parameters
                 .iter()
                 .any(Parameter::is_enter)
+    }
+
+    pub(crate) fn uses_this(&self) -> bool {
+        self.parameters
+            .iter()
+            .any(Parameter::is_this)
     }
 
     pub(crate) fn enter_ident(&self) -> Ident {

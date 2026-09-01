@@ -781,6 +781,13 @@ pub(crate) mod tests {
         fn is_host_instance<'py>(_: Tok<'py, Self>, _: &Val<'py, Self>) -> bool {
             unimplemented!()
         }
+        fn generic_alias<'py>(
+            _: Tok<'py, Self>,
+            _: &Val<'py, Self>,
+            _: &[Val<'py, Self>],
+        ) -> Result<Val<'py, Self>, Error> {
+            unimplemented!()
+        }
     }
 
     impl BackendCoroutines for Stub {

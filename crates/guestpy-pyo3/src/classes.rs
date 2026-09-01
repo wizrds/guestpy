@@ -10,7 +10,7 @@ use guestpy_core::{
 };
 use pyo3::{
     Bound, PyRef, PyRefMut, pyclass, pymethods,
-    types::{PyAnyMethods, PyTuple, PyType, PyTypeMethods},
+    types::{PyAnyMethods, PyGenericAlias, PyTuple, PyType, PyTypeMethods},
 };
 
 use crate::{engine::CPython, errors::NativeErrors, marker::GilSerialized};
@@ -188,6 +188,22 @@ impl BackendClasses for CPython {
 
     fn is_host_instance<'py>(_: Tok<'py, Self>, value: &Val<'py, Self>) -> bool {
         value.is_instance_of::<HostObject>()
+    }
+
+    fn generic_alias<'py>(
+        py: Tok<'py, Self>,
+        origin: &Val<'py, Self>,
+        arguments: &[Val<'py, Self>],
+    ) -> Result<Val<'py, Self>, Error> {
+        Ok(PyGenericAlias::new(
+            py,
+            origin,
+            &PyTuple::new(py, arguments.to_vec())
+                .map_err(|error| CPython::guest(py, error))?
+                .into_any(),
+        )
+        .map_err(|error| CPython::guest(py, error))?
+        .into_any())
     }
 }
 

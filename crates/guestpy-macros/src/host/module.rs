@@ -419,6 +419,15 @@ impl HostModuleDefinition {
             Naming::member(&method.sig.ident, options.name.clone(), rename_all),
         )?;
 
+        if callable.uses_this() {
+            return Err(syn::Error::new(
+                callable.span(),
+                "a #[guestpy(this)] parameter is only valid on a host class raw_method, \
+                 async_raw_method, or class_method",
+            )
+            .into());
+        }
+
         if options.getter.is_present() {
             if callable.asynchronous() {
                 return Err(syn::Error::new(

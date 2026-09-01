@@ -9,7 +9,7 @@ use crate::{
         callables::{HostBody, PendingValue, RawBody},
     },
     errors::Error,
-    handle::Value,
+    handle::{Object, Value},
     host::{
         declaration::{DeclarationContext, DeclareMember, Member},
         dunder::Dunder,
@@ -551,6 +551,19 @@ where
         )
     }
 
+    pub fn raw_method<F, R>(&mut self, name: &str, function: F) -> &mut Self
+    where
+        F: for<'py> Fn(&Object<B>, &Enter<'py, B>, Args<'py, B>) -> Result<R, Error> + 'static,
+        R: ToGuest<B> + 'static,
+    {
+        self.push(
+            name,
+            Rc::new(MethodDeclaration::new(Rc::new(move |enter, receiver, args| {
+                function(&Object::from_guest(enter, receiver)?, enter, args)?.to_guest(enter)
+            }))),
+        )
+    }
+
     pub fn class_method<F, R>(&mut self, name: &str, function: F) -> &mut Self
     where
         F: for<'py> Fn(&Enter<'py, B>, B::Value<'py>, Args<'py, B>) -> Result<R, Error> + 'static,
@@ -652,6 +665,30 @@ where
 
         self
     }
+
+    pub fn subscriptable(&mut self) -> &mut Self {
+        self.class_method("__class_getitem__", |enter, class, args| {
+            let item = args
+                .required::<Value<B>>(enter, 0, "item")?
+                .to_guest(enter)?;
+            let mut arguments = Vec::new();
+
+            if B::is_tuple(enter.token(), &item) {
+                let iterator = B::iter(enter.token(), &item)?;
+
+                while let Some(argument) = B::next(enter.token(), &iterator)? {
+                    arguments.push(argument);
+                }
+            } else {
+                arguments.push(item);
+            }
+
+            Value::<B>::from_guest(
+                enter,
+                B::generic_alias(enter.token(), &class, &arguments)?,
+            )
+        })
+    }
 }
 
 impl<B, C> ClassBuilder<B, C>
@@ -687,6 +724,23 @@ where
             name,
             Rc::new(MethodDeclaration::new(Rc::new(move |enter, receiver, args| {
                 Self::pending(enter, function(&*C::from_guest_ref(enter, &receiver)?, enter, args)?)
+            }))),
+        )
+    }
+
+    pub fn async_raw_method<F, Fut, R>(&mut self, name: &str, function: F) -> &mut Self
+    where
+        F: for<'py> Fn(&Object<B>, &Enter<'py, B>, Args<'py, B>) -> Result<Fut, Error> + 'static,
+        Fut: Future<Output = Result<R, Error>> + 'static,
+        R: ToGuest<B> + 'static,
+    {
+        self.push(
+            name,
+            Rc::new(MethodDeclaration::new(Rc::new(move |enter, receiver, args| {
+                Self::pending(
+                    enter,
+                    function(&Object::from_guest(enter, receiver)?, enter, args)?,
+                )
             }))),
         )
     }

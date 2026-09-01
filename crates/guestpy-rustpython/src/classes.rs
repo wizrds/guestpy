@@ -11,7 +11,7 @@ use guestpy_core::{
 };
 use rustpython_vm::{
     AsObject, Context, Py, PyObjectRef, PyPayload, PyRef,
-    builtins::PyType,
+    builtins::{PyGenericAlias, PyType},
     class::{PyClassImpl, StaticType},
     object::{MaybeTraverse, TraverseFn},
     pyclass,
@@ -175,6 +175,21 @@ impl BackendClasses for RustPython {
         value
             .class()
             .fast_issubclass(HostBase::class(&vm.ctx))
+    }
+
+    fn generic_alias<'py>(
+        vm: Tok<'py, Self>,
+        origin: &Val<'py, Self>,
+        arguments: &[Val<'py, Self>],
+    ) -> Result<Val<'py, Self>, Error> {
+        Ok(PyGenericAlias::new(
+            origin.clone(),
+            vm.ctx.new_tuple(arguments.to_vec()),
+            false,
+            vm,
+        )
+        .map_err(|error| RustPython::guest(vm, error))?
+        .into_pyobject(vm))
     }
 }
 
