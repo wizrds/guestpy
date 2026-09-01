@@ -1,18 +1,20 @@
 use darling::{
     FromMeta,
     ast::NestedMeta,
-    util::{Flag, PathList},
+    util::Flag,
 };
 use proc_macro2::TokenStream;
 use quote::quote;
-use syn::{ImplItem, ItemImpl, Path, parse_quote};
+use syn::{ImplItem, ItemImpl, Path, Type, parse_quote};
 
 use crate::{
     attributes::HelperAttributes,
     host::{
-        HostMacroError,
+        backend::BackendParameter,
         callable::{Callable, Parameter, Receiver},
         target::HostTarget,
+        types::TypeList,
+        HostMacroError,
     },
     naming::{Naming, RenameRule},
     path::CratePath,
@@ -23,7 +25,8 @@ use crate::{
 struct ClassOptions {
     name: Option<String>,
     rename_all: Option<RenameRule>,
-    extends: PathList,
+    backend: Option<Type>,
+    extends: TypeList,
     subscriptable: Flag,
     crate_path: Option<Path>,
 }
@@ -86,7 +89,7 @@ enum ClassMember {
 }
 
 impl ClassMember {
-    fn registration(&self, krate: &Path) -> TokenStream {
+    fn registration(&self, krate: &Path, backend: &Type) -> TokenStream {
         match self {
             Self::Method { callable, exclusive } => {
                 let verb = if *exclusive {
@@ -173,8 +176,10 @@ impl ClassMember {
 
                 quote! {
                     builder.class_method(#name, |__guestpy_enter, __guestpy_class, #args| {
-                        let __guestpy_this = &<#krate::handle::Class<B> as #krate::marshal::FromGuest<B>>
-                            ::from_guest(__guestpy_enter, __guestpy_class)?;
+                        let __guestpy_this = &<
+                            #krate::handle::Class<#backend>
+                            as #krate::marshal::FromGuest<#backend>
+                        >::from_guest(__guestpy_enter, __guestpy_class)?;
                         let #enter = __guestpy_enter;
 
                         #setup
@@ -283,7 +288,8 @@ pub(crate) struct HostClassMacro {
 struct HostClassDefinition {
     name: String,
     crate_path: Path,
-    extends: Vec<Path>,
+    backend: BackendParameter,
+    extends: TypeList,
     subscriptable: bool,
     constructor: Option<Callable>,
     members: Vec<ClassMember>,
@@ -368,11 +374,8 @@ impl HostClassDefinition {
                 .name
                 .unwrap_or_else(|| target.name()),
             crate_path: CratePath::new(options.crate_path).resolve(),
-            extends: options
-                .extends
-                .iter()
-                .cloned()
-                .collect(),
+            backend: BackendParameter::resolve(options.backend, item, "host_class")?,
+            extends: options.extends,
             subscriptable: options.subscriptable.is_present(),
             constructor,
             members,
@@ -602,12 +605,14 @@ impl HostClassDefinition {
         let Self {
             name,
             crate_path,
+            backend,
             extends,
             subscriptable,
             constructor,
             members,
         } = self;
         let target = item.self_ty.as_ref();
+        let backend_type = backend.ty();
         let mut generics = item.generics.clone();
 
         generics
@@ -625,8 +630,8 @@ impl HostClassDefinition {
 
             quote! {
                 fn construct<'py>(
-                    #enter: &#crate_path::scope::Enter<'py, B>,
-                    #args: #crate_path::marshal::args::Args<'py, B>,
+                    #enter: &#crate_path::scope::Enter<'py, #backend_type>,
+                    #args: #crate_path::marshal::args::Args<'py, #backend_type>,
                 ) -> ::core::result::Result<Self, #crate_path::errors::Error> {
                     #setup
 
@@ -643,38 +648,28 @@ impl HostClassDefinition {
                     ClassMember::AsyncMethod(_) | ClassMember::AsyncRawMethod(_),
                 )
             });
-        let mut definition_generics = item.generics.clone();
+        let mut capabilities = vec![
+            quote!(#crate_path::backend::Backend),
+            quote!(#crate_path::backend::BackendValues),
+            quote!(#crate_path::backend::BackendCallables),
+            quote!(#crate_path::backend::BackendClasses),
+        ];
 
-        definition_generics
-            .params
-            .push(parse_quote!(B));
-        definition_generics
-            .make_where_clause()
-            .predicates
-            .push(if has_async_method {
-                parse_quote! {
-                    B: #crate_path::backend::Backend
-                        + #crate_path::backend::BackendValues
-                        + #crate_path::backend::BackendCallables
-                        + #crate_path::backend::BackendClasses
-                        + #crate_path::backend::BackendModules
-                        + #crate_path::backend::BackendCoroutines
-                        + #crate_path::backend::BackendExceptions
-                }
-            } else {
-                parse_quote! {
-                    B: #crate_path::backend::Backend
-                        + #crate_path::backend::BackendValues
-                        + #crate_path::backend::BackendCallables
-                        + #crate_path::backend::BackendClasses
-                }
-            });
+        if has_async_method {
+            capabilities.extend([
+                quote!(#crate_path::backend::BackendModules),
+                quote!(#crate_path::backend::BackendCoroutines),
+                quote!(#crate_path::backend::BackendExceptions),
+            ]);
+        }
+
+        let definition_generics = backend.definition_generics(&item.generics, &capabilities);
 
         let (definition_impl_generics, _, definition_where_clause) =
             definition_generics.split_for_impl();
         let registrations = members
             .iter()
-            .map(|member| member.registration(&crate_path));
+            .map(|member| member.registration(&crate_path, &backend_type));
         let bases = extends
             .iter()
             .map(|base| quote!(builder.base::<#base>();));
@@ -691,13 +686,13 @@ impl HostClassDefinition {
             }
 
             impl #definition_impl_generics
-                #crate_path::host::class::HostClassDefinition<B>
+                #crate_path::host::class::HostClassDefinition<#backend_type>
                 for #target #definition_where_clause
             {
                 #construct
 
                 fn build(
-                    #builder: &mut #crate_path::host::class::ClassBuilder<B, Self>,
+                    #builder: &mut #crate_path::host::class::ClassBuilder<#backend_type, Self>,
                 ) {
                     #subscript
                     #(#registrations)*
@@ -712,6 +707,8 @@ impl HostClassDefinition {
 mod tests {
     use quote::quote;
     use syn::parse_quote;
+
+    use crate::host::HostMacroError;
 
     use super::HostClassMacro;
 
@@ -760,7 +757,10 @@ mod tests {
 
         assert!(output.contains("HostClass for Vector2"));
         assert!(output.contains("const NAME : & 'static str = \"Vector2\""));
-        assert!(output.contains("fn construct"));
+        assert!(
+            output.find("fn construct").unwrap()
+                > output.find("HostClassDefinition").unwrap(),
+        );
         assert!(output.contains("HostClassDefinition < B > for Vector2"));
         assert!(output.contains("builder . method (\"length\""));
         assert!(output.contains("builder . method_mut (\"translate\""));
@@ -775,7 +775,12 @@ mod tests {
     #[test]
     fn generates_raw_class_and_delete_roles_and_a_subscript() {
         let output = expand(
-            quote!(name = "Contract", subscriptable, crate_path = crate),
+            quote!(
+                name = "Contract",
+                backend = B,
+                subscriptable,
+                crate_path = crate,
+            ),
             parse_quote! {
                 impl<B> Contract<B> {
                     #[guestpy(raw_method)]
@@ -804,6 +809,7 @@ mod tests {
         assert!(output.contains("raw_method (\"describe\""));
         assert!(output.contains("class_method (\"of\""));
         assert!(output.contains("deleter (\"clear\""));
+        assert!(output.contains("HostClassDefinition < B > for Contract < B >"));
     }
 
     #[test]
@@ -902,5 +908,89 @@ mod tests {
             )
             .is_err(),
         );
+    }
+
+    #[test]
+    fn reuses_a_declared_backend_parameter() {
+        let output = expand(
+            quote!(name = "Envelope", backend = B, crate_path = crate),
+            parse_quote! {
+                impl<B: Backend> Envelope<B> {
+                    #[guestpy(constructor)]
+                    fn new(payload: Object<B>) -> Result<Self, Error> {
+                        Ok(Self { payload })
+                    }
+
+                    #[guestpy(get)]
+                    fn payload(&self) -> Result<Object<B>, Error> {
+                        Ok(self.payload.clone())
+                    }
+                }
+            },
+        );
+
+        assert!(output.contains("HostClass for Envelope < B >"));
+        assert!(output.contains("HostClassDefinition < B > for Envelope < B >"));
+        assert!(output.contains("ClassBuilder < B , Self >"));
+        assert!(!output.contains("__GuestpyBackend"));
+    }
+
+    #[test]
+    fn pins_a_class_to_a_concrete_backend() {
+        let output = expand(
+            quote!(name = "Envelope", backend = RustPython, crate_path = crate),
+            parse_quote! {
+                impl Envelope {
+                    #[guestpy(class_method)]
+                    fn of(#[guestpy(this)] cls: &Class<RustPython>) -> Result<String, Error> {
+                        cls.name()
+                    }
+                }
+            },
+        );
+
+        assert!(output.contains("HostClassDefinition < RustPython > for Envelope"));
+        assert!(output.contains("ClassBuilder < RustPython , Self >"));
+        assert!(output.contains("Class < RustPython >"));
+        assert!(!output.contains("HostClassDefinition < B >"));
+    }
+
+    #[test]
+    fn renames_the_synthesized_backend_when_b_is_taken() {
+        let output = expand(
+            quote!(name = "Wrapper", crate_path = crate),
+            parse_quote! {
+                impl<B: Serialize> Wrapper<B> {
+                    #[guestpy(method)]
+                    fn describe(&self) -> Result<String, Error> {
+                        Ok(String::new())
+                    }
+                }
+            },
+        );
+
+        assert!(output.contains("HostClassDefinition < __GuestpyBackend > for Wrapper < B >"));
+        assert!(output.contains("ClassBuilder < __GuestpyBackend , Self >"));
+    }
+
+    #[test]
+    fn rejects_a_backend_bounded_parameter_without_a_declaration() {
+        let Err(HostMacroError::Syntax(error)) = HostClassMacro::new(
+            quote!(name = "Envelope", crate_path = crate),
+            parse_quote! {
+                impl<B: Backend> Envelope<B> {
+                    #[guestpy(method)]
+                    fn describe(&self) -> Result<String, Error> {
+                        Ok(String::new())
+                    }
+                }
+            },
+        ) else {
+            panic!(
+                "a Backend-bounded parameter without a declaration returns a syntax error",
+            );
+        };
+
+        assert!(error.to_string().contains("backend = B"));
     }
 }

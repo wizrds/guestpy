@@ -5,14 +5,16 @@ use darling::{
 };
 use proc_macro2::{Span, TokenStream};
 use quote::quote;
-use syn::{FnArg, ImplItem, ImplItemFn, ItemImpl, Path, spanned::Spanned};
+use syn::{FnArg, ImplItem, ImplItemFn, ItemImpl, Path, Type, spanned::Spanned};
 
 use crate::{
     attributes::HelperAttributes,
     host::{
-        HostMacroError,
+        backend::BackendParameter,
         callable::{Callable, Parameter, Receiver},
         target::HostTarget,
+        types::TypeList,
+        HostMacroError,
     },
     naming::{Naming, RenameRule},
     path::CratePath,
@@ -24,7 +26,8 @@ struct ModuleOptions {
     name: Option<String>,
     rename_all: Option<RenameRule>,
     method_name: Option<syn::Ident>,
-    classes: PathList,
+    backend: Option<Type>,
+    classes: TypeList,
     exceptions: PathList,
     crate_path: Option<Path>,
 }
@@ -215,7 +218,8 @@ struct HostModuleDefinition {
     name: String,
     method_name: syn::Ident,
     crate_path: Path,
-    classes: Vec<Path>,
+    backend: BackendParameter,
+    classes: TypeList,
     exceptions: Vec<String>,
     members: Vec<ModuleMember>,
     needs_state: bool,
@@ -313,11 +317,8 @@ impl HostModuleDefinition {
                 .method_name
                 .unwrap_or_else(|| syn::Ident::new("module", Span::call_site())),
             crate_path: CratePath::new(options.crate_path).resolve(),
-            classes: options
-                .classes
-                .iter()
-                .cloned()
-                .collect(),
+            backend: BackendParameter::resolve(options.backend, item, "host_module")?,
+            classes: options.classes,
             exceptions: options
                 .exceptions
                 .iter()
@@ -524,6 +525,7 @@ impl HostModuleDefinition {
             name,
             method_name,
             crate_path,
+            backend,
             classes,
             exceptions,
             members,
@@ -553,36 +555,52 @@ impl HostModuleDefinition {
         let has_async_function = members.iter().any(
             |member| matches!(member, ModuleMember::Function(callable) if callable.asynchronous()),
         );
-        let has_class = !classes.is_empty();
-        let needs_exceptions = has_async_function || !exceptions.is_empty();
-        let async_bound = has_async_function.then(|| {
-            quote! {
-                + #crate_path::backend::BackendModules
-                + #crate_path::backend::BackendCoroutines
-            }
-        });
-        let class_bound = has_class.then(|| quote!(+ #crate_path::backend::BackendClasses));
-        let exception_bound =
-            needs_exceptions.then(|| quote!(+ #crate_path::backend::BackendExceptions));
-        let class_definition_bounds = classes
-            .iter()
-            .map(|class| quote!(#class: #crate_path::host::class::HostClassDefinition<B>,));
+        let backend_type = backend.ty();
+        let method_generics = backend.method_generics();
+        let mut capabilities = vec![
+            quote!(#crate_path::backend::Backend),
+            quote!(#crate_path::backend::BackendValues),
+            quote!(#crate_path::backend::BackendCallables),
+        ];
+
+        if !classes.is_empty() {
+            capabilities.push(quote!(#crate_path::backend::BackendClasses));
+        }
+
+        if has_async_function {
+            capabilities.extend([
+                quote!(#crate_path::backend::BackendModules),
+                quote!(#crate_path::backend::BackendCoroutines),
+            ]);
+        }
+
+        if has_async_function || !exceptions.is_empty() {
+            capabilities.push(quote!(#crate_path::backend::BackendExceptions));
+        }
+
+        let method_where_clause = backend
+            .capability_predicate(&capabilities)
+            .map(|predicate| {
+                let class_definition_bounds = classes.iter().map(|class| {
+                    quote!(#class: #crate_path::host::class::HostClassDefinition<#backend_type>,)
+                });
+
+                quote! {
+                    where
+                        #predicate,
+                        #(#class_definition_bounds)*
+                }
+            });
 
         quote! {
             impl #impl_generics #target #where_clause {
-                pub fn #method_name<B>(#receiver) -> #crate_path::host::module::ModuleSpec<B>
-                where
-                    B: #crate_path::backend::Backend
-                        + #crate_path::backend::BackendValues
-                        + #crate_path::backend::BackendCallables
-                        #class_bound
-                        #async_bound
-                        #exception_bound,
-                    #(#class_definition_bounds)*
+                pub fn #method_name #method_generics (#receiver)
+                    -> #crate_path::host::module::ModuleSpec<#backend_type>
+                #method_where_clause
                 {
                     #state
 
-                    #crate_path::host::module::ModuleSpec::<B>::new(#name)
+                    #crate_path::host::module::ModuleSpec::<#backend_type>::new(#name)
                         #(#registrations)*
                         #(#exception_registrations)*
                         #(#class_registrations)*
@@ -800,5 +818,48 @@ mod tests {
             )
             .is_err(),
         );
+    }
+
+    #[test]
+    fn registers_a_generic_class() {
+        let output = expand(
+            quote!(name = "host_mail", classes(Envelope<B>), crate_path = crate),
+            parse_quote! {
+                impl Mail {}
+            },
+        );
+
+        assert!(output.contains(". class :: < Envelope < B > > ()"));
+        assert!(
+            output.contains(
+                "Envelope < B > : crate :: host :: class :: HostClassDefinition < B >",
+            ),
+        );
+    }
+
+    #[test]
+    fn reuses_a_declared_backend_parameter() {
+        let output = expand(
+            quote!(name = "host_mail", backend = B, crate_path = crate),
+            parse_quote! {
+                impl<B> Mail<B> {}
+            },
+        );
+
+        assert!(output.contains("ModuleSpec < B >"));
+        assert!(!output.contains("fn module < B >"));
+    }
+
+    #[test]
+    fn pins_a_module_to_a_concrete_backend() {
+        let output = expand(
+            quote!(name = "host_mail", backend = RustPython, crate_path = crate),
+            parse_quote! {
+                impl Mail {}
+            },
+        );
+
+        assert!(output.contains("ModuleSpec < RustPython >"));
+        assert!(!output.contains("where"));
     }
 }

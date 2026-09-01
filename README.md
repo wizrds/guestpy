@@ -469,10 +469,8 @@ and asynchronous host work. Refer to the API documentation when one of those cap
 
 ## Backend-generic host classes
 
-A host class whose payload holds guest values rather than plain Rust data is written by hand instead
-of through the macro. `HostClass` carries the class identity, and `HostClassDefinition<B>` carries
-construction and member registration against one backend, so the type itself can be generic over `B`
-and store handles such as `Object<B>`:
+A host class that stores guest values rather than plain Rust data is generic over the backend. Name
+the backend parameter with `backend` so the macro knows which one it is:
 
 ```rust
 use guestpy::prelude::*;
@@ -481,34 +479,35 @@ struct Envelope<B: Backend> {
     payload: Object<B>,
 }
 
-impl<B: Backend> HostClass for Envelope<B> {
-    const NAME: &'static str = "Envelope";
-}
-
-impl<B> HostClassDefinition<B> for Envelope<B>
-where
-    B: Backend + BackendValues + BackendCallables + BackendClasses,
-{
-    fn construct<'py>(enter: &Enter<'py, B>, args: Args<'py, B>) -> Result<Self, Error> {
-        let envelope = Self {
-            payload: args.required::<Object<B>>(enter, 0, "payload")?,
-        };
-
-        args.finish()?;
-
-        Ok(envelope)
+#[guestpy::host_class(backend = B)]
+impl<B: Backend> Envelope<B> {
+    #[guestpy(constructor)]
+    fn new(payload: Object<B>) -> Result<Self, Error> {
+        Ok(Self { payload })
     }
 
-    fn build(builder: &mut ClassBuilder<B, Self>) {
-        builder.getter("payload", |envelope, _| Ok(envelope.payload.clone()));
+    #[guestpy(get)]
+    fn payload(&self) -> Result<Object<B>, Error> {
+        Ok(self.payload.clone())
     }
 }
 ```
 
-Register it by naming the backend the module is built for:
+Register it like any other class, naming the parameter the generated module method is generic over:
 
 ```rust
-let spec = ModuleSpec::<CPython>::new("host_mail").class::<Envelope<CPython>>();
+struct Mail;
+
+#[guestpy::host_module(name = "host_mail", classes(Envelope<B>))]
+impl Mail {}
+```
+
+`backend` also accepts a concrete backend, which pins the class to one interpreter. That is the
+honest spelling when the payload is backend-specific:
+
+```rust
+#[guestpy::host_class(backend = CPython)]
+impl Envelope { ... }
 ```
 
 ## Host modules
