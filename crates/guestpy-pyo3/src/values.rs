@@ -443,3 +443,10 @@ impl BackendValues for CPython {
             .map_err(|error| CPython::guest(py, error))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::engine::CPython;
+
+    guestpy_core::backend::values::fixtures::tests!(CPython);
+}

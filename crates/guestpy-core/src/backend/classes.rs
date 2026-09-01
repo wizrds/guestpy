@@ -69,7 +69,10 @@ pub mod fixtures {
             BackendInterrupt, BackendModules, BackendValues, guest_fixture,
         },
         errors::Error,
-        handle::{Class, Instance, ObjectProtocol},
+        handle::{
+            Annotated, Class, Coroutine, Function, GenericAlias, Instance, Module, Named, Object,
+            ObjectProtocol, TypeProtocol,
+        },
         host::{
             class::{ClassBuilder, HostClass, HostClassDefinition},
             module::ModuleSpec,
@@ -113,6 +116,46 @@ pub mod fixtures {
 
                     Ok::<_, Error>(())
                 });
+        }
+    }
+
+    struct Contract;
+
+    impl HostClass for Contract {
+        const NAME: &'static str = "Contract";
+        const DOC: Option<&'static str> = Some("Reports a result for an input.");
+
+        fn construct<'py, B>(_: &Enter<'py, B>, args: Args<'py, B>) -> Result<Self, Error>
+        where
+            B: Backend + BackendValues + BackendCallables + BackendClasses,
+        {
+            args.finish()?;
+
+            Ok(Self)
+        }
+    }
+
+    impl<B> HostClassDefinition<B> for Contract
+    where
+        B: Backend
+            + BackendValues
+            + BackendCallables
+            + BackendClasses
+            + BackendModules
+            + BackendCoroutines
+            + BackendExceptions,
+    {
+        fn build(builder: &mut ClassBuilder<B, Self>) {
+            builder.subscriptable();
+
+            builder.async_raw_method("invoke", |this, enter, args| {
+                let this = this.clone();
+                let city = args.required::<String>(enter, 0, "city")?;
+
+                args.finish()?;
+
+                Ok(async move { this.call_method::<_, String>("execute", (city,)) })
+            });
         }
     }
 
@@ -358,6 +401,409 @@ e = Empty(3, 4)
         }
     }
 
+    guest_fixture! {
+        pub fn class_handle_reads_class_attributes<B>()
+        where B: [
+            Backend,
+            BackendValues,
+            BackendCallables,
+            BackendClasses,
+            BackendModules,
+            BackendCoroutines,
+            BackendExceptions,
+            BackendInterrupt,
+        ]
+        using Runtime::<B>::builder();
+        |guest| {
+            guest
+                .exec(
+                    r#"
+class Impl:
+    description = 'a description'
+"#,
+                )
+                .unwrap();
+
+            let class = guest.eval::<Class<B>>("Impl").unwrap();
+
+            assert_eq!(class.get::<String>("description").unwrap(), "a description");
+            assert!(class.has("description").unwrap());
+            assert!(!class.has("missing").unwrap());
+            assert!(class.dir().unwrap().contains(&String::from("description")));
+            assert_eq!(class.name().unwrap(), "Impl");
+        }
+    }
+
+    guest_fixture! {
+        pub fn module_and_function_expose_names_and_annotations<B>()
+        where B: [
+            Backend,
+            BackendValues,
+            BackendCallables,
+            BackendClasses,
+            BackendModules,
+            BackendCoroutines,
+            BackendExceptions,
+            BackendInterrupt,
+        ]
+        using Runtime::<B>::builder();
+        |guest| {
+            guest
+                .exec(
+                    r#"
+import types
+
+m = types.ModuleType('probe')
+m.__doc__ = 'a probe'
+
+def scale(value: int, factor: float) -> float:
+    return value * factor
+"#,
+                )
+                .unwrap();
+
+            let module = guest.eval::<Module<B>>("m").unwrap();
+            let function = guest.eval::<Function<B>>("scale").unwrap();
+
+            assert_eq!(module.name().unwrap(), "probe");
+            assert_eq!(module.doc().unwrap(), Some(String::from("a probe")));
+            assert_eq!(function.name().unwrap(), "scale");
+            assert!(function.annotation("factor").unwrap().is_some());
+            assert!(function.annotation("missing").unwrap().is_none());
+            assert_eq!(
+                function
+                    .annotations()
+                    .unwrap()
+                    .iter()
+                    .map(|(name, _)| name.clone())
+                    .collect::<Vec<_>>(),
+                vec![
+                    String::from("value"),
+                    String::from("factor"),
+                    String::from("return"),
+                ],
+            );
+        }
+    }
+
+    guest_fixture! {
+        pub fn class_reports_bases_and_mro<B>()
+        where B: [
+            Backend,
+            BackendValues,
+            BackendCallables,
+            BackendClasses,
+            BackendModules,
+            BackendCoroutines,
+            BackendExceptions,
+            BackendInterrupt,
+        ]
+        using Runtime::<B>::builder();
+        |guest| {
+            guest
+                .exec(
+                    r#"
+class Base:
+    pass
+
+class Derived(Base):
+    pass
+"#,
+                )
+                .unwrap();
+
+            let derived = guest.eval::<Class<B>>("Derived").unwrap();
+
+            assert_eq!(
+                derived
+                    .bases()
+                    .unwrap()
+                    .iter()
+                    .map(Named::name)
+                    .collect::<Result<Vec<_>, _>>()
+                    .unwrap(),
+                vec![String::from("Base")],
+            );
+            assert_eq!(
+                derived
+                    .mro()
+                    .unwrap()
+                    .iter()
+                    .map(Named::name)
+                    .collect::<Result<Vec<_>, _>>()
+                    .unwrap(),
+                vec![
+                    String::from("Derived"),
+                    String::from("Base"),
+                    String::from("object"),
+                ],
+            );
+        }
+    }
+
+    guest_fixture! {
+        pub fn isinstance_and_issubclass_agree_across_backends<B>()
+        where B: [
+            Backend,
+            BackendValues,
+            BackendCallables,
+            BackendClasses,
+            BackendModules,
+            BackendCoroutines,
+            BackendExceptions,
+            BackendInterrupt,
+        ]
+        using Runtime::<B>::builder()
+            .bind(ModuleSpec::new("host_lib").class::<Contract>());
+        |guest| {
+            guest.exec("import host_lib").unwrap();
+            guest
+                .exec(
+                    r#"
+class Impl(host_lib.Contract):
+    pass
+
+class Plain:
+    pass
+
+i = Impl()
+p = Plain()
+"#,
+                )
+                .unwrap();
+
+            let contract = guest.eval::<Class<B>>("host_lib.Contract").unwrap();
+            let implementation = guest.eval::<Class<B>>("Impl").unwrap();
+            let plain = guest.eval::<Class<B>>("Plain").unwrap();
+            let instance = guest.eval::<Object<B>>("i").unwrap();
+            let other = guest.eval::<Object<B>>("p").unwrap();
+
+            assert!(instance.is_instance_of(&contract).unwrap());
+            assert!(instance.is_instance_of(&implementation).unwrap());
+            assert!(!other.is_instance_of(&contract).unwrap());
+            assert!(implementation.is_subclass_of(&contract).unwrap());
+            assert!(!plain.is_subclass_of(&contract).unwrap());
+            assert!(contract.is_subclass_of(&contract).unwrap());
+        }
+    }
+
+    guest_fixture! {
+        pub fn host_class_is_subscriptable<B>()
+        where B: [
+            Backend,
+            BackendValues,
+            BackendCallables,
+            BackendClasses,
+            BackendModules,
+            BackendCoroutines,
+            BackendExceptions,
+            BackendInterrupt,
+        ]
+        using Runtime::<B>::builder()
+            .bind(ModuleSpec::new("host_lib").class::<Contract>());
+        |guest| {
+            guest.exec("import host_lib").unwrap();
+            guest
+                .exec(
+                    r#"
+class Args:
+    pass
+
+class Result:
+    pass
+
+alias = host_lib.Contract[Args, Result]
+"#,
+                )
+                .unwrap();
+
+            let alias = GenericAlias::of(&guest.eval::<Object<B>>("alias").unwrap())
+                .unwrap()
+                .unwrap();
+
+            assert_eq!(alias.origin().unwrap().name().unwrap(), "Contract");
+            assert_eq!(
+                alias
+                    .arguments()
+                    .unwrap()
+                    .iter()
+                    .map(|argument| {
+                        argument
+                            .cast::<Class<B>>()
+                            .and_then(|class| class.name())
+                    })
+                    .collect::<Result<Vec<_>, _>>()
+                    .unwrap(),
+                vec![String::from("Args"), String::from("Result")],
+            );
+
+            guest.exec("single = host_lib.Contract[Args]").unwrap();
+
+            assert_eq!(
+                GenericAlias::of(&guest.eval::<Object<B>>("single").unwrap())
+                    .unwrap()
+                    .unwrap()
+                    .arguments()
+                    .unwrap()
+                    .len(),
+                1,
+            );
+
+            guest
+                .exec(
+                    r#"
+class Impl(host_lib.Contract[Args, Result]):
+    pass
+"#,
+                )
+                .unwrap();
+
+            let implementation = guest.eval::<Class<B>>("Impl").unwrap();
+
+            assert!(
+                implementation
+                    .is_subclass_of(&guest.eval::<Class<B>>("host_lib.Contract").unwrap())
+                    .unwrap(),
+            );
+            assert_eq!(
+                implementation
+                    .generic_base_of(&guest.eval::<Class<B>>("host_lib.Contract").unwrap())
+                    .unwrap()
+                    .unwrap()
+                    .arguments()
+                    .unwrap()
+                    .len(),
+                2,
+            );
+        }
+    }
+
+    guest_fixture! {
+        pub async fn host_base_method_calls_guest_override<B>()
+        where B: [
+            Backend,
+            BackendValues,
+            BackendCallables,
+            BackendClasses,
+            BackendModules,
+            BackendCoroutines,
+            BackendExceptions,
+            BackendInterrupt,
+        ]
+        using Runtime::<B>::builder()
+            .bind(ModuleSpec::new("host_lib").class::<Contract>());
+        |guest| {
+            guest.exec("import host_lib").unwrap();
+            guest
+                .exec(
+                    r#"
+class Impl(host_lib.Contract):
+    def execute(self, city):
+        return 'sunny in ' + city
+"#,
+                )
+                .unwrap();
+
+            assert_eq!(
+                guest
+                    .eval::<Instance<B>>("Impl()")
+                    .unwrap()
+                    .call_method::<_, Coroutine<B, String>>("invoke", ("Vancouver",))
+                    .unwrap()
+                    .await
+                    .unwrap(),
+                "sunny in Vancouver",
+            );
+        }
+    }
+
+    guest_fixture! {
+        pub fn annotations_preserve_declaration_order<B>()
+        where B: [
+            Backend,
+            BackendValues,
+            BackendCallables,
+            BackendClasses,
+            BackendModules,
+            BackendCoroutines,
+            BackendExceptions,
+            BackendInterrupt,
+        ]
+        using Runtime::<B>::builder();
+        |guest| {
+            guest
+                .exec(
+                    r#"
+class Row:
+    city: str
+    units: str
+    temperature: float
+"#,
+                )
+                .unwrap();
+
+            assert_eq!(
+                guest
+                    .eval::<Class<B>>("Row")
+                    .unwrap()
+                    .annotations()
+                    .unwrap()
+                    .iter()
+                    .map(|(name, _)| name.clone())
+                    .collect::<Vec<_>>(),
+                vec![
+                    String::from("city"),
+                    String::from("units"),
+                    String::from("temperature"),
+                ],
+            );
+        }
+    }
+
+    guest_fixture! {
+        pub fn any_handle_calls_a_callable_and_reports_a_clear_error_otherwise<B>()
+        where B: [
+            Backend,
+            BackendValues,
+            BackendCallables,
+            BackendClasses,
+            BackendModules,
+            BackendCoroutines,
+            BackendExceptions,
+            BackendInterrupt,
+        ]
+        using Runtime::<B>::builder()
+            .bind(ModuleSpec::new("host_lib").class::<Contract>());
+        |guest| {
+            guest
+                .exec(
+                    r#"
+def twice(value):
+    return value * 2
+"#,
+                )
+                .unwrap();
+
+            assert_eq!(
+                guest
+                    .eval::<Object<B>>("twice")
+                    .unwrap()
+                    .call::<_, i64>((21,))
+                    .unwrap(),
+                42,
+            );
+
+            let module = guest.import("host_lib").unwrap();
+            let message = module
+                .call::<_, i64>(())
+                .err()
+                .unwrap()
+                .to_string();
+
+            assert!(message.contains("callable") || message.contains("not callable"));
+        }
+    }
+
     #[doc(hidden)]
     #[macro_export]
     macro_rules! __guestpy_backend_classes_tests {
@@ -398,6 +844,59 @@ e = Empty(3, 4)
             #[test]
             fn subclass_that_skips_super_init_fails_clearly() {
                 $crate::backend::classes::fixtures::subclass_that_skips_super_init_fails_clearly::<
+                    $backend,
+                >();
+            }
+
+            #[test]
+            fn class_handle_reads_class_attributes() {
+                $crate::backend::classes::fixtures::class_handle_reads_class_attributes::<
+                    $backend,
+                >();
+            }
+
+            #[test]
+            fn module_and_function_expose_names_and_annotations() {
+                $crate::backend::classes::fixtures::module_and_function_expose_names_and_annotations::<
+                    $backend,
+                >();
+            }
+
+            #[test]
+            fn class_reports_bases_and_mro() {
+                $crate::backend::classes::fixtures::class_reports_bases_and_mro::<$backend>();
+            }
+
+            #[test]
+            fn isinstance_and_issubclass_agree_across_backends() {
+                $crate::backend::classes::fixtures::isinstance_and_issubclass_agree_across_backends::<
+                    $backend,
+                >();
+            }
+
+            #[test]
+            fn host_class_is_subscriptable() {
+                $crate::backend::classes::fixtures::host_class_is_subscriptable::<$backend>();
+            }
+
+            #[tokio::test]
+            async fn host_base_method_calls_guest_override() {
+                $crate::backend::classes::fixtures::host_base_method_calls_guest_override::<
+                    $backend,
+                >()
+                .await;
+            }
+
+            #[test]
+            fn annotations_preserve_declaration_order() {
+                $crate::backend::classes::fixtures::annotations_preserve_declaration_order::<
+                    $backend,
+                >();
+            }
+
+            #[test]
+            fn any_handle_calls_a_callable_and_reports_a_clear_error_otherwise() {
+                $crate::backend::classes::fixtures::any_handle_calls_a_callable_and_reports_a_clear_error_otherwise::<
                     $backend,
                 >();
             }

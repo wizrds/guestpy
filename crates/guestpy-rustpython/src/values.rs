@@ -256,9 +256,7 @@ impl BackendValues for RustPython {
     }
 
     fn dir<'py>(vm: Tok<'py, Self>, value: &Val<'py, Self>) -> Result<Vec<String>, Error> {
-        value
-            .clone()
-            .dir(vm)
+        vm.dir(Some(value.clone()))
             .and_then(|values| {
                 values
                     .borrow_vec()
@@ -464,6 +462,8 @@ mod tests {
     };
 
     use crate::engine::{Config, RustPython};
+
+    guestpy_core::backend::values::fixtures::tests!(RustPython);
 
     #[test]
     fn send_steps_a_generator() {

@@ -125,3 +125,92 @@ pub trait BackendValues: Backend {
     ) -> Result<Step<Val<'py, Self>>, Error>;
     fn close<'py>(token: Tok<'py, Self>, generator: &Val<'py, Self>) -> Result<(), Error>;
 }
+
+#[doc(hidden)]
+pub mod fixtures {
+    use crate::{
+        backend::{
+            Backend, BackendCallables, BackendClasses, BackendCoroutines, BackendExceptions,
+            BackendInterrupt, BackendModules, BackendValues, guest_fixture,
+        },
+        runtime::Runtime,
+    };
+
+    guest_fixture! {
+        pub fn vec_accepts_lists_and_tuples_but_not_strings<B>()
+        where B: [
+            Backend,
+            BackendValues,
+            BackendCallables,
+            BackendClasses,
+            BackendModules,
+            BackendCoroutines,
+            BackendExceptions,
+            BackendInterrupt,
+        ]
+        using Runtime::<B>::builder();
+        |guest| {
+            assert_eq!(guest.eval::<Vec<i64>>("[1, 2, 3]").unwrap(), vec![1, 2, 3]);
+            assert_eq!(guest.eval::<Vec<i64>>("(1, 2, 3)").unwrap(), vec![1, 2, 3]);
+            assert_eq!(guest.eval::<Vec<i64>>("[]").unwrap(), Vec::<i64>::new());
+            assert_eq!(guest.eval::<Vec<i64>>("()").unwrap(), Vec::<i64>::new());
+
+            let message = guest
+                .eval::<Vec<String>>("'abc'")
+                .err()
+                .unwrap()
+                .to_string();
+
+            assert!(message.contains("list or tuple"));
+        }
+    }
+
+    guest_fixture! {
+        pub fn rust_tuple_still_rejects_a_list<B>()
+        where B: [
+            Backend,
+            BackendValues,
+            BackendCallables,
+            BackendClasses,
+            BackendModules,
+            BackendCoroutines,
+            BackendExceptions,
+            BackendInterrupt,
+        ]
+        using Runtime::<B>::builder();
+        |guest| {
+            assert_eq!(
+                guest.eval::<(i64, String)>("(1, 'a')").unwrap(),
+                (1, String::from("a")),
+            );
+            assert!(
+                guest
+                    .eval::<(i64, String)>("[1, 'a']")
+                    .err()
+                    .unwrap()
+                    .to_string()
+                    .contains("tuple"),
+            );
+        }
+    }
+
+    #[doc(hidden)]
+    #[macro_export]
+    macro_rules! __guestpy_backend_values_tests {
+        ($backend:ty) => {
+            #[test]
+            fn vec_accepts_lists_and_tuples_but_not_strings() {
+                $crate::backend::values::fixtures::vec_accepts_lists_and_tuples_but_not_strings::<
+                    $backend,
+                >();
+            }
+
+            #[test]
+            fn rust_tuple_still_rejects_a_list() {
+                $crate::backend::values::fixtures::rust_tuple_still_rejects_a_list::<$backend>();
+            }
+        };
+    }
+
+    pub use crate::__guestpy_backend_values_tests as tests;
+}
