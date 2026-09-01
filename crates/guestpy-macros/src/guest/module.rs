@@ -124,7 +124,9 @@ mod tests {
         assert!(output.contains("module : crate :: handle :: Module < B >"));
         assert!(output.contains(":: core :: convert :: From"));
         assert!(output.contains("for Math < B >"));
-        assert!(output.contains("self . module . call"));
+        assert!(output.contains(
+            "crate :: handle :: ObjectProtocol :: call_method",
+        ));
         assert!(output.contains("\"add\""));
         assert!(output.contains("(left , right ,)"));
         assert!(output.contains("\"makeHandler\""));
@@ -132,7 +134,9 @@ mod tests {
         assert!(output.contains("\"spawn\""));
         assert!(output.contains("Coroutine < B , () >"));
         assert!(output.contains("(value ,)"));
-        assert!(output.contains("self . module . get"));
+        assert!(output.contains(
+            "crate :: handle :: ObjectProtocol :: get",
+        ));
         assert!(output.contains("\"answer\""));
         assert!(output.contains("\"client\""));
         assert!(output.contains("Class < B >"));

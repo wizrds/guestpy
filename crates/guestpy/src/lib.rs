@@ -552,7 +552,7 @@ mod tests {
     {
         fn get(&self, path: String) -> Result<Response<B>, Error> {
             self.instance
-                .call::<_, Response<B>>("get", (path,))
+                .call_method::<_, Response<B>>("get", (path,))
         }
     }
 

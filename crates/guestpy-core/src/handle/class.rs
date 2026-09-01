@@ -9,7 +9,10 @@ use std::{
 use crate::{
     backend::{Backend, BackendClasses, BackendValues},
     errors::Error,
-    handle::{Handle, Object, Value},
+    handle::{
+        Handle, Object,
+        traits::{Annotated, HasHandle, IsType, Named, ObjectProtocol},
+    },
     host::class::HostClass,
     marshal::{FromGuest, FromGuestMut, FromGuestRef, ToGuest, args::ToGuestArgs},
     scope::Enter,
@@ -69,6 +72,18 @@ impl<B: Backend, R> Class<B, R> {
     }
 }
 
+impl<B: Backend, R> HasHandle<B> for Class<B, R> {
+    fn handle(&self) -> &Handle<B> {
+        &self.handle
+    }
+}
+
+impl<B: Backend, R> IsType<B> for Class<B, R> {}
+
+impl<B, R> Named<B> for Class<B, R> where B: Backend + BackendValues {}
+
+impl<B, R> Annotated<B> for Class<B, R> where B: Backend + BackendValues {}
+
 impl<B, R> Class<B, R>
 where
     B: Backend + BackendValues,
@@ -89,16 +104,6 @@ where
         self.handle.with_enter(|enter, class| {
             O::from_guest(enter, B::call(enter.token(), class, &args.into_args(enter)?, &[])?)
         })
-    }
-
-    pub fn name(&self) -> Result<String, Error> {
-        self.handle.with_enter(|enter, class| {
-            B::as_str(enter.token(), &B::get_attr(enter.token(), class, "__name__")?)
-        })
-    }
-
-    pub fn value(&self) -> Value<B> {
-        self.handle.value()
     }
 }
 
@@ -152,6 +157,12 @@ impl<B: Backend, T> Instance<B, T> {
     }
 }
 
+impl<B: Backend, T> HasHandle<B> for Instance<B, T> {
+    fn handle(&self) -> &Handle<B> {
+        self.object.handle()
+    }
+}
+
 impl<B: Backend, T> Deref for Instance<B, T> {
     type Target = Object<B>;
 
@@ -175,7 +186,7 @@ where
     where
         C: HostClass,
     {
-        self.object
+        self.handle()
             .with_enter(|enter, instance| {
                 drop(B::borrow::<C>(enter.token(), instance)?);
 
@@ -190,7 +201,7 @@ where
         C: 'static,
         F: FnOnce(&C) -> R,
     {
-        self.object
+        self.handle()
             .with_enter(|enter, instance| Ok(f(&*B::borrow::<C>(enter.token(), instance)?)))
     }
 
@@ -199,7 +210,7 @@ where
         C: 'static,
         F: FnOnce(&mut C) -> R,
     {
-        self.object
+        self.handle()
             .with_enter(|enter, instance| Ok(f(&mut *B::borrow_mut::<C>(enter.token(), instance)?)))
     }
 }

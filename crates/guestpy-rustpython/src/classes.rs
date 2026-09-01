@@ -184,7 +184,7 @@ mod tests {
         backend::{Backend, BackendCallables, BackendClasses, BackendValues},
         errors::Error,
         guest::Guest,
-        handle::Value,
+        handle::{Value, ObjectProtocol},
         host::{
             class::{ClassBuilder, HostClass, HostClassDefinition},
             dunder::Dunder,

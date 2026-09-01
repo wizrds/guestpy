@@ -17,7 +17,7 @@ use crate::{
     driver::CoroutineFuture,
     errors::Error,
     guest::Guest,
-    handle::{Handle, Value},
+    handle::{Handle, Value, traits::HasHandle},
     marshal::{FromGuest, ToGuest},
     scope::Enter,
 };
@@ -36,6 +36,12 @@ impl<B: Backend> Iter<B> {
     }
 }
 
+impl<B: Backend> HasHandle<B> for Iter<B> {
+    fn handle(&self) -> &Handle<B> {
+        &self.0
+    }
+}
+
 impl<B> Iter<B>
 where
     B: Backend + BackendValues,
@@ -48,7 +54,7 @@ where
         })
     }
 
-    pub fn collect<T: FromGuest<B>>(&self) -> Result<Vec<T::Owned>, Error> {
+    pub fn collect<T: FromGuest<B>>(self) -> Result<Vec<T::Owned>, Error> {
         std::iter::from_fn(|| self.next::<T>().transpose()).collect()
     }
 }
@@ -145,7 +151,7 @@ where
         .await
     }
 
-    pub async fn collect(&self) -> Result<Vec<T::Owned>, Error> {
+    pub async fn collect(self) -> Result<Vec<T::Owned>, Error> {
         let mut items = Vec::new();
 
         while let Some(item) = self.anext().await? {

@@ -201,7 +201,7 @@ mod tests {
     use guestpy_core::{
         backend::{Backend, BackendInterrupt},
         errors::Error,
-        handle::Value,
+        handle::{ObjectProtocol, Value},
         host::module::ModuleSpec,
         runtime::Runtime,
     };
@@ -225,7 +225,7 @@ mod tests {
             guest
                 .host_module("m")
                 .unwrap()
-                .call::<_, i64>("double", (21,))
+                .call_method::<_, i64>("double", (21,))
                 .unwrap(),
             42,
         );

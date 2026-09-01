@@ -122,7 +122,7 @@ pub mod fixtures {
     };
     use crate::{
         errors::Error,
-        handle::Function,
+        handle::{Function, ObjectProtocol},
         host::{function::HostFn, module::ModuleSpec},
         runtime::Runtime,
     };

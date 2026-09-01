@@ -169,7 +169,8 @@ impl GuestMember {
                         (#(#types,)*) : #krate::marshal::args::ToGuestArgs<B>,
                         #descriptor: #krate::marshal::FromGuest<B>,
                     {
-                        self.#receiver.call::<_, #descriptor>(
+                        #krate::handle::ObjectProtocol::call_method::<_, #descriptor>(
+                            &self.#receiver,
                             #guest_name,
                             (#(#arguments,)*),
                         )
@@ -185,7 +186,10 @@ impl GuestMember {
                 where
                     #descriptor: #krate::marshal::FromGuest<B>,
                 {
-                    self.#receiver.get::<#descriptor>(#guest_name)
+                    #krate::handle::ObjectProtocol::get::<#descriptor>(
+                        &self.#receiver,
+                        #guest_name,
+                    )
                 }
             },
         }

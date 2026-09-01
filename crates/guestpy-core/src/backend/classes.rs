@@ -63,7 +63,7 @@ pub mod fixtures {
             BackendInterrupt, BackendModules, BackendValues, guest_fixture,
         },
         errors::Error,
-        handle::{Class, Instance},
+        handle::{Class, Instance, ObjectProtocol},
         host::{
             class::{ClassBuilder, HostClass, HostClassDefinition},
             module::ModuleSpec,

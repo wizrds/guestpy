@@ -222,11 +222,15 @@ mod tests {
         assert!(output.contains("pub struct Client < B"));
         assert!(output.contains("crate :: handle :: Instance < B >"));
         assert!(output.contains("instance : self . instance . clone"));
-        assert!(output.contains("self . instance . call"));
+        assert!(output.contains(
+            "crate :: handle :: ObjectProtocol :: call_method",
+        ));
         assert!(output.contains("\"get\""));
         assert!(output.contains("(path ,)"));
         assert!(output.contains("Coroutine < B , Response < B > >"));
-        assert!(output.contains("self . instance . get"));
+        assert!(output.contains(
+            "crate :: handle :: ObjectProtocol :: get",
+        ));
         assert!(output.contains("\"baseUrl\""));
         assert!(output.contains("fn instance"));
         assert!(output.contains("fn into_instance"));

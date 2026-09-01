@@ -178,7 +178,7 @@ mod tests {
         bundle::Bundle,
         driver::Progress,
         errors::Error,
-        handle::Coroutine,
+        handle::{Coroutine, ObjectProtocol},
         host::{
             class::{ClassBuilder, HostClass, HostClassDefinition},
             module::ModuleSpec,
@@ -248,7 +248,7 @@ VALUE = 21
             guest
                 .host_module("m")
                 .unwrap()
-                .call::<_, i64>("double", (21,))
+                .call_method::<_, i64>("double", (21,))
                 .unwrap(),
             42,
         );

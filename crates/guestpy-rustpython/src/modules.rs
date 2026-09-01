@@ -93,6 +93,7 @@ mod tests {
     use guestpy_core::{
         bundle::Bundle,
         errors::{Error, GuestException},
+        handle::ObjectProtocol,
         host::module::ModuleSpec,
         runtime::Runtime,
     };
@@ -391,7 +392,7 @@ mod tests {
         assert_eq!(plugin.get::<String>("NAME").unwrap(), "plugin");
         assert_eq!(
             plugin
-                .call::<_, String>("entry", ("7",))
+                .call_method::<_, String>("entry", ("7",))
                 .unwrap(),
             "u:h:7u:",
         );
