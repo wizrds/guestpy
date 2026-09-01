@@ -7,13 +7,13 @@ use std::{
 };
 
 use crate::{
-    backend::{Backend, BackendClasses, BackendValues},
+    backend::{Backend, BackendCallables, BackendClasses, BackendValues},
     errors::Error,
     handle::{
         Handle, Object,
         traits::{Annotated, HasHandle, IsType, Named, ObjectProtocol},
     },
-    host::class::HostClass,
+    host::class::{ClassSpec, HostClass, HostClassDefinition},
     marshal::{FromGuest, FromGuestMut, FromGuestRef, ToGuest, args::ToGuestArgs},
     scope::Enter,
 };
@@ -83,6 +83,18 @@ impl<B: Backend, R> IsType<B> for Class<B, R> {}
 impl<B, R> Named<B> for Class<B, R> where B: Backend + BackendValues {}
 
 impl<B, R> Annotated<B> for Class<B, R> where B: Backend + BackendValues {}
+
+impl<B> Class<B>
+where
+    B: Backend + BackendValues + BackendCallables + BackendClasses,
+{
+    pub fn of<C>(enter: &Enter<'_, B>) -> Result<Class<B, Instance<B, C>>, Error>
+    where
+        C: HostClass + HostClassDefinition<B>,
+    {
+        Class::from_guest(enter, ClassSpec::realise_registered::<C>(enter)?)
+    }
+}
 
 impl<B, R> Class<B, R>
 where

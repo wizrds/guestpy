@@ -312,6 +312,21 @@ where
 
         Rc::new(builder.spec)
     }
+
+    pub(crate) fn realise_registered<'py, C>(enter: &Enter<'py, B>) -> Result<Val<'py, B>, Error>
+    where
+        C: HostClass + HostClassDefinition<B>,
+    {
+        let spec = enter
+            .guest()
+            .realisation()
+            .class_spec(TypeId::of::<C>())
+            .ok_or_else(|| {
+                Error::unexpected(format!("host class {} was not registered", C::NAME))
+            })?;
+
+        ClassRealiser::new(enter).realise(&spec)
+    }
 }
 
 struct ClassRealiser<'py, 'e, B: Backend> {
