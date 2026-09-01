@@ -1,14 +1,7 @@
 use proc_macro2::TokenStream;
 use quote::quote;
 use syn::{
-    GenericParam,
-    Generics,
-    Ident,
-    ItemImpl,
-    Type,
-    TypeParam,
-    parse_quote,
-    spanned::Spanned,
+    GenericParam, Generics, Ident, ItemImpl, Type, TypeParam, parse_quote, spanned::Spanned,
 };
 
 use crate::host::HostMacroError;
@@ -43,12 +36,10 @@ impl BackendParameter {
             .into());
         }
 
-        Ok(Self::Synthesized(
-            match Self::declares_parameter(&item.generics, "B") {
-                true => parse_quote!(__GuestpyBackend),
-                false => parse_quote!(B),
-            },
-        ))
+        Ok(Self::Synthesized(match Self::declares_parameter(&item.generics, "B") {
+            true => parse_quote!(__GuestpyBackend),
+            false => parse_quote!(B),
+        }))
     }
 
     fn parameters(generics: &Generics) -> impl Iterator<Item = &TypeParam> {
@@ -117,10 +108,7 @@ impl BackendParameter {
         }
     }
 
-    pub(crate) fn capability_predicate(
-        &self,
-        capabilities: &[TokenStream],
-    ) -> Option<TokenStream> {
+    pub(crate) fn capability_predicate(&self, capabilities: &[TokenStream]) -> Option<TokenStream> {
         match self {
             Self::Synthesized(ident) | Self::Declared(ident) => {
                 Some(quote!(#ident: #(#capabilities)+*))
@@ -137,7 +125,9 @@ impl BackendParameter {
         let mut definition = generics.clone();
 
         if let Self::Synthesized(ident) = self {
-            definition.params.push(parse_quote!(#ident));
+            definition
+                .params
+                .push(parse_quote!(#ident));
         }
 
         if let Some(predicate) = self.capability_predicate(capabilities) {

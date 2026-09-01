@@ -250,13 +250,14 @@ impl Parameter {
         if let Some(position) = parameters
             .iter()
             .position(Self::is_rest)
-            && position + 1 != parameters.len() {
-                return Err(syn::Error::new(
-                    signature.inputs.span(),
-                    "a rest parameter must be the last parameter",
-                )
-                .into());
-            }
+            && position + 1 != parameters.len()
+        {
+            return Err(syn::Error::new(
+                signature.inputs.span(),
+                "a rest parameter must be the last parameter",
+            )
+            .into());
+        }
 
         Ok(parameters)
     }

@@ -1,13 +1,7 @@
 use core::ops::Deref;
 
 use darling::FromMeta;
-use syn::{
-    Meta,
-    Token,
-    Type,
-    parse::Parser,
-    punctuated::Punctuated,
-};
+use syn::{Meta, Token, Type, parse::Parser, punctuated::Punctuated};
 
 #[derive(Default)]
 pub(crate) struct TypeList(Vec<Type>);

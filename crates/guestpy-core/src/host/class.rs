@@ -680,10 +680,7 @@ where
                 arguments.push(item);
             }
 
-            Value::<B>::from_guest(
-                enter,
-                B::generic_alias(enter.token(), &class, &arguments)?,
-            )
+            Value::<B>::from_guest(enter, B::generic_alias(enter.token(), &class, &arguments)?)
         })
     }
 }
@@ -734,10 +731,7 @@ where
         self.push(
             name,
             Rc::new(MethodDeclaration::new(Rc::new(move |enter, receiver, args| {
-                Self::pending(
-                    enter,
-                    function(&Object::from_guest(enter, receiver)?, enter, args)?,
-                )
+                Self::pending(enter, function(&Object::from_guest(enter, receiver)?, enter, args)?)
             }))),
         )
     }

@@ -1,8 +1,4 @@
-use darling::{
-    FromMeta,
-    ast::NestedMeta,
-    util::Flag,
-};
+use darling::{FromMeta, ast::NestedMeta, util::Flag};
 use proc_macro2::TokenStream;
 use quote::quote;
 use syn::{ImplItem, ItemImpl, Path, Type, parse_quote};
@@ -10,11 +6,11 @@ use syn::{ImplItem, ItemImpl, Path, Type, parse_quote};
 use crate::{
     attributes::HelperAttributes,
     host::{
+        HostMacroError,
         backend::BackendParameter,
         callable::{Callable, Parameter, Receiver},
         target::HostTarget,
         types::TypeList,
-        HostMacroError,
     },
     naming::{Naming, RenameRule},
     path::CratePath,
@@ -640,14 +636,9 @@ impl HostClassDefinition {
                 }
             }
         });
-        let has_async_method = members
-            .iter()
-            .any(|member| {
-                matches!(
-                    member,
-                    ClassMember::AsyncMethod(_) | ClassMember::AsyncRawMethod(_),
-                )
-            });
+        let has_async_method = members.iter().any(|member| {
+            matches!(member, ClassMember::AsyncMethod(_) | ClassMember::AsyncRawMethod(_),)
+        });
         let mut capabilities = vec![
             quote!(#crate_path::backend::Backend),
             quote!(#crate_path::backend::BackendValues),
@@ -759,7 +750,9 @@ mod tests {
         assert!(output.contains("const NAME : & 'static str = \"Vector2\""));
         assert!(
             output.find("fn construct").unwrap()
-                > output.find("HostClassDefinition").unwrap(),
+                > output
+                    .find("HostClassDefinition")
+                    .unwrap(),
         );
         assert!(output.contains("HostClassDefinition < B > for Vector2"));
         assert!(output.contains("builder . method (\"length\""));
@@ -775,12 +768,7 @@ mod tests {
     #[test]
     fn generates_raw_class_and_delete_roles_and_a_subscript() {
         let output = expand(
-            quote!(
-                name = "Contract",
-                backend = B,
-                subscriptable,
-                crate_path = crate,
-            ),
+            quote!(name = "Contract", backend = B, subscriptable, crate_path = crate,),
             parse_quote! {
                 impl<B> Contract<B> {
                     #[guestpy(raw_method)]
@@ -986,11 +974,13 @@ mod tests {
                 }
             },
         ) else {
-            panic!(
-                "a Backend-bounded parameter without a declaration returns a syntax error",
-            );
+            panic!("a Backend-bounded parameter without a declaration returns a syntax error",);
         };
 
-        assert!(error.to_string().contains("backend = B"));
+        assert!(
+            error
+                .to_string()
+                .contains("backend = B")
+        );
     }
 }

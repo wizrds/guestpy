@@ -522,12 +522,18 @@ where
     }
 
     pub fn advance(&self) -> Result<Progress, Error> {
-        self.enter(|enter| self.ensure_async_driver(enter).map(|_| ()))?;
+        self.enter(|enter| {
+            self.ensure_async_driver(enter)
+                .map(|_| ())
+        })?;
         self.advance_with(Activation::Operation)
     }
 
     pub async fn run_until_idle(&self) -> Result<(), Error> {
-        self.enter(|enter| self.ensure_async_driver(enter).map(|_| ()))?;
+        self.enter(|enter| {
+            self.ensure_async_driver(enter)
+                .map(|_| ())
+        })?;
         self.drive(None, Activation::Operation)
             .await
     }

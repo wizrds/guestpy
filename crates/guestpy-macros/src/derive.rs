@@ -1,7 +1,7 @@
 use darling::FromDeriveInput;
 use proc_macro2::TokenStream;
 use quote::quote;
-use syn::{DeriveInput, Ident, Generics, Path, parse_quote};
+use syn::{DeriveInput, Generics, Ident, Path, parse_quote};
 
 use crate::path::CratePath;
 
@@ -27,8 +27,7 @@ impl GuestDeriveInput {
     }
 
     fn crate_path(&self) -> Path {
-        CratePath::new(self.crate_path.clone())
-            .resolve()
+        CratePath::new(self.crate_path.clone()).resolve()
     }
 }
 
@@ -47,9 +46,13 @@ impl GuestDerive {
         let generics = self.input.generics();
         let mut implementation = generics.clone();
 
-        implementation.params.push(parse_quote!(B));
+        implementation
+            .params
+            .push(parse_quote!(B));
 
-        let predicates = &mut implementation.make_where_clause().predicates;
+        let predicates = &mut implementation
+            .make_where_clause()
+            .predicates;
         predicates.push(parse_quote!(
             B: #crate_path::backend::Backend + #crate_path::backend::BackendValues
         ));
@@ -81,9 +84,13 @@ impl GuestDerive {
         let generics = self.input.generics();
         let mut implementation = generics.clone();
 
-        implementation.params.push(parse_quote!(B));
+        implementation
+            .params
+            .push(parse_quote!(B));
 
-        let predicates = &mut implementation.make_where_clause().predicates;
+        let predicates = &mut implementation
+            .make_where_clause()
+            .predicates;
         predicates.push(parse_quote!(
             B: #crate_path::backend::Backend + #crate_path::backend::BackendValues
         ));
@@ -116,13 +123,21 @@ mod tests {
     use super::GuestDerive;
 
     fn expand_to_guest(input: syn::DeriveInput) -> ItemImpl {
-        syn::parse2(GuestDerive::new(&input).expect("failed to create GuestDerive").to_guest())
-            .expect("generated ToGuest code parses as a single impl")
+        syn::parse2(
+            GuestDerive::new(&input)
+                .expect("failed to create GuestDerive")
+                .to_guest(),
+        )
+        .expect("generated ToGuest code parses as a single impl")
     }
 
     fn expand_from_guest(input: syn::DeriveInput) -> ItemImpl {
-        syn::parse2(GuestDerive::new(&input).expect("failed to create GuestDerive").from_guest())
-            .expect("generated FromGuest code parses as a single impl")
+        syn::parse2(
+            GuestDerive::new(&input)
+                .expect("failed to create GuestDerive")
+                .from_guest(),
+        )
+        .expect("generated FromGuest code parses as a single impl")
     }
 
     fn trait_name(expanded: &ItemImpl) -> String {

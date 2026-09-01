@@ -107,30 +107,18 @@ pub mod fixtures {
                 + BackendInterrupt,
         {
             ModuleSpec::new("codec")
-                .function("echo_i64", |enter, args| {
-                    args.required::<i64>(enter, 0, "value")
-                })
-                .function("echo_u8", |enter, args| {
-                    args.required::<u8>(enter, 0, "value")
-                })
-                .function("echo_f64", |enter, args| {
-                    args.required::<f64>(enter, 0, "value")
-                })
-                .function("echo_str", |enter, args| {
-                    args.required::<String>(enter, 0, "value")
-                })
-                .function("echo_list", |enter, args| {
-                    args.required::<Vec<i64>>(enter, 0, "value")
-                })
+                .function("echo_i64", |enter, args| args.required::<i64>(enter, 0, "value"))
+                .function("echo_u8", |enter, args| args.required::<u8>(enter, 0, "value"))
+                .function("echo_f64", |enter, args| args.required::<f64>(enter, 0, "value"))
+                .function("echo_str", |enter, args| args.required::<String>(enter, 0, "value"))
+                .function("echo_list", |enter, args| args.required::<Vec<i64>>(enter, 0, "value"))
                 .function("echo_pair", |enter, args| {
                     args.required::<(i64, String)>(enter, 0, "value")
                 })
                 .function("echo_map", |enter, args| {
                     args.required::<HashMap<String, i64>>(enter, 0, "value")
                 })
-                .function("echo_opt", |enter, args| {
-                    args.required::<Option<i64>>(enter, 0, "value")
-                })
+                .function("echo_opt", |enter, args| args.required::<Option<i64>>(enter, 0, "value"))
                 .function("add", |enter, args| {
                     Ok::<_, Error>(
                         args.required::<i64>(enter, 0, "left")?

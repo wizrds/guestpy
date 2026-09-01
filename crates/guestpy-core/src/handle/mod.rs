@@ -1,6 +1,5 @@
 //! Guest handle types.
 
-mod traits;
 mod class;
 mod coroutine;
 mod function;
@@ -8,12 +7,12 @@ mod generator;
 mod iter;
 mod module;
 mod object;
+mod traits;
 mod value;
 
 use crate::{backend::Backend, errors::Error, guest::Guest, scope::Enter};
 
 pub use self::{
-    traits::{Annotated, GenericAlias, Named, ObjectProtocol, TypeProtocol},
     class::{Class, Instance, Ref, RefMut},
     coroutine::{Awaitable, Coroutine},
     function::Function,
@@ -21,6 +20,7 @@ pub use self::{
     iter::{AsyncIter, Iter},
     module::Module,
     object::Object,
+    traits::{Annotated, GenericAlias, Named, ObjectProtocol, TypeProtocol},
     value::Value,
 };
 

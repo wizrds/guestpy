@@ -10,11 +10,11 @@ use syn::{FnArg, ImplItem, ImplItemFn, ItemImpl, Path, Type, spanned::Spanned};
 use crate::{
     attributes::HelperAttributes,
     host::{
+        HostMacroError,
         backend::BackendParameter,
         callable::{Callable, Parameter, Receiver},
         target::HostTarget,
         types::TypeList,
-        HostMacroError,
     },
     naming::{Naming, RenameRule},
     path::CratePath,
@@ -831,9 +831,8 @@ mod tests {
 
         assert!(output.contains(". class :: < Envelope < B > > ()"));
         assert!(
-            output.contains(
-                "Envelope < B > : crate :: host :: class :: HostClassDefinition < B >",
-            ),
+            output
+                .contains("Envelope < B > : crate :: host :: class :: HostClassDefinition < B >",),
         );
     }
 

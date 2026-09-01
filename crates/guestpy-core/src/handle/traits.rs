@@ -28,15 +28,17 @@ where
     Self: HasHandle<B>,
 {
     fn get<T: FromGuest<B>>(&self, name: &str) -> Result<T::Owned, Error> {
-        self.handle().with_enter(|enter, object| {
-            T::from_guest(enter, B::get_attr(enter.token(), object, name)?)
-        })
+        self.handle()
+            .with_enter(|enter, object| {
+                T::from_guest(enter, B::get_attr(enter.token(), object, name)?)
+            })
     }
 
     fn set<T: ToGuest<B>>(&self, name: &str, value: T) -> Result<(), Error> {
-        self.handle().with_enter(|enter, object| {
-            B::set_attr(enter.token(), object, name, value.to_guest(enter)?)
-        })
+        self.handle()
+            .with_enter(|enter, object| {
+                B::set_attr(enter.token(), object, name, value.to_guest(enter)?)
+            })
     }
 
     fn delete(&self, name: &str) -> Result<(), Error> {
@@ -59,9 +61,10 @@ where
         T: FromGuest<B>,
         K: ToGuest<B>,
     {
-        self.handle().with_enter(|enter, object| {
-            T::from_guest(enter, B::get_item(enter.token(), object, &key.to_guest(enter)?)?)
-        })
+        self.handle()
+            .with_enter(|enter, object| {
+                T::from_guest(enter, B::get_item(enter.token(), object, &key.to_guest(enter)?)?)
+            })
     }
 
     fn set_item<K, T>(&self, key: K, value: T) -> Result<(), Error>
@@ -69,15 +72,15 @@ where
         K: ToGuest<B>,
         T: ToGuest<B>,
     {
-        self.handle().with_enter(|enter, object| {
-            B::set_item(enter.token(), object, key.to_guest(enter)?, value.to_guest(enter)?)
-        })
+        self.handle()
+            .with_enter(|enter, object| {
+                B::set_item(enter.token(), object, key.to_guest(enter)?, value.to_guest(enter)?)
+            })
     }
 
     fn del_item<K: ToGuest<B>>(&self, key: K) -> Result<(), Error> {
-        self.handle().with_enter(|enter, object| {
-            B::del_item(enter.token(), object, &key.to_guest(enter)?)
-        })
+        self.handle()
+            .with_enter(|enter, object| B::del_item(enter.token(), object, &key.to_guest(enter)?))
     }
 
     fn len(&self) -> Result<usize, Error> {
@@ -94,17 +97,18 @@ where
         A: ToGuestArgs<B>,
         R: FromGuest<B>,
     {
-        self.handle().with_enter(|enter, object| {
-            R::from_guest(
-                enter,
-                B::call(
-                    enter.token(),
-                    &B::get_attr(enter.token(), object, name)?,
-                    &args.into_args(enter)?,
-                    &[],
-                )?,
-            )
-        })
+        self.handle()
+            .with_enter(|enter, object| {
+                R::from_guest(
+                    enter,
+                    B::call(
+                        enter.token(),
+                        &B::get_attr(enter.token(), object, name)?,
+                        &args.into_args(enter)?,
+                        &[],
+                    )?,
+                )
+            })
     }
 
     fn call<A, R>(&self, args: A) -> Result<R::Owned, Error>
@@ -121,22 +125,23 @@ where
         K: ToGuestKwargs<B>,
         R: FromGuest<B>,
     {
-        self.handle().with_enter(|enter, callable| {
-            let kwargs = kwargs.into_kwargs(enter)?;
+        self.handle()
+            .with_enter(|enter, callable| {
+                let kwargs = kwargs.into_kwargs(enter)?;
 
-            R::from_guest(
-                enter,
-                B::call(
-                    enter.token(),
-                    callable,
-                    &args.into_args(enter)?,
-                    &kwargs
-                        .iter()
-                        .map(|(name, value)| (name.as_str(), value.clone()))
-                        .collect::<Vec<_>>(),
-                )?,
-            )
-        })
+                R::from_guest(
+                    enter,
+                    B::call(
+                        enter.token(),
+                        callable,
+                        &args.into_args(enter)?,
+                        &kwargs
+                            .iter()
+                            .map(|(name, value)| (name.as_str(), value.clone()))
+                            .collect::<Vec<_>>(),
+                    )?,
+                )
+            })
     }
 
     fn object(&self, name: &str) -> Result<Object<B>, Error> {
@@ -156,22 +161,24 @@ where
     }
 
     fn is_instance_of<R>(&self, class: &Class<B, R>) -> Result<bool, Error> {
-        self.handle().with_enter(|enter, object| {
-            B::is_instance(
-                enter.token(),
-                object,
-                &B::attach(enter.token(), class.handle().owned()),
-            )
-        })
+        self.handle()
+            .with_enter(|enter, object| {
+                B::is_instance(
+                    enter.token(),
+                    object,
+                    &B::attach(enter.token(), class.handle().owned()),
+                )
+            })
     }
 
     fn iter(&self) -> Result<Iter<B>, Error> {
-        self.handle().with_enter(|enter, object| {
-            Ok(Iter::from_handle(Handle::new(
-                B::detach(enter.token(), B::iter(enter.token(), object)?),
-                self.handle().guest().clone(),
-            )))
-        })
+        self.handle()
+            .with_enter(|enter, object| {
+                Ok(Iter::from_handle(Handle::new(
+                    B::detach(enter.token(), B::iter(enter.token(), object)?),
+                    self.handle().guest().clone(),
+                )))
+            })
     }
 
     fn cast<T: FromGuest<B>>(&self) -> Result<T::Owned, Error> {
@@ -231,42 +238,43 @@ where
     Self: ObjectProtocol<B>,
 {
     fn name(&self) -> Result<String, Error> {
-        self.handle().with_enter(|enter, object| {
-            B::as_str(enter.token(), &B::get_attr(enter.token(), object, "__name__")?)
-        })
+        self.handle()
+            .with_enter(|enter, object| {
+                B::as_str(enter.token(), &B::get_attr(enter.token(), object, "__name__")?)
+            })
     }
 
     fn qualified_name(&self) -> Result<String, Error> {
-        self.handle().with_enter(|enter, object| {
-            B::as_str(
-                enter.token(),
-                &B::get_attr(enter.token(), object, "__qualname__")?,
-            )
-        })
+        self.handle()
+            .with_enter(|enter, object| {
+                B::as_str(enter.token(), &B::get_attr(enter.token(), object, "__qualname__")?)
+            })
     }
 
     fn module_name(&self) -> Result<Option<String>, Error> {
-        self.handle().with_enter(|enter, object| {
-            let value = B::get_attr(enter.token(), object, "__module__")?;
+        self.handle()
+            .with_enter(|enter, object| {
+                let value = B::get_attr(enter.token(), object, "__module__")?;
 
-            if B::is_none(enter.token(), &value) {
-                Ok(None)
-            } else {
-                Ok(Some(B::as_str(enter.token(), &value)?))
-            }
-        })
+                if B::is_none(enter.token(), &value) {
+                    Ok(None)
+                } else {
+                    Ok(Some(B::as_str(enter.token(), &value)?))
+                }
+            })
     }
 
     fn doc(&self) -> Result<Option<String>, Error> {
-        self.handle().with_enter(|enter, object| {
-            let value = B::get_attr(enter.token(), object, "__doc__")?;
+        self.handle()
+            .with_enter(|enter, object| {
+                let value = B::get_attr(enter.token(), object, "__doc__")?;
 
-            if B::is_none(enter.token(), &value) {
-                Ok(None)
-            } else {
-                Ok(Some(B::as_str(enter.token(), &value)?))
-            }
-        })
+                if B::is_none(enter.token(), &value) {
+                    Ok(None)
+                } else {
+                    Ok(Some(B::as_str(enter.token(), &value)?))
+                }
+            })
     }
 }
 
@@ -283,11 +291,11 @@ where
         let annotations = self.object("__annotations__")?;
         let mut resolved = Vec::new();
 
-        for name in annotations.iter()?.collect::<String>()? {
-            resolved.push((
-                name.clone(),
-                annotations.item::<Class<B>, _>(name.as_str())?,
-            ));
+        for name in annotations
+            .iter()?
+            .collect::<String>()?
+        {
+            resolved.push((name.clone(), annotations.item::<Class<B>, _>(name.as_str())?));
         }
 
         Ok(resolved)
@@ -323,13 +331,14 @@ where
     }
 
     fn is_subclass_of<R>(&self, class: &Class<B, R>) -> Result<bool, Error> {
-        self.handle().with_enter(|enter, subclass| {
-            B::is_subclass(
-                enter.token(),
-                subclass,
-                &B::attach(enter.token(), class.handle().owned()),
-            )
-        })
+        self.handle()
+            .with_enter(|enter, subclass| {
+                B::is_subclass(
+                    enter.token(),
+                    subclass,
+                    &B::attach(enter.token(), class.handle().owned()),
+                )
+            })
     }
 
     fn generic_bases(&self) -> Result<Vec<GenericAlias<B>>, Error> {
@@ -376,9 +385,7 @@ where
 {
     pub(crate) fn of(base: &Object<B>) -> Result<Option<Self>, Error> {
         if base.has("__origin__")? {
-            Ok(Some(Self {
-                alias: base.clone(),
-            }))
+            Ok(Some(Self { alias: base.clone() }))
         } else {
             Ok(None)
         }
@@ -389,15 +396,14 @@ where
     }
 
     pub fn arguments(&self) -> Result<Vec<Object<B>>, Error> {
-        self.alias.get::<Vec<Object<B>>>("__args__")
+        self.alias
+            .get::<Vec<Object<B>>>("__args__")
     }
 }
 
 impl<B: Backend> Clone for GenericAlias<B> {
     fn clone(&self) -> Self {
-        Self {
-            alias: self.alias.clone(),
-        }
+        Self { alias: self.alias.clone() }
     }
 }
 

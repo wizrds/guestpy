@@ -182,14 +182,11 @@ impl BackendClasses for RustPython {
         origin: &Val<'py, Self>,
         arguments: &[Val<'py, Self>],
     ) -> Result<Val<'py, Self>, Error> {
-        Ok(PyGenericAlias::new(
-            origin.clone(),
-            vm.ctx.new_tuple(arguments.to_vec()),
-            false,
-            vm,
+        Ok(
+            PyGenericAlias::new(origin.clone(), vm.ctx.new_tuple(arguments.to_vec()), false, vm)
+                .map_err(|error| RustPython::guest(vm, error))?
+                .into_pyobject(vm),
         )
-        .map_err(|error| RustPython::guest(vm, error))?
-        .into_pyobject(vm))
     }
 }
 
@@ -199,7 +196,7 @@ mod tests {
         backend::{Backend, BackendCallables, BackendClasses, BackendValues},
         errors::Error,
         guest::Guest,
-        handle::{Value, ObjectProtocol},
+        handle::{ObjectProtocol, Value},
         host::{
             class::{ClassBuilder, HostClass, HostClassDefinition},
             dunder::Dunder,
