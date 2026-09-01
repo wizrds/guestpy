@@ -89,11 +89,13 @@ pub mod fixtures {
 
     impl HostClass for Vector2 {
         const NAME: &'static str = "Vector2";
+    }
 
-        fn construct<'py, B>(enter: &Enter<'py, B>, args: Args<'py, B>) -> Result<Self, Error>
-        where
-            B: Backend + BackendValues + BackendCallables + BackendClasses,
-        {
+    impl<B> HostClassDefinition<B> for Vector2
+    where
+        B: Backend + BackendValues + BackendCallables + BackendClasses,
+    {
+        fn construct<'py>(enter: &Enter<'py, B>, args: Args<'py, B>) -> Result<Self, Error> {
             let x = args.required::<f64>(enter, 0, "x")?;
             let y = args.required::<f64>(enter, 1, "y")?;
 
@@ -101,12 +103,7 @@ pub mod fixtures {
 
             Ok(Self { x, y })
         }
-    }
 
-    impl<B> HostClassDefinition<B> for Vector2
-    where
-        B: Backend + BackendValues + BackendCallables + BackendClasses,
-    {
         fn build(builder: &mut ClassBuilder<B, Self>) {
             builder
                 .method("length", |vector, _, _| Ok::<_, Error>(vector.x.hypot(vector.y)))
@@ -124,15 +121,6 @@ pub mod fixtures {
     impl HostClass for Contract {
         const NAME: &'static str = "Contract";
         const DOC: Option<&'static str> = Some("Reports a result for an input.");
-
-        fn construct<'py, B>(_: &Enter<'py, B>, args: Args<'py, B>) -> Result<Self, Error>
-        where
-            B: Backend + BackendValues + BackendCallables + BackendClasses,
-        {
-            args.finish()?;
-
-            Ok(Self)
-        }
     }
 
     impl<B> HostClassDefinition<B> for Contract
@@ -145,6 +133,11 @@ pub mod fixtures {
             + BackendCoroutines
             + BackendExceptions,
     {
+        fn construct<'py>(_: &Enter<'py, B>, args: Args<'py, B>) -> Result<Self, Error> {
+            args.finish()?;
+            Ok(Self)
+        }
+
         fn build(builder: &mut ClassBuilder<B, Self>) {
             builder.subscriptable();
 

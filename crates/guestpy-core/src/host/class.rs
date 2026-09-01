@@ -459,16 +459,13 @@ where
 pub trait HostClass: Sized + 'static {
     const NAME: &'static str;
     const DOC: Option<&'static str> = None;
-
-    fn construct<'py, B>(_enter: &Enter<'py, B>, _args: Args<'py, B>) -> Result<Self, Error>
-    where
-        B: Backend + BackendValues + BackendCallables + BackendClasses,
-    {
-        Err(Error::unsupported(format!("host class {} cannot be constructed", Self::NAME,)))
-    }
 }
 
 pub trait HostClassDefinition<B: Backend>: HostClass {
+    fn construct<'py>(_enter: &Enter<'py, B>, _args: Args<'py, B>) -> Result<Self, Error> {
+        Err(Error::unsupported(format!("host class {} cannot be constructed", Self::NAME)))
+    }
+
     fn build(builder: &mut ClassBuilder<B, Self>);
 }
 
@@ -481,7 +478,7 @@ pub struct ClassBuilder<B: Backend, C> {
 impl<B, C> ClassBuilder<B, C>
 where
     B: Backend + BackendValues + BackendCallables + BackendClasses,
-    C: HostClass,
+    C: HostClass + HostClassDefinition<B>,
 {
     fn new() -> Self {
         Self {
@@ -700,7 +697,7 @@ where
         + BackendModules
         + BackendCoroutines
         + BackendExceptions,
-    C: HostClass,
+    C: HostClass + HostClassDefinition<B>,
 {
     fn pending<'py, Fut, R>(enter: &Enter<'py, B>, future: Fut) -> Result<B::Value<'py>, Error>
     where
@@ -749,7 +746,7 @@ where
 impl<B, C> ClassBuilder<B, C>
 where
     B: Backend + BackendValues + BackendCallables + BackendClasses,
-    C: HostClass,
+    C: HostClass + HostClassDefinition<B>,
 {
     pub fn base<P>(&mut self) -> &mut Self
     where

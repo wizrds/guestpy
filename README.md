@@ -467,6 +467,50 @@ Returning a host-class value to Rust preserves the live guest instance rather th
 The macro also supports mutable methods, class-level members, Python protocol methods, inheritance,
 and asynchronous host work. Refer to the API documentation when one of those capabilities is needed.
 
+## Backend-generic host classes
+
+A host class whose payload holds guest values rather than plain Rust data is written by hand instead
+of through the macro. `HostClass` carries the class identity, and `HostClassDefinition<B>` carries
+construction and member registration against one backend, so the type itself can be generic over `B`
+and store handles such as `Object<B>`:
+
+```rust
+use guestpy::prelude::*;
+
+struct Envelope<B: Backend> {
+    payload: Object<B>,
+}
+
+impl<B: Backend> HostClass for Envelope<B> {
+    const NAME: &'static str = "Envelope";
+}
+
+impl<B> HostClassDefinition<B> for Envelope<B>
+where
+    B: Backend + BackendValues + BackendCallables + BackendClasses,
+{
+    fn construct<'py>(enter: &Enter<'py, B>, args: Args<'py, B>) -> Result<Self, Error> {
+        let envelope = Self {
+            payload: args.required::<Object<B>>(enter, 0, "payload")?,
+        };
+
+        args.finish()?;
+
+        Ok(envelope)
+    }
+
+    fn build(builder: &mut ClassBuilder<B, Self>) {
+        builder.getter("payload", |envelope, _| Ok(envelope.payload.clone()));
+    }
+}
+```
+
+Register it by naming the backend the module is built for:
+
+```rust
+let spec = ModuleSpec::<CPython>::new("host_mail").class::<Envelope<CPython>>();
+```
+
 ## Host modules
 
 `#[guestpy::host_module]` exposes Rust functions and classes through a Python-importable module:

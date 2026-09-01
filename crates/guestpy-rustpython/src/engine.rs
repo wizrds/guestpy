@@ -374,19 +374,16 @@ VALUE = 21
 
         impl HostClass for Payload {
             const NAME: &'static str = "Payload";
-
-            fn construct<'py, B>(_: &Enter<'py, B>, _: Args<'py, B>) -> Result<Self, Error>
-            where
-                B: Backend + BackendValues + BackendCallables + BackendClasses,
-            {
-                Ok(Self)
-            }
         }
 
         impl<B> HostClassDefinition<B> for Payload
         where
             B: Backend + BackendValues + BackendCallables + BackendClasses,
         {
+            fn construct<'py>(_: &Enter<'py, B>, _: Args<'py, B>) -> Result<Self, Error> {
+                Ok(Self)
+            }
+
             fn build(_: &mut ClassBuilder<B, Self>) {}
         }
 

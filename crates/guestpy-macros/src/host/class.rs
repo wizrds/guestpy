@@ -624,16 +624,10 @@ impl HostClassDefinition {
             let setup = callable.argument_setup();
 
             quote! {
-                fn construct<'py, B>(
+                fn construct<'py>(
                     #enter: &#crate_path::scope::Enter<'py, B>,
                     #args: #crate_path::marshal::args::Args<'py, B>,
-                ) -> ::core::result::Result<Self, #crate_path::errors::Error>
-                where
-                    B: #crate_path::backend::Backend
-                        + #crate_path::backend::BackendValues
-                        + #crate_path::backend::BackendCallables
-                        + #crate_path::backend::BackendClasses,
-                {
+                ) -> ::core::result::Result<Self, #crate_path::errors::Error> {
                     #setup
 
                     Self::#ident(#(#bindings),*)
@@ -694,14 +688,14 @@ impl HostClassDefinition {
         quote! {
             impl #impl_generics #crate_path::host::class::HostClass for #target #where_clause {
                 const NAME: &'static str = #name;
-
-                #construct
             }
 
             impl #definition_impl_generics
                 #crate_path::host::class::HostClassDefinition<B>
                 for #target #definition_where_clause
             {
+                #construct
+
                 fn build(
                     #builder: &mut #crate_path::host::class::ClassBuilder<B, Self>,
                 ) {
