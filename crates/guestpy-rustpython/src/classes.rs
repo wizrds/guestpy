@@ -11,7 +11,7 @@ use guestpy_core::{
 };
 use rustpython_vm::{
     AsObject, Context, Py, PyObjectRef, PyPayload, PyRef,
-    builtins::PyType,
+    builtins::{PyGenericAlias, PyType},
     class::{PyClassImpl, StaticType},
     object::{MaybeTraverse, TraverseFn},
     pyclass,
@@ -176,6 +176,18 @@ impl BackendClasses for RustPython {
             .class()
             .fast_issubclass(HostBase::class(&vm.ctx))
     }
+
+    fn generic_alias<'py>(
+        vm: Tok<'py, Self>,
+        origin: &Val<'py, Self>,
+        arguments: &[Val<'py, Self>],
+    ) -> Result<Val<'py, Self>, Error> {
+        Ok(
+            PyGenericAlias::new(origin.clone(), vm.ctx.new_tuple(arguments.to_vec()), false, vm)
+                .map_err(|error| RustPython::guest(vm, error))?
+                .into_pyobject(vm),
+        )
+    }
 }
 
 #[cfg(test)]
@@ -184,7 +196,7 @@ mod tests {
         backend::{Backend, BackendCallables, BackendClasses, BackendValues},
         errors::Error,
         guest::Guest,
-        handle::Value,
+        handle::{ObjectProtocol, Value},
         host::{
             class::{ClassBuilder, HostClass, HostClassDefinition},
             dunder::Dunder,
@@ -234,11 +246,13 @@ mod tests {
 
     impl HostClass for Vector2 {
         const NAME: &'static str = "Vector2";
+    }
 
-        fn construct<'py, B>(enter: &Enter<'py, B>, args: Args<'py, B>) -> Result<Self, Error>
-        where
-            B: Backend + BackendValues + BackendCallables + BackendClasses,
-        {
+    impl<B> HostClassDefinition<B> for Vector2
+    where
+        B: Backend + BackendValues + BackendCallables + BackendClasses,
+    {
+        fn construct<'py>(enter: &Enter<'py, B>, args: Args<'py, B>) -> Result<Self, Error> {
             let x = args.required::<f64>(enter, 0, "x")?;
             let y = args.required::<f64>(enter, 1, "y")?;
 
@@ -246,12 +260,7 @@ mod tests {
 
             Ok(Self { x, y })
         }
-    }
 
-    impl<B> HostClassDefinition<B> for Vector2
-    where
-        B: Backend + BackendValues + BackendCallables + BackendClasses,
-    {
         fn build(builder: &mut ClassBuilder<B, Self>) {
             builder
                 .method("length", |vector, _, _| Ok::<_, Error>(vector.x.hypot(vector.y)))

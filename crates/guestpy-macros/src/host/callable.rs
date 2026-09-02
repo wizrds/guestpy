@@ -2,8 +2,8 @@ use darling::{FromMeta, util::Flag};
 use proc_macro2::{Span, TokenStream};
 use quote::{format_ident, quote};
 use syn::{
-    FnArg, GenericArgument, Ident, ImplItemFn, Pat, PatType, PathArguments, ReceiverKind,
-    ReturnType, Safety, Signature, Type, spanned::Spanned,
+    FnArg, GenericArgument, GenericParam, Ident, ImplItemFn, Pat, PatType, PathArguments,
+    ReceiverKind, ReturnType, Safety, Signature, Type, spanned::Spanned,
 };
 
 use crate::{attributes::HelperAttributes, host::HostMacroError};
@@ -63,6 +63,7 @@ struct ParameterOptions {
     borrow: Flag,
     borrow_mut: Flag,
     enter: Flag,
+    this: Flag,
 }
 
 impl ParameterOptions {
@@ -73,6 +74,7 @@ impl ParameterOptions {
             self.borrow.is_present(),
             self.borrow_mut.is_present(),
             self.enter.is_present(),
+            self.this.is_present(),
         ]
         .into_iter()
         .filter(|present| *present)
@@ -86,6 +88,7 @@ enum ParameterRole {
     Rest { descriptor: Type },
     Borrow { value_type: Type, mutable: bool },
     Enter,
+    This,
 }
 
 struct ResultType;
@@ -153,7 +156,7 @@ impl Parameter {
         if options.role_count() > 1 {
             return Err(syn::Error::new(
                 argument.span(),
-                "a host parameter may declare only one of kw, rest, borrow, borrow_mut, enter",
+                "a host parameter may declare only one of kw, rest, borrow, borrow_mut, enter, this",
             )
             .into());
         }
@@ -167,7 +170,9 @@ impl Parameter {
         };
 
         let value_type = argument.ty.as_ref();
-        let role = if options.enter.is_present() {
+        let role = if options.this.is_present() {
+            ParameterRole::This
+        } else if options.enter.is_present() {
             ParameterRole::Enter
         } else if options.borrow.is_present() {
             ParameterRole::Borrow {
@@ -245,13 +250,14 @@ impl Parameter {
         if let Some(position) = parameters
             .iter()
             .position(Self::is_rest)
-            && position + 1 != parameters.len() {
-                return Err(syn::Error::new(
-                    signature.inputs.span(),
-                    "a rest parameter must be the last parameter",
-                )
-                .into());
-            }
+            && position + 1 != parameters.len()
+        {
+            return Err(syn::Error::new(
+                signature.inputs.span(),
+                "a rest parameter must be the last parameter",
+            )
+            .into());
+        }
 
         Ok(parameters)
     }
@@ -264,11 +270,15 @@ impl Parameter {
     }
 
     pub(crate) fn consumes_arg(&self) -> bool {
-        !matches!(self.role, ParameterRole::Enter)
+        !matches!(self.role, ParameterRole::Enter | ParameterRole::This)
     }
 
     pub(crate) fn is_enter(&self) -> bool {
         matches!(self.role, ParameterRole::Enter)
+    }
+
+    pub(crate) fn is_this(&self) -> bool {
+        matches!(self.role, ParameterRole::This)
     }
 
     fn is_rest(&self) -> bool {
@@ -346,6 +356,7 @@ impl Parameter {
                 )
             }
             ParameterRole::Enter => quote!(__guestpy_enter),
+            ParameterRole::This => quote!(__guestpy_this),
         }
     }
 
@@ -364,7 +375,8 @@ impl Parameter {
             ParameterRole::Enter => quote!(__guestpy_enter),
             ParameterRole::Keyword { .. }
             | ParameterRole::Rest { .. }
-            | ParameterRole::Borrow { .. } => unreachable!(),
+            | ParameterRole::Borrow { .. }
+            | ParameterRole::This => unreachable!(),
         }
     }
 }
@@ -404,10 +416,21 @@ impl Callable {
             );
         }
 
-        if !method.sig.generics.params.is_empty() {
-            return Err(syn::Error::new(
-                method.sig.generics.span(),
-                "an exported host callable cannot be generic",
+        if let Some(parameter) = method
+            .sig
+            .generics
+            .params
+            .iter()
+            .find(|parameter| {
+                matches!(parameter, GenericParam::Type(_) | GenericParam::Const(_))
+            })
+        {
+            return Err(syn::Error::new_spanned(
+                parameter,
+                r#"
+an exported host callable cannot declare type or const parameters;
+name the backend with `backend = <name>` on the attribute instead
+"#,
             )
             .into());
         }
@@ -459,6 +482,12 @@ impl Callable {
                 .parameters
                 .iter()
                 .any(Parameter::is_enter)
+    }
+
+    pub(crate) fn uses_this(&self) -> bool {
+        self.parameters
+            .iter()
+            .any(Parameter::is_this)
     }
 
     pub(crate) fn enter_ident(&self) -> Ident {

@@ -19,3 +19,5 @@ pub use guestpy_core::{
     runtime::*,
     scope::*,
 };
+
+pub use guestpy_macros::{FromGuest, ToGuest, guest_class, guest_module, host_class, host_module};

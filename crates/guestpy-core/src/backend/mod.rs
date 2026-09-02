@@ -122,7 +122,7 @@ pub mod fixtures {
     };
     use crate::{
         errors::Error,
-        handle::Function,
+        handle::{Function, ObjectProtocol},
         host::{function::HostFn, module::ModuleSpec},
         runtime::Runtime,
     };
@@ -779,6 +779,13 @@ pub(crate) mod tests {
             unimplemented!()
         }
         fn is_host_instance<'py>(_: Tok<'py, Self>, _: &Val<'py, Self>) -> bool {
+            unimplemented!()
+        }
+        fn generic_alias<'py>(
+            _: Tok<'py, Self>,
+            _: &Val<'py, Self>,
+            _: &[Val<'py, Self>],
+        ) -> Result<Val<'py, Self>, Error> {
             unimplemented!()
         }
     }

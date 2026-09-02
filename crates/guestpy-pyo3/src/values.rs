@@ -22,7 +22,8 @@ pub(crate) trait AsDict<'py> {
 
 impl<'py> AsDict<'py> for Bound<'py, PyAny> {
     fn as_dict(&self) -> Result<Bound<'py, PyDict>, Error> {
-        self.cast::<PyDict>().cloned()
+        self.cast::<PyDict>()
+            .cloned()
             .map_err(|_| Error::conversion("value is not a dict"))
     }
 }
@@ -442,4 +443,11 @@ impl BackendValues for CPython {
             .map(|_| ())
             .map_err(|error| CPython::guest(py, error))
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::engine::CPython;
+
+    guestpy_core::backend::values::fixtures::tests!(CPython);
 }

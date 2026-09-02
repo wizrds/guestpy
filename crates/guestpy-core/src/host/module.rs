@@ -214,13 +214,6 @@ mod tests {
 
     impl HostClass for Vector2 {
         const NAME: &'static str = "Vector2";
-
-        fn construct<'py, B>(_: &Enter<'py, B>, _: Args<'py, B>) -> Result<Self, Error>
-        where
-            B: Backend + BackendValues + BackendCallables + BackendClasses,
-        {
-            Ok(Self { x: 3, y: 4 })
-        }
     }
 
     impl<B> HostClassDefinition<B> for Vector2
@@ -233,6 +226,10 @@ mod tests {
             + BackendCoroutines
             + BackendExceptions,
     {
+        fn construct<'py>(_: &Enter<'py, B>, _: Args<'py, B>) -> Result<Self, Error> {
+            Ok(Self { x: 3, y: 4 })
+        }
+
         fn build(builder: &mut ClassBuilder<B, Self>) {
             builder
                 .method("length", |vector, _, _| Ok::<_, Error>(vector.x + vector.y))

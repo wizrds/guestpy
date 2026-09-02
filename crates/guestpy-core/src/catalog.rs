@@ -179,6 +179,10 @@ impl<B: Backend> RealisationCache<B> {
         self.classes.contains(&payload)
     }
 
+    pub(crate) fn class_spec(&self, payload: TypeId) -> Option<Rc<ClassSpec<B>>> {
+        self.classes.spec(&payload)
+    }
+
     pub(crate) fn realised_class(&self, payload: TypeId) -> Option<B::Owned> {
         self.classes.realised(&payload)
     }

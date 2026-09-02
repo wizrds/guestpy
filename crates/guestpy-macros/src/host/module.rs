@@ -5,14 +5,25 @@ use darling::{
 };
 use proc_macro2::{Span, TokenStream};
 use quote::quote;
-use syn::{FnArg, ImplItem, ImplItemFn, ItemImpl, Path, spanned::Spanned};
+use syn::{
+    FnArg,
+    ImplItem,
+    ImplItemFn,
+    ItemImpl,
+    Path,
+    TypeParamBound,
+    parse_quote,
+    spanned::Spanned,
+};
 
 use crate::{
     attributes::HelperAttributes,
     host::{
         HostMacroError,
+        backend::{BackendBounds, BackendOption, BackendParameter},
         callable::{Callable, Parameter, Receiver},
         target::HostTarget,
+        types::TypeList,
     },
     naming::{Naming, RenameRule},
     path::CratePath,
@@ -24,7 +35,8 @@ struct ModuleOptions {
     name: Option<String>,
     rename_all: Option<RenameRule>,
     method_name: Option<syn::Ident>,
-    classes: PathList,
+    backend: Option<BackendOption>,
+    classes: TypeList,
     exceptions: PathList,
     crate_path: Option<Path>,
 }
@@ -85,7 +97,16 @@ impl ModuleMember {
         }
     }
 
-    fn registration(&self) -> TokenStream {
+    fn ident(&self) -> &syn::Ident {
+        match self {
+            Self::Function(callable) | Self::Getter(callable) => callable.ident(),
+            Self::Init { ident, .. }
+            | Self::Object { ident, .. }
+            | Self::Constant { ident, .. } => ident,
+        }
+    }
+
+    fn registration(&self, backend: &BackendParameter) -> TokenStream {
         match self {
             Self::Function(callable) if callable.asynchronous() => {
                 let name = callable.name();
@@ -94,13 +115,14 @@ impl ModuleMember {
                 let args = callable.args_ident();
                 let bindings = callable.argument_bindings();
                 let setup = callable.argument_setup();
+                let turbofish = backend.turbofish();
 
                 quote! {
                     .async_function(#name, |#enter, #args| {
                         #setup
 
                         ::core::result::Result::Ok(async move {
-                            Self::#ident(#(#bindings),*)
+                            Self::#ident #turbofish (#(#bindings),*)
                                 .await
                                 .map_err(::core::convert::Into::into)
                         })
@@ -114,9 +136,11 @@ impl ModuleMember {
                 let args = callable.args_ident();
                 let bindings = callable.argument_bindings();
                 let setup = callable.argument_setup();
+                let turbofish = backend.turbofish();
                 let invocation = Self::invoke(
                     shared,
                     callable.ident(),
+                    &turbofish,
                     &bindings
                         .iter()
                         .map(|binding| quote!(#binding))
@@ -140,7 +164,8 @@ impl ModuleMember {
                 let name = callable.name();
                 let enter = callable.enter_ident();
                 let arguments = callable.accessor_expressions();
-                let invocation = Self::invoke(shared, callable.ident(), &arguments);
+                let turbofish = backend.turbofish();
+                let invocation = Self::invoke(shared, callable.ident(), &turbofish, &arguments);
                 let closure = Self::state_closure(
                     shared,
                     quote!(
@@ -163,7 +188,8 @@ impl ModuleMember {
                 } else {
                     Vec::new()
                 };
-                let invocation = Self::invoke(*shared, ident, &arguments);
+                let turbofish = backend.turbofish();
+                let invocation = Self::invoke(*shared, ident, &turbofish, &arguments);
                 let closure = Self::state_closure(
                     *shared,
                     quote!(
@@ -176,7 +202,13 @@ impl ModuleMember {
                 quote!(.init(#closure))
             }
             Self::Object { ident, name, shared } => {
-                let invocation = Self::invoke(*shared, ident, &[quote!(__guestpy_ns)]);
+                let turbofish = backend.turbofish();
+                let invocation = Self::invoke(
+                    *shared,
+                    ident,
+                    &turbofish,
+                    &[quote!(__guestpy_ns)],
+                );
                 let closure = Self::state_closure(*shared, quote!(|__guestpy_ns| #invocation));
 
                 quote!(.object(#name, #closure))
@@ -185,11 +217,16 @@ impl ModuleMember {
         }
     }
 
-    fn invoke(shared: bool, ident: &syn::Ident, arguments: &[TokenStream]) -> TokenStream {
+    fn invoke(
+        shared: bool,
+        ident: &syn::Ident,
+        turbofish: &TokenStream,
+        arguments: &[TokenStream],
+    ) -> TokenStream {
         if shared {
-            quote!(__guestpy_state.#ident(#(#arguments),*))
+            quote!(__guestpy_state.#ident #turbofish (#(#arguments),*))
         } else {
-            quote!(Self::#ident(#(#arguments),*))
+            quote!(Self::#ident #turbofish (#(#arguments),*))
         }
     }
 
@@ -215,10 +252,12 @@ struct HostModuleDefinition {
     name: String,
     method_name: syn::Ident,
     crate_path: Path,
-    classes: Vec<Path>,
+    backend: BackendParameter,
+    classes: TypeList,
     exceptions: Vec<String>,
     members: Vec<ModuleMember>,
     needs_state: bool,
+    bounds: BackendBounds,
 }
 
 impl HostModuleMacro {
@@ -305,19 +344,32 @@ impl HostModuleDefinition {
             .iter()
             .any(ModuleMember::is_stateful);
 
-        Ok(Self {
+        let backend = BackendParameter::resolve(options.backend, item, "host_module")?;
+        let crate_path = CratePath::new(options.crate_path).resolve();
+        let mut bounds = BackendBounds::new(
+            &backend,
+            Self::capabilities(
+                &crate_path,
+                &options.classes,
+                &options.exceptions,
+                &members,
+            ),
+        );
+
+        for method in Self::exported_methods(item, &members) {
+            bounds.absorb(&mut method.sig.generics);
+        }
+
+        let definition = Self {
             name: options
                 .name
                 .unwrap_or_else(|| target.name()),
             method_name: options
                 .method_name
                 .unwrap_or_else(|| syn::Ident::new("module", Span::call_site())),
-            crate_path: CratePath::new(options.crate_path).resolve(),
-            classes: options
-                .classes
-                .iter()
-                .cloned()
-                .collect(),
+            crate_path,
+            backend,
+            classes: options.classes,
             exceptions: options
                 .exceptions
                 .iter()
@@ -329,7 +381,86 @@ impl HostModuleDefinition {
                 .collect(),
             members,
             needs_state,
-        })
+            bounds,
+        };
+
+        definition.inject_backend_parameter(item);
+
+        Ok(definition)
+    }
+
+    fn exported_methods<'item>(
+        item: &'item mut ItemImpl,
+        members: &'item [ModuleMember],
+    ) -> impl Iterator<Item = &'item mut ImplItemFn> {
+        item.items
+            .iter_mut()
+            .filter_map(|element| match element {
+                ImplItem::Fn(method) => Some(method),
+                _ => None,
+            })
+            .filter(|method| {
+                members
+                    .iter()
+                    .any(|member| member.ident() == &method.sig.ident)
+            })
+    }
+
+    fn inject_backend_parameter(&self, item: &mut ItemImpl) {
+        let Some(backend) = self.backend.introduced() else {
+            return;
+        };
+        let Some(predicate) = self.bounds.predicate() else {
+            return;
+        };
+
+        for method in Self::exported_methods(item, &self.members) {
+            method.sig.generics.params.push(parse_quote!(#backend));
+            method
+                .sig
+                .generics
+                .make_where_clause()
+                .predicates
+                .push(predicate.clone());
+        }
+    }
+
+    fn capabilities(
+        crate_path: &Path,
+        classes: &TypeList,
+        exceptions: &PathList,
+        members: &[ModuleMember],
+    ) -> Vec<TypeParamBound> {
+        let mut capabilities = vec![
+            parse_quote!(#crate_path::backend::Backend),
+            parse_quote!(#crate_path::backend::BackendValues),
+            parse_quote!(#crate_path::backend::BackendCallables),
+        ];
+        let has_async_function = members.iter().any(
+            |member| {
+                matches!(
+                    member,
+                    ModuleMember::Function(callable) if callable.asynchronous(),
+                )
+            },
+        );
+
+        if !classes.is_empty() {
+            capabilities.push(parse_quote!(#crate_path::backend::BackendClasses));
+        }
+
+        if has_async_function {
+            capabilities.extend([
+                parse_quote!(#crate_path::backend::BackendModules),
+                parse_quote!(#crate_path::backend::BackendCoroutines),
+            ]);
+        }
+
+        if has_async_function || !exceptions.is_empty() {
+            capabilities.push(parse_quote!(#crate_path::backend::BackendExceptions));
+        }
+
+        capabilities
     }
 
     fn classify_method(
@@ -419,6 +550,16 @@ impl HostModuleDefinition {
             Naming::member(&method.sig.ident, options.name.clone(), rename_all),
         )?;
 
+        if callable.uses_this() {
+            return Err(syn::Error::new(
+                callable.span(),
+                r#"
+a #[guestpy(this)] parameter is only valid on a host class method, async_method, or class_method
+"#,
+            )
+            .into());
+        }
+
         if options.getter.is_present() {
             if callable.asynchronous() {
                 return Err(syn::Error::new(
@@ -450,14 +591,18 @@ impl HostModuleDefinition {
         match (callable.receiver(), callable.asynchronous()) {
             (Receiver::Exclusive, _) => Err(syn::Error::new(
                 callable.span(),
-                "a #[guestpy(function)] cannot take &mut self; share state through &self and \
-                 interior mutability",
+                r#"
+a #[guestpy(function)] cannot take &mut self;
+share state through &self and interior mutability
+"#,
             )
             .into()),
             (Receiver::Shared, true) => Err(syn::Error::new(
                 callable.span(),
-                "a stateful (&self) async module function is unsupported; make it non-async, or \
-                 make it receiverless",
+                r#"
+a stateful (&self) async module function is unsupported;
+make it non-async, or make it receiverless
+"#,
             )
             .into()),
             (_, true)
@@ -515,17 +660,19 @@ impl HostModuleDefinition {
             name,
             method_name,
             crate_path,
+            backend,
             classes,
             exceptions,
             members,
             needs_state,
+            bounds,
         } = self;
         let target = item.self_ty.as_ref();
         let generics = item.generics.clone();
         let (impl_generics, _, where_clause) = generics.split_for_impl();
         let registrations = members
             .iter()
-            .map(ModuleMember::registration);
+            .map(|member| member.registration(&backend));
         let exception_registrations = exceptions.iter().map(|exception| {
             quote!(.exception(
                 #exception,
@@ -541,39 +688,32 @@ impl HostModuleDefinition {
         } else {
             quote!()
         };
-        let has_async_function = members.iter().any(
-            |member| matches!(member, ModuleMember::Function(callable) if callable.asynchronous()),
-        );
-        let has_class = !classes.is_empty();
-        let needs_exceptions = has_async_function || !exceptions.is_empty();
-        let async_bound = has_async_function.then(|| {
-            quote! {
-                + #crate_path::backend::BackendModules
-                + #crate_path::backend::BackendCoroutines
-            }
-        });
-        let class_bound = has_class.then(|| quote!(+ #crate_path::backend::BackendClasses));
-        let exception_bound =
-            needs_exceptions.then(|| quote!(+ #crate_path::backend::BackendExceptions));
-        let class_definition_bounds = classes
-            .iter()
-            .map(|class| quote!(#class: #crate_path::host::class::HostClassDefinition<B>,));
+        let backend_type = backend.ty();
+        let method_generics = backend.method_generics();
+
+        let method_where_clause = bounds
+            .predicate()
+            .map(|predicate| {
+                let class_definition_bounds = classes.iter().map(|class| {
+                    quote!(#class: #crate_path::host::class::HostClassDefinition<#backend_type>,)
+                });
+
+                quote! {
+                    where
+                        #predicate,
+                        #(#class_definition_bounds)*
+                }
+            });
 
         quote! {
             impl #impl_generics #target #where_clause {
-                pub fn #method_name<B>(#receiver) -> #crate_path::host::module::ModuleSpec<B>
-                where
-                    B: #crate_path::backend::Backend
-                        + #crate_path::backend::BackendValues
-                        + #crate_path::backend::BackendCallables
-                        #class_bound
-                        #async_bound
-                        #exception_bound,
-                    #(#class_definition_bounds)*
+                pub fn #method_name #method_generics (#receiver)
+                    -> #crate_path::host::module::ModuleSpec<#backend_type>
+                #method_where_clause
                 {
                     #state
 
-                    #crate_path::host::module::ModuleSpec::<B>::new(#name)
+                    #crate_path::host::module::ModuleSpec::<#backend_type>::new(#name)
                         #(#registrations)*
                         #(#exception_registrations)*
                         #(#class_registrations)*
@@ -791,5 +931,89 @@ mod tests {
             )
             .is_err(),
         );
+    }
+
+    #[test]
+    fn registers_a_generic_class() {
+        let output = expand(
+            quote!(name = "host_mail", classes(Envelope<B>), crate_path = crate),
+            parse_quote! {
+                impl Mail {}
+            },
+        );
+
+        assert!(output.contains(". class :: < Envelope < B > > ()"));
+        assert!(
+            output
+                .contains("Envelope < B > : crate :: host :: class :: HostClassDefinition < B >",),
+        );
+    }
+
+    #[test]
+    fn reuses_a_declared_backend_parameter() {
+        let output = expand(
+            quote!(name = "host_mail", backend = B, crate_path = crate),
+            parse_quote! {
+                impl<B> Mail<B> {}
+            },
+        );
+
+        assert!(output.contains("ModuleSpec < B >"));
+        assert!(!output.contains("fn module < B >"));
+    }
+
+    #[test]
+    fn pins_a_module_to_a_concrete_backend() {
+        let output = expand(
+            quote!(name = "host_mail", backend(pin = RustPython), crate_path = crate),
+            parse_quote! {
+                impl Mail {}
+            },
+        );
+
+        assert!(output.contains("ModuleSpec < RustPython >"));
+        assert!(!output.contains("where"));
+    }
+
+    #[test]
+    fn introduces_a_backend_parameter_on_module_members() {
+        let output = expand(
+            quote!(name = "host_mail", backend = B, crate_path = crate),
+            parse_quote! {
+                impl Mail {
+                    #[guestpy(function)]
+                    fn describe(payload: Object<B>) -> Result<String, Error> {
+                        payload.type_name()
+                    }
+                }
+            },
+        );
+
+        assert!(output.contains("fn describe < B > (payload : Object < B >)"));
+        assert!(output.contains("B : crate :: backend :: Backend"));
+        assert!(output.contains("Self :: describe :: < B >"));
+        assert!(output.contains("fn module < B >"));
+        assert!(output.contains("ModuleSpec < B >"));
+    }
+
+    #[test]
+    fn hoists_a_module_member_bound_onto_the_method() {
+        let output = expand(
+            quote!(backend = B, crate_path = crate),
+            parse_quote! {
+                impl Registry {
+                    #[guestpy(function)]
+                    fn ping(#[guestpy(enter)] enter: &Enter<'_, B>) -> Result<(), Error>
+                    where
+                        B: InterpreterBackend,
+                    {
+                        Ok(())
+                    }
+                }
+            },
+        );
+
+        assert!(output.contains("+ InterpreterBackend"));
+        assert_eq!(output.matches("InterpreterBackend").count(), 2);
     }
 }

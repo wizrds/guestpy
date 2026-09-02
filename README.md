@@ -467,6 +467,66 @@ Returning a host-class value to Rust preserves the live guest instance rather th
 The macro also supports mutable methods, class-level members, Python protocol methods, inheritance,
 and asynchronous host work. Refer to the API documentation when one of those capabilities is needed.
 
+## Backend-generic host classes
+
+A host class that stores guest values rather than plain Rust data is generic over the backend. Name
+the backend parameter with `backend` so the macro knows which one it is:
+
+```rust
+use guestpy::prelude::*;
+
+struct Envelope<B: Backend> {
+    payload: Object<B>,
+}
+
+#[guestpy::host_class(backend = B)]
+impl<B: Backend> Envelope<B> {
+    #[guestpy(constructor)]
+    fn new(payload: Object<B>) -> Result<Self, Error> {
+        Ok(Self { payload })
+    }
+
+    #[guestpy(get)]
+    fn payload(&self) -> Result<Object<B>, Error> {
+        Ok(self.payload.clone())
+    }
+}
+```
+
+Register it like any other class, naming the parameter the generated module method is generic over:
+
+```rust
+struct Mail;
+
+#[guestpy::host_module(name = "host_mail", classes(Envelope<B>))]
+impl Mail {}
+```
+
+A host class does not have to carry the backend in its own type. A class that holds no guest data
+still needs to speak in terms of one, and naming a parameter the impl does not declare is how it
+does so; the macro declares that parameter on each exported member:
+
+```rust
+struct Contract;
+
+#[guestpy::host_class(backend = B)]
+impl Contract {
+    #[guestpy(method)]
+    fn invoke(#[guestpy(this)] this: &Object<B>) -> Result<String, Error> {
+        this.type_name()
+    }
+}
+```
+
+In both forms `backend` names a type parameter. Whether it is the one the impl already declares
+or one the macro adds to the members is decided by the impl, not by the attribute. To pin a class
+to a single interpreter instead, name the backend type with `pin`:
+
+```rust
+#[guestpy::host_class(backend(pin = CPython))]
+impl Envelope { ... }
+```
+
 ## Host modules
 
 `#[guestpy::host_module]` exposes Rust functions and classes through a Python-importable module:

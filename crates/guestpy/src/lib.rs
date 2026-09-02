@@ -364,6 +364,59 @@
 //! }
 //! ```
 //!
+//! A host class that stores guest values rather than plain Rust data is generic over the backend.
+//! Name the backend parameter with `backend` so the macro knows which one it is:
+//!
+//! ```ignore
+//! use guestpy::prelude::*;
+//!
+//! struct Envelope<B: Backend> {
+//!     payload: Object<B>,
+//! }
+//!
+//! #[guestpy::host_class(backend = B)]
+//! impl<B: Backend> Envelope<B> {
+//!     #[guestpy(constructor)]
+//!     fn new(payload: Object<B>) -> Result<Self, Error> {
+//!         Ok(Self { payload })
+//!     }
+//!
+//!     #[guestpy(get)]
+//!     fn payload(&self) -> Result<Object<B>, Error> {
+//!         Ok(self.payload.clone())
+//!     }
+//! }
+//!
+//! struct Mail;
+//!
+//! #[guestpy::host_module(name = "host_mail", classes(Envelope<B>))]
+//! impl Mail {}
+//! ```
+//!
+//! A host class does not have to carry the backend in its own type. A class that holds no guest
+//! data still needs to speak in terms of one, and naming a parameter the impl does not declare is
+//! how it does so; the macro declares that parameter on each exported member:
+//!
+//! ```ignore
+//! struct Contract;
+//!
+//! #[guestpy::host_class(backend = B)]
+//! impl Contract {
+//!     #[guestpy(method)]
+//!     fn invoke(#[guestpy(this)] this: &Object<B>) -> Result<String, Error> {
+//!         this.type_name()
+//!     }
+//! }
+//! ```
+//!
+//! In both forms `backend` names a type parameter, and whether it is reused from the impl or
+//! declared on the members is decided by the impl rather than by the attribute. Pin a class to a
+//! single interpreter with `backend(pin = CPython)`. Behind the macro,
+//! [`HostClass`](guestpy_core::host::class::HostClass) carries the class identity and
+//! [`HostClassDefinition`](guestpy_core::host::class::HostClassDefinition) carries construction and
+//! member registration against one backend; implement them by hand when a class needs something
+//! the macro does not express.
+//!
 //! The macro also supports mutable methods, class-level members, Python protocol methods,
 //! inheritance, and asynchronous host work. Use [`guestpy::host_module`](crate::host_module) to
 //! expose functions and classes through a Python-importable module. Combine modules with
@@ -552,7 +605,7 @@ mod tests {
     {
         fn get(&self, path: String) -> Result<Response<B>, Error> {
             self.instance
-                .call::<_, Response<B>>("get", (path,))
+                .call_method::<_, Response<B>>("get", (path,))
         }
     }
 

@@ -16,7 +16,7 @@ use crate::{
     driver::CoroutineFuture,
     errors::Error,
     guest::Guest,
-    handle::{AsyncIter, Handle, Iter, Value},
+    handle::{AsyncIter, Handle, Iter, Value, traits::HasHandle},
     marshal::{FromGuest, ToGuest},
     scope::Enter,
 };
@@ -44,6 +44,12 @@ impl<B: Backend> Generator<B> {
         }
 
         Ok(())
+    }
+}
+
+impl<B: Backend> HasHandle<B> for Generator<B> {
+    fn handle(&self) -> &Handle<B> {
+        &self.0
     }
 }
 
@@ -90,7 +96,7 @@ where
             .with_enter(|enter, generator| B::close(enter.token(), generator))
     }
 
-    pub fn collect<T: FromGuest<B>>(&self) -> Result<Vec<T::Owned>, Error> {
+    pub fn collect<T: FromGuest<B>>(self) -> Result<Vec<T::Owned>, Error> {
         std::iter::from_fn(|| self.next::<T>().transpose()).collect()
     }
 
@@ -251,7 +257,7 @@ where
             .await
     }
 
-    pub async fn collect(&self) -> Result<Vec<T::Owned>, Error> {
+    pub async fn collect(self) -> Result<Vec<T::Owned>, Error> {
         let mut items = Vec::new();
 
         while let Some(item) = self.anext().await? {

@@ -178,7 +178,7 @@ mod tests {
         bundle::Bundle,
         driver::Progress,
         errors::Error,
-        handle::Coroutine,
+        handle::{Coroutine, ObjectProtocol},
         host::{
             class::{ClassBuilder, HostClass, HostClassDefinition},
             module::ModuleSpec,
@@ -248,7 +248,7 @@ VALUE = 21
             guest
                 .host_module("m")
                 .unwrap()
-                .call::<_, i64>("double", (21,))
+                .call_method::<_, i64>("double", (21,))
                 .unwrap(),
             42,
         );
@@ -374,19 +374,16 @@ VALUE = 21
 
         impl HostClass for Payload {
             const NAME: &'static str = "Payload";
-
-            fn construct<'py, B>(_: &Enter<'py, B>, _: Args<'py, B>) -> Result<Self, Error>
-            where
-                B: Backend + BackendValues + BackendCallables + BackendClasses,
-            {
-                Ok(Self)
-            }
         }
 
         impl<B> HostClassDefinition<B> for Payload
         where
             B: Backend + BackendValues + BackendCallables + BackendClasses,
         {
+            fn construct<'py>(_: &Enter<'py, B>, _: Args<'py, B>) -> Result<Self, Error> {
+                Ok(Self)
+            }
+
             fn build(_: &mut ClassBuilder<B, Self>) {}
         }
 

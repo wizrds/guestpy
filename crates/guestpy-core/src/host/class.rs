@@ -9,7 +9,7 @@ use crate::{
         callables::{HostBody, PendingValue, RawBody},
     },
     errors::Error,
-    handle::Value,
+    handle::{Object, Value},
     host::{
         declaration::{DeclarationContext, DeclareMember, Member},
         dunder::Dunder,
@@ -44,8 +44,11 @@ struct MethodDeclaration<B: Backend> {
 }
 
 impl<B: Backend> MethodDeclaration<B> {
-    fn new(body: MethodBody<B>) -> Self {
-        Self { body }
+    fn new<F>(body: F) -> Self
+    where
+        F: for<'py> Fn(&Enter<'py, B>, Val<'py, B>, Args<'py, B>) -> Result<Val<'py, B>, Error> + 'static,
+    {
+        Self { body: Rc::new(body) }
     }
 }
 
@@ -67,8 +70,11 @@ struct ClassMethodDeclaration<B: Backend> {
 }
 
 impl<B: Backend> ClassMethodDeclaration<B> {
-    fn new(body: MethodBody<B>) -> Self {
-        Self { body }
+    fn new<F>(body: F) -> Self
+    where
+        F: for<'py> Fn(&Enter<'py, B>, Val<'py, B>, Args<'py, B>) -> Result<Val<'py, B>, Error> + 'static,
+    {
+        Self { body: Rc::new(body) }
     }
 }
 
@@ -97,8 +103,11 @@ struct StaticMethodDeclaration<B: Backend> {
 }
 
 impl<B: Backend> StaticMethodDeclaration<B> {
-    fn new(body: HostBody<B>) -> Self {
-        Self { body }
+    fn new<F>(body: F) -> Self
+    where
+        F: for<'py> Fn(&Enter<'py, B>, Args<'py, B>) -> Result<Val<'py, B>, Error> + 'static,
+    {
+        Self { body: Rc::new(body) }
     }
 }
 
@@ -140,16 +149,25 @@ impl<B: Backend> ClassPropertyDeclaration<B> {
         }
     }
 
-    fn set_get(&self, get: MethodBody<B>) {
-        *self.get.borrow_mut() = Some(get);
+    fn set_get<F>(&self, get: F)
+    where
+        F: for<'py> Fn(&Enter<'py, B>, Val<'py, B>, Args<'py, B>) -> Result<Val<'py, B>, Error> + 'static,
+    {
+        *self.get.borrow_mut() = Some(Rc::new(get));
     }
 
-    fn set_set(&self, set: SetterBody<B>) {
-        *self.set.borrow_mut() = Some(set);
+    fn set_set<F>(&self, set: F)
+    where
+        F: for<'py> Fn(&Enter<'py, B>, Val<'py, B>, Val<'py, B>) -> Result<(), Error> + 'static,
+    {
+        *self.set.borrow_mut() = Some(Rc::new(set));
     }
 
-    fn set_del(&self, del: DeleterBody<B>) {
-        *self.del.borrow_mut() = Some(del);
+    fn set_del<F>(&self, del: F)
+    where
+        F: for<'py> Fn(&Enter<'py, B>, Val<'py, B>) -> Result<(), Error> + 'static,
+    {
+        *self.del.borrow_mut() = Some(Rc::new(del));
     }
 }
 
@@ -312,6 +330,21 @@ where
 
         Rc::new(builder.spec)
     }
+
+    pub(crate) fn realise_registered<'py, C>(enter: &Enter<'py, B>) -> Result<Val<'py, B>, Error>
+    where
+        C: HostClass + HostClassDefinition<B>,
+    {
+        let spec = enter
+            .guest()
+            .realisation()
+            .class_spec(TypeId::of::<C>())
+            .ok_or_else(|| {
+                Error::unexpected(format!("host class {} was not registered", C::NAME))
+            })?;
+
+        ClassRealiser::new(enter).realise(&spec)
+    }
 }
 
 struct ClassRealiser<'py, 'e, B: Backend> {
@@ -459,16 +492,13 @@ where
 pub trait HostClass: Sized + 'static {
     const NAME: &'static str;
     const DOC: Option<&'static str> = None;
-
-    fn construct<'py, B>(_enter: &Enter<'py, B>, _args: Args<'py, B>) -> Result<Self, Error>
-    where
-        B: Backend + BackendValues + BackendCallables + BackendClasses,
-    {
-        Err(Error::unsupported(format!("host class {} cannot be constructed", Self::NAME,)))
-    }
 }
 
 pub trait HostClassDefinition<B: Backend>: HostClass {
+    fn construct<'py>(_enter: &Enter<'py, B>, _args: Args<'py, B>) -> Result<Self, Error> {
+        Err(Error::unsupported(format!("host class {} cannot be constructed", Self::NAME)))
+    }
+
     fn build(builder: &mut ClassBuilder<B, Self>);
 }
 
@@ -481,7 +511,7 @@ pub struct ClassBuilder<B: Backend, C> {
 impl<B, C> ClassBuilder<B, C>
 where
     B: Backend + BackendValues + BackendCallables + BackendClasses,
-    C: HostClass,
+    C: HostClass + HostClassDefinition<B>,
 {
     fn new() -> Self {
         Self {
@@ -532,9 +562,28 @@ where
     {
         self.push(
             name,
-            Rc::new(MethodDeclaration::new(Rc::new(move |enter, receiver, args| {
+            Rc::new(MethodDeclaration::new(move |enter, receiver, args| {
                 function(&*C::from_guest_ref(enter, &receiver)?, enter, args)?.to_guest(enter)
-            }))),
+            })),
+        )
+    }
+
+    pub fn method_with_this<F, R>(&mut self, name: &str, function: F) -> &mut Self
+    where
+        F: for<'py> Fn(&C, &Object<B>, &Enter<'py, B>, Args<'py, B>) -> Result<R, Error> + 'static,
+        R: ToGuest<B> + 'static,
+    {
+        self.push(
+            name,
+            Rc::new(MethodDeclaration::<B>::new(move |enter, receiver, args| {
+                function(
+                    &*C::from_guest_ref(enter, &receiver)?,
+                    &Object::from_guest(enter, receiver.clone())?,
+                    enter,
+                    args,
+                )?
+                .to_guest(enter)
+            })),
         )
     }
 
@@ -545,9 +594,42 @@ where
     {
         self.push(
             name,
-            Rc::new(MethodDeclaration::new(Rc::new(move |enter, receiver, args| {
+            Rc::new(MethodDeclaration::new(move |enter, receiver, args| {
                 function(&mut *C::from_guest_mut(enter, &receiver)?, enter, args)?.to_guest(enter)
-            }))),
+            })),
+        )
+    }
+
+    pub fn method_mut_with_this<F, R>(&mut self, name: &str, function: F) -> &mut Self
+    where
+        F: for<'py> Fn(&mut C, &Object<B>, &Enter<'py, B>, Args<'py, B>) -> Result<R, Error>
+            + 'static,
+        R: ToGuest<B> + 'static,
+    {
+        self.push(
+            name,
+            Rc::new(MethodDeclaration::<B>::new(move |enter, receiver, args| {
+                function(
+                    &mut *C::from_guest_mut(enter, &receiver)?,
+                    &Object::from_guest(enter, receiver.clone())?,
+                    enter,
+                    args,
+                )?
+                .to_guest(enter)
+            })),
+        )
+    }
+
+    pub fn raw_method<F, R>(&mut self, name: &str, function: F) -> &mut Self
+    where
+        F: for<'py> Fn(&Object<B>, &Enter<'py, B>, Args<'py, B>) -> Result<R, Error> + 'static,
+        R: ToGuest<B> + 'static,
+    {
+        self.push(
+            name,
+            Rc::new(MethodDeclaration::new(move |enter, receiver, args| {
+                function(&Object::from_guest(enter, receiver)?, enter, args)?.to_guest(enter)
+            })),
         )
     }
 
@@ -558,9 +640,9 @@ where
     {
         self.push(
             name,
-            Rc::new(ClassMethodDeclaration::new(Rc::new(move |enter, class, args| {
+            Rc::new(ClassMethodDeclaration::new(move |enter, class, args| {
                 function(enter, class, args)?.to_guest(enter)
-            }))),
+            })),
         )
     }
 
@@ -571,9 +653,9 @@ where
     {
         self.push(
             name,
-            Rc::new(StaticMethodDeclaration::new(Rc::new(move |enter, args| {
+            Rc::new(StaticMethodDeclaration::new(move |enter, args| {
                 function(enter, args)?.to_guest(enter)
-            }))),
+            })),
         )
     }
 
@@ -583,9 +665,9 @@ where
         R: ToGuest<B> + 'static,
     {
         self.property_slot(name)
-            .set_get(Rc::new(move |enter, receiver, _| {
+            .set_get(move |enter, receiver, _| {
                 get(&*C::from_guest_ref(enter, &receiver)?, enter)?.to_guest(enter)
-            }));
+            });
 
         self
     }
@@ -596,9 +678,9 @@ where
         V: FromGuest<B, Owned = V> + 'static,
     {
         self.property_slot(name)
-            .set_set(Rc::new(move |enter, receiver, value| {
+            .set_set(move |enter, receiver, value| {
                 set(&mut *C::from_guest_mut(enter, &receiver)?, enter, V::from_guest(enter, value)?)
-            }));
+            });
 
         self
     }
@@ -608,9 +690,9 @@ where
         F: for<'py> Fn(&mut C, &Enter<'py, B>) -> Result<(), Error> + 'static,
     {
         self.property_slot(name)
-            .set_del(Rc::new(move |enter, receiver| {
+            .set_del(move |enter, receiver| {
                 del(&mut *C::from_guest_mut(enter, &receiver)?, enter)
-            }));
+            });
 
         self
     }
@@ -639,9 +721,9 @@ where
     {
         self.spec.members.push((
             MemberName::Dunder(dunder),
-            Rc::new(MethodDeclaration::new(Rc::new(move |enter, receiver, args| {
+            Rc::new(MethodDeclaration::new(move |enter, receiver, args| {
                 function(&*C::from_guest_ref(enter, &receiver)?, enter, args)?.to_guest(enter)
-            }))),
+            })),
         ));
 
         self
@@ -651,6 +733,27 @@ where
         build(&mut self.spec.statics);
 
         self
+    }
+
+    pub fn generic(&mut self) -> &mut Self {
+        self.class_method("__class_getitem__", |enter, class, args| {
+            let item = args
+                .required::<Value<B>>(enter, 0, "item")?
+                .to_guest(enter)?;
+            let mut arguments = Vec::new();
+
+            if B::is_tuple(enter.token(), &item) {
+                let iterator = B::iter(enter.token(), &item)?;
+
+                while let Some(argument) = B::next(enter.token(), &iterator)? {
+                    arguments.push(argument);
+                }
+            } else {
+                arguments.push(item);
+            }
+
+            Value::<B>::from_guest(enter, B::generic_alias(enter.token(), &class, &arguments)?)
+        })
     }
 }
 
@@ -663,7 +766,7 @@ where
         + BackendModules
         + BackendCoroutines
         + BackendExceptions,
-    C: HostClass,
+    C: HostClass + HostClassDefinition<B>,
 {
     fn pending<'py, Fut, R>(enter: &Enter<'py, B>, future: Fut) -> Result<B::Value<'py>, Error>
     where
@@ -685,9 +788,46 @@ where
     {
         self.push(
             name,
-            Rc::new(MethodDeclaration::new(Rc::new(move |enter, receiver, args| {
+            Rc::new(MethodDeclaration::new(move |enter, receiver, args| {
                 Self::pending(enter, function(&*C::from_guest_ref(enter, &receiver)?, enter, args)?)
-            }))),
+            })),
+        )
+    }
+
+    pub fn async_method_with_this<F, Fut, R>(&mut self, name: &str, function: F) -> &mut Self
+    where
+        F: for<'py> Fn(&C, &Object<B>, &Enter<'py, B>, Args<'py, B>) -> Result<Fut, Error>
+            + 'static,
+        Fut: Future<Output = Result<R, Error>> + 'static,
+        R: ToGuest<B> + 'static,
+    {
+        self.push(
+            name,
+            Rc::new(MethodDeclaration::new(move |enter, receiver, args| {
+                Self::pending(
+                    enter,
+                    function(
+                        &*C::from_guest_ref(enter, &receiver)?,
+                        &Object::from_guest(enter, receiver.clone())?,
+                        enter,
+                        args,
+                    )?,
+                )
+            })),
+        )
+    }
+
+    pub fn async_raw_method<F, Fut, R>(&mut self, name: &str, function: F) -> &mut Self
+    where
+        F: for<'py> Fn(&Object<B>, &Enter<'py, B>, Args<'py, B>) -> Result<Fut, Error> + 'static,
+        Fut: Future<Output = Result<R, Error>> + 'static,
+        R: ToGuest<B> + 'static,
+    {
+        self.push(
+            name,
+            Rc::new(MethodDeclaration::new(move |enter, receiver, args| {
+                Self::pending(enter, function(&Object::from_guest(enter, receiver)?, enter, args)?)
+            })),
         )
     }
 }
@@ -695,7 +835,7 @@ where
 impl<B, C> ClassBuilder<B, C>
 where
     B: Backend + BackendValues + BackendCallables + BackendClasses,
-    C: HostClass,
+    C: HostClass + HostClassDefinition<B>,
 {
     pub fn base<P>(&mut self) -> &mut Self
     where

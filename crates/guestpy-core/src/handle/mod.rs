@@ -7,6 +7,7 @@ mod generator;
 mod iter;
 mod module;
 mod object;
+mod traits;
 mod value;
 
 use crate::{backend::Backend, errors::Error, guest::Guest, scope::Enter};
@@ -19,10 +20,11 @@ pub use self::{
     iter::{AsyncIter, Iter},
     module::Module,
     object::Object,
+    traits::{Annotated, GenericAlias, Named, ObjectProtocol, TypeProtocol},
     value::Value,
 };
 
-pub(crate) struct Handle<B: Backend> {
+pub struct Handle<B: Backend> {
     owned: B::Owned,
     guest: Guest<B>,
 }
@@ -37,31 +39,31 @@ impl<B: Backend> Clone for Handle<B> {
 }
 
 impl<B: Backend> Handle<B> {
-    pub(crate) fn new(owned: B::Owned, guest: Guest<B>) -> Self {
+    pub fn new(owned: B::Owned, guest: Guest<B>) -> Self {
         Self { owned, guest }
     }
 
-    pub(crate) fn from_value<'py>(enter: &Enter<'py, B>, value: B::Value<'py>) -> Self {
+    pub fn from_value<'py>(enter: &Enter<'py, B>, value: B::Value<'py>) -> Self {
         Self::new(B::detach(enter.token(), value), enter.guest().clone())
     }
 
-    pub(crate) fn owned(&self) -> &B::Owned {
+    pub fn owned(&self) -> &B::Owned {
         &self.owned
     }
 
-    pub(crate) fn guest(&self) -> &Guest<B> {
+    pub fn guest(&self) -> &Guest<B> {
         &self.guest
     }
 
-    pub(crate) fn value(&self) -> Value<B> {
+    pub fn value(&self) -> Value<B> {
         Value::new(self.owned.clone())
     }
 
-    pub(crate) fn ptr_eq(&self, other: &Self) -> bool {
+    pub fn ptr_eq(&self, other: &Self) -> bool {
         B::owned_ptr_eq(&self.owned, &other.owned)
     }
 
-    pub(crate) fn with_enter<R>(
+    pub fn with_enter<R>(
         &self,
         f: impl for<'py> FnOnce(&Enter<'py, B>, &B::Value<'py>) -> Result<R, Error>,
     ) -> Result<R, Error> {
