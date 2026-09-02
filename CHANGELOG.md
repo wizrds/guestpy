@@ -1,6 +1,30 @@
 # Changelog
 
 ---
+## [0.3.0](https://github.com/wizrds/guestpy/compare/0.2.1..0.3.0) - 2026-09-02
+
+### Bug Fixes
+
+- **(macros)** Better handling of user defined bounds in host classes for host_class macro - ([1777352](https://github.com/wizrds/guestpy/commit/1777352b8a7f320661bca2ed63c590b6bf680217)) - Timothy Pogue
+- Rework this receiver in host_class macro and rename subscriptable to generic - ([5dfdd46](https://github.com/wizrds/guestpy/commit/5dfdd4675190e338fb7e9cbed34d2839385e3772)) - Timothy Pogue
+- Rename subscriptable to generic - ([55ba5c6](https://github.com/wizrds/guestpy/commit/55ba5c6d6df63608539c396f1670fb43d371b032)) - Timothy Pogue
+- Rework backend attribute on host class macro - ([99649d1](https://github.com/wizrds/guestpy/commit/99649d1b2189068be3985a9dcc98038ae91479b5)) - Timothy Pogue
+- Export macros in prelude - ([8471147](https://github.com/wizrds/guestpy/commit/8471147ba6ab6d4858d399318a265aaa0117483f)) - Timothy Pogue
+- Support host class instantiation directly on host - ([c106477](https://github.com/wizrds/guestpy/commit/c106477d928402a772349aaf653674c66a636abe)) - Timothy Pogue
+- Support generic host class implementations in macros - ([ae8babb](https://github.com/wizrds/guestpy/commit/ae8babbd42163a406d0bc04b7ed7e9ad6f1f5bdc)) - Timothy Pogue
+- Move construct to host class definition - ([967d4b4](https://github.com/wizrds/guestpy/commit/967d4b4f2f14f8793c66eb8f6d846d959da880b7)) - Timothy Pogue
+- Fix dir in rustpython impl and improve classes test fixtures - ([9ee48b3](https://github.com/wizrds/guestpy/commit/9ee48b3ef2c489f168afe81c55dbbdbcce71d63d)) - Timothy Pogue
+- Add support for subscriptable host classes and guest handle access in host class methods - ([7ea514e](https://github.com/wizrds/guestpy/commit/7ea514ecf0ed7ed2961cf48cdf76411a66654a03)) - Timothy Pogue
+- Rework handle APIs to reduce repetition and expose machinery - ([a5ca9e7](https://github.com/wizrds/guestpy/commit/a5ca9e7a24d766d3e218a16b8aa1a07b0ffc2009)) - Timothy Pogue
+
+### Features
+
+- Rework handle method access and add generic host class support  - ([7155dac](https://github.com/wizrds/guestpy/commit/7155dacf631b033085a8265ddeb9d362683eef99)) - Timothy Pogue
+
+### Miscellaneous
+
+- Fix formatting - ([33e10da](https://github.com/wizrds/guestpy/commit/33e10dae3e167149c3ed857508a63d550f2ffacd)) - Timothy Pogue
+---
 ## [0.2.1](https://github.com/wizrds/guestpy/compare/0.2.0..0.2.1) - 2026-08-30
 
 ### Bug Fixes
