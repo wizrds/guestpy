@@ -139,7 +139,7 @@ pub mod fixtures {
         }
 
         fn build(builder: &mut ClassBuilder<B, Self>) {
-            builder.subscriptable();
+            builder.generic();
 
             builder.async_raw_method("invoke", |this, enter, args| {
                 let this = this.clone();
@@ -581,7 +581,7 @@ p = Plain()
     }
 
     guest_fixture! {
-        pub fn host_class_is_subscriptable<B>()
+        pub fn host_class_is_generic<B>()
         where B: [
             Backend,
             BackendValues,
@@ -868,8 +868,8 @@ def twice(value):
             }
 
             #[test]
-            fn host_class_is_subscriptable() {
-                $crate::backend::classes::fixtures::host_class_is_subscriptable::<$backend>();
+            fn host_class_is_generic() {
+                $crate::backend::classes::fixtures::host_class_is_generic::<$backend>();
             }
 
             #[tokio::test]

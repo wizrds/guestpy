@@ -23,7 +23,7 @@ struct ClassOptions {
     rename_all: Option<RenameRule>,
     backend: Option<BackendOption>,
     extends: TypeList,
-    subscriptable: Flag,
+    generic: Flag,
     crate_path: Option<Path>,
 }
 
@@ -316,7 +316,7 @@ struct HostClassDefinition {
     crate_path: Path,
     backend: BackendParameter,
     extends: TypeList,
-    subscriptable: bool,
+    generic: bool,
     constructor: Option<Callable>,
     members: Vec<ClassMember>,
     bounds: BackendBounds,
@@ -414,7 +414,7 @@ impl HostClassDefinition {
             crate_path,
             backend,
             extends: options.extends,
-            subscriptable: options.subscriptable.is_present(),
+            generic: options.generic.is_present(),
             constructor,
             members,
             bounds,
@@ -720,7 +720,7 @@ impl HostClassDefinition {
             crate_path,
             backend,
             extends,
-            subscriptable,
+            generic,
             constructor,
             members,
             bounds,
@@ -765,12 +765,12 @@ impl HostClassDefinition {
         let bases = extends
             .iter()
             .map(|base| quote!(builder.base::<#base>();));
-        let builder = if members.is_empty() && extends.is_empty() && !subscriptable {
+        let builder = if members.is_empty() && extends.is_empty() && !generic {
             quote!(_builder)
         } else {
             quote!(builder)
         };
-        let subscript = subscriptable.then(|| quote!(builder.subscriptable();));
+        let generic_hook = generic.then(|| quote!(builder.generic();));
 
         quote! {
             impl #impl_generics #crate_path::host::class::HostClass for #target #where_clause {
@@ -786,7 +786,7 @@ impl HostClassDefinition {
                 fn build(
                     #builder: &mut #crate_path::host::class::ClassBuilder<#backend_type, Self>,
                 ) {
-                    #subscript
+                    #generic_hook
                     #(#registrations)*
                     #(#bases)*
                 }
@@ -867,9 +867,9 @@ mod tests {
     }
 
     #[test]
-    fn generates_raw_class_and_delete_roles_and_a_subscript() {
+    fn generates_raw_class_and_delete_roles_and_a_generic_hook() {
         let output = expand(
-            quote!(name = "Contract", backend = B, subscriptable, crate_path = crate,),
+            quote!(name = "Contract", backend = B, generic, crate_path = crate,),
             parse_quote! {
                 impl<B> Contract<B> {
                     #[guestpy(raw_method)]
@@ -894,7 +894,7 @@ mod tests {
             },
         );
 
-        assert!(output.contains("builder . subscriptable ()"));
+        assert!(output.contains("builder . generic ()"));
         assert!(output.contains("raw_method (\"describe\""));
         assert!(output.contains("class_method (\"of\""));
         assert!(output.contains("deleter (\"clear\""));
@@ -1047,7 +1047,7 @@ mod tests {
     #[test]
     fn introduces_a_backend_parameter_on_members() {
         let output = expand(
-            quote!(name = "Contract", backend = B, subscriptable, crate_path = crate),
+            quote!(name = "Contract", backend = B, generic, crate_path = crate),
             parse_quote! {
                 impl Contract {
                     #[guestpy(constructor)]

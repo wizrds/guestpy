@@ -678,7 +678,7 @@ where
         self
     }
 
-    pub fn subscriptable(&mut self) -> &mut Self {
+    pub fn generic(&mut self) -> &mut Self {
         self.class_method("__class_getitem__", |enter, class, args| {
             let item = args
                 .required::<Value<B>>(enter, 0, "item")?
