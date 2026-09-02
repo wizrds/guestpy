@@ -393,8 +393,25 @@
 //! impl Mail {}
 //! ```
 //!
-//! `backend` also accepts a concrete backend such as `backend = CPython`, which pins the class to
-//! one interpreter. Behind the macro,
+//! A host class does not have to carry the backend in its own type. A class that holds no guest
+//! data still needs to speak in terms of one, and naming a parameter the impl does not declare is
+//! how it does so; the macro declares that parameter on each exported member:
+//!
+//! ```ignore
+//! struct Contract;
+//!
+//! #[guestpy::host_class(backend = B)]
+//! impl Contract {
+//!     #[guestpy(raw_method)]
+//!     fn invoke(#[guestpy(this)] this: &Object<B>) -> Result<String, Error> {
+//!         this.type_name()
+//!     }
+//! }
+//! ```
+//!
+//! In both forms `backend` names a type parameter, and whether it is reused from the impl or
+//! declared on the members is decided by the impl rather than by the attribute. Pin a class to a
+//! single interpreter with `backend(pin = CPython)`. Behind the macro,
 //! [`HostClass`](guestpy_core::host::class::HostClass) carries the class identity and
 //! [`HostClassDefinition`](guestpy_core::host::class::HostClassDefinition) carries construction and
 //! member registration against one backend; implement them by hand when a class needs something

@@ -2,8 +2,8 @@ use darling::{FromMeta, util::Flag};
 use proc_macro2::{Span, TokenStream};
 use quote::{format_ident, quote};
 use syn::{
-    FnArg, GenericArgument, Ident, ImplItemFn, Pat, PatType, PathArguments, ReceiverKind,
-    ReturnType, Safety, Signature, Type, spanned::Spanned,
+    FnArg, GenericArgument, GenericParam, Ident, ImplItemFn, Pat, PatType, PathArguments,
+    ReceiverKind, ReturnType, Safety, Signature, Type, spanned::Spanned,
 };
 
 use crate::{attributes::HelperAttributes, host::HostMacroError};
@@ -416,10 +416,19 @@ impl Callable {
             );
         }
 
-        if !method.sig.generics.params.is_empty() {
-            return Err(syn::Error::new(
-                method.sig.generics.span(),
-                "an exported host callable cannot be generic",
+        if let Some(parameter) = method
+            .sig
+            .generics
+            .params
+            .iter()
+            .find(|parameter| {
+                matches!(parameter, GenericParam::Type(_) | GenericParam::Const(_))
+            })
+        {
+            return Err(syn::Error::new_spanned(
+                parameter,
+                "an exported host callable cannot declare type or const parameters; name the backend \
+                 with `backend = <name>` on the attribute instead",
             )
             .into());
         }

@@ -502,11 +502,28 @@ struct Mail;
 impl Mail {}
 ```
 
-`backend` also accepts a concrete backend, which pins the class to one interpreter. That is the
-honest spelling when the payload is backend-specific:
+A host class does not have to carry the backend in its own type. A class that holds no guest data
+still needs to speak in terms of one, and naming a parameter the impl does not declare is how it
+does so; the macro declares that parameter on each exported member:
 
 ```rust
-#[guestpy::host_class(backend = CPython)]
+struct Contract;
+
+#[guestpy::host_class(backend = B)]
+impl Contract {
+    #[guestpy(raw_method)]
+    fn invoke(#[guestpy(this)] this: &Object<B>) -> Result<String, Error> {
+        this.type_name()
+    }
+}
+```
+
+In both forms `backend` names a type parameter. Whether it is the one the impl already declares
+or one the macro adds to the members is decided by the impl, not by the attribute. To pin a class
+to a single interpreter instead, name the backend type with `pin`:
+
+```rust
+#[guestpy::host_class(backend(pin = CPython))]
 impl Envelope { ... }
 ```
 

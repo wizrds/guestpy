@@ -1,13 +1,13 @@
 use darling::{FromMeta, ast::NestedMeta, util::Flag};
 use proc_macro2::TokenStream;
 use quote::quote;
-use syn::{ImplItem, ItemImpl, Path, Type, parse_quote};
+use syn::{ImplItem, ItemImpl, Path, parse_quote};
 
 use crate::{
     attributes::HelperAttributes,
     host::{
         HostMacroError,
-        backend::BackendParameter,
+        backend::{BackendOption, BackendParameter},
         callable::{Callable, Parameter, Receiver},
         target::HostTarget,
         types::TypeList,
@@ -21,7 +21,7 @@ use crate::{
 struct ClassOptions {
     name: Option<String>,
     rename_all: Option<RenameRule>,
-    backend: Option<Type>,
+    backend: Option<BackendOption>,
     extends: TypeList,
     subscriptable: Flag,
     crate_path: Option<Path>,
@@ -85,7 +85,22 @@ enum ClassMember {
 }
 
 impl ClassMember {
-    fn registration(&self, krate: &Path, backend: &Type) -> TokenStream {
+    fn ident(&self) -> &syn::Ident {
+        match self {
+            Self::Method { callable, .. } | Self::Dunder { callable, .. } => callable.ident(),
+            Self::AsyncMethod(callable)
+            | Self::RawMethod(callable)
+            | Self::AsyncRawMethod(callable)
+            | Self::ClassMethod(callable)
+            | Self::StaticMethod(callable)
+            | Self::Getter(callable)
+            | Self::Setter(callable)
+            | Self::Deleter(callable) => callable.ident(),
+            Self::Statics(ident) | Self::Constant { ident, .. } => ident,
+        }
+    }
+
+    fn registration(&self, krate: &Path, backend: &BackendParameter) -> TokenStream {
         match self {
             Self::Method { callable, exclusive } => {
                 let verb = if *exclusive {
@@ -99,13 +114,14 @@ impl ClassMember {
                 let args = callable.args_ident();
                 let bindings = callable.argument_bindings();
                 let setup = callable.argument_setup();
+                let turbofish = backend.turbofish();
 
                 quote! {
                     builder.#verb(#name, |__guestpy_this, #enter, #args| {
                         #setup
 
                         __guestpy_this
-                            .#ident(#(#bindings),*)
+                            .#ident #turbofish (#(#bindings),*)
                             .map_err(::core::convert::Into::into)
                     });
                 }
@@ -117,13 +133,14 @@ impl ClassMember {
                 let args = callable.args_ident();
                 let bindings = callable.argument_bindings();
                 let setup = callable.argument_setup();
+                let turbofish = backend.turbofish();
 
                 quote! {
                     builder.async_method(#name, |__guestpy_this, #enter, #args| {
                         #setup
 
                         __guestpy_this
-                            .#ident(#(#bindings),*)
+                            .#ident #turbofish (#(#bindings),*)
                             .map_err(::core::convert::Into::into)
                     });
                 }
@@ -135,12 +152,13 @@ impl ClassMember {
                 let args = callable.args_ident();
                 let bindings = callable.argument_bindings();
                 let setup = callable.argument_setup();
+                let turbofish = backend.turbofish();
 
                 quote! {
                     builder.raw_method(#name, |__guestpy_this, #enter, #args| {
                         #setup
 
-                        Self::#ident(#(#bindings),*)
+                        Self::#ident #turbofish (#(#bindings),*)
                             .map_err(::core::convert::Into::into)
                     });
                 }
@@ -152,12 +170,13 @@ impl ClassMember {
                 let args = callable.args_ident();
                 let bindings = callable.argument_bindings();
                 let setup = callable.argument_setup();
+                let turbofish = backend.turbofish();
 
                 quote! {
                     builder.async_raw_method(#name, |__guestpy_this, #enter, #args| {
                         #setup
 
-                        Self::#ident(#(#bindings),*)
+                        Self::#ident #turbofish (#(#bindings),*)
                             .map_err(::core::convert::Into::into)
                     });
                 }
@@ -169,18 +188,20 @@ impl ClassMember {
                 let args = callable.args_ident();
                 let bindings = callable.argument_bindings();
                 let setup = callable.argument_setup();
+                let backend_type = backend.ty();
+                let turbofish = backend.turbofish();
 
                 quote! {
                     builder.class_method(#name, |__guestpy_enter, __guestpy_class, #args| {
                         let __guestpy_this = &<
-                            #krate::handle::Class<#backend>
-                            as #krate::marshal::FromGuest<#backend>
+                            #krate::handle::Class<#backend_type>
+                            as #krate::marshal::FromGuest<#backend_type>
                         >::from_guest(__guestpy_enter, __guestpy_class)?;
                         let #enter = __guestpy_enter;
 
                         #setup
 
-                        Self::#ident(#(#bindings),*)
+                        Self::#ident #turbofish (#(#bindings),*)
                             .map_err(::core::convert::Into::into)
                     });
                 }
@@ -192,12 +213,13 @@ impl ClassMember {
                 let args = callable.args_ident();
                 let bindings = callable.argument_bindings();
                 let setup = callable.argument_setup();
+                let turbofish = backend.turbofish();
 
                 quote! {
                     builder.static_method(#name, |#enter, #args| {
                         #setup
 
-                        Self::#ident(#(#bindings),*)
+                        Self::#ident #turbofish (#(#bindings),*)
                             .map_err(::core::convert::Into::into)
                     });
                 }
@@ -207,11 +229,12 @@ impl ClassMember {
                 let ident = callable.ident();
                 let enter = callable.enter_ident();
                 let arguments = callable.accessor_expressions();
+                let turbofish = backend.turbofish();
 
                 quote! {
                     builder.getter(#name, |__guestpy_this, #enter| {
                         __guestpy_this
-                            .#ident(#(#arguments),*)
+                            .#ident #turbofish (#(#arguments),*)
                             .map_err(::core::convert::Into::into)
                     });
                 }
@@ -221,11 +244,12 @@ impl ClassMember {
                 let ident = callable.ident();
                 let enter = callable.enter_ident();
                 let arguments = callable.accessor_expressions();
+                let turbofish = backend.turbofish();
 
                 quote! {
                     builder.setter(#name, |__guestpy_this, #enter, __guestpy_value| {
                         __guestpy_this
-                            .#ident(#(#arguments),*)
+                            .#ident #turbofish (#(#arguments),*)
                             .map_err(::core::convert::Into::into)
                     });
                 }
@@ -235,11 +259,12 @@ impl ClassMember {
                 let ident = callable.ident();
                 let enter = callable.enter_ident();
                 let arguments = callable.accessor_expressions();
+                let turbofish = backend.turbofish();
 
                 quote! {
                     builder.deleter(#name, |__guestpy_this, #enter| {
                         __guestpy_this
-                            .#ident(#(#arguments),*)
+                            .#ident #turbofish (#(#arguments),*)
                             .map_err(::core::convert::Into::into)
                     });
                 }
@@ -251,6 +276,7 @@ impl ClassMember {
                 let bindings = callable.argument_bindings();
                 let setup = callable.argument_setup();
                 let message = format!("unknown dunder name {dunder:?} in #[guestpy(dunder = ...)]");
+                let turbofish = backend.turbofish();
 
                 quote! {
                     builder.dunder(
@@ -260,15 +286,19 @@ impl ClassMember {
                             #setup
 
                             __guestpy_this
-                                .#ident(#(#bindings),*)
+                                .#ident #turbofish (#(#bindings),*)
                                 .map_err(::core::convert::Into::into)
                         },
                     );
                 }
             }
-            Self::Statics(ident) => quote! {
-                builder.statics(|__guestpy_ns| Self::#ident(__guestpy_ns));
-            },
+            Self::Statics(ident) => {
+                let turbofish = backend.turbofish();
+
+                quote! {
+                    builder.statics(|__guestpy_ns| Self::#ident #turbofish (__guestpy_ns));
+                }
+            }
             Self::Constant { ident, name } => quote! {
                 builder.constant(#name, Self::#ident);
             },
@@ -365,7 +395,7 @@ impl HostClassDefinition {
             }
         }
 
-        Ok(Self {
+        let definition = Self {
             name: options
                 .name
                 .unwrap_or_else(|| target.name()),
@@ -375,7 +405,72 @@ impl HostClassDefinition {
             subscriptable: options.subscriptable.is_present(),
             constructor,
             members,
-        })
+        };
+
+        definition.inject_backend_parameter(item);
+
+        Ok(definition)
+    }
+
+    fn inject_backend_parameter(&self, item: &mut ItemImpl) {
+        let Some(backend) = self.backend.introduced() else {
+            return;
+        };
+
+        let capabilities = self.capabilities();
+
+        for element in &mut item.items {
+            let ImplItem::Fn(method) = element else {
+                continue;
+            };
+
+            if !self.exports(&method.sig.ident) {
+                continue;
+            }
+
+            method.sig.generics.params.push(parse_quote!(#backend));
+            method
+                .sig
+                .generics
+                .make_where_clause()
+                .predicates
+                .push(parse_quote!(#backend: #(#capabilities)+*));
+        }
+    }
+
+    fn exports(&self, ident: &syn::Ident) -> bool {
+        self.constructor
+            .as_ref()
+            .is_some_and(|callable| callable.ident() == ident)
+            || self
+                .members
+                .iter()
+                .any(|member| member.ident() == ident)
+    }
+
+    fn capabilities(&self) -> Vec<TokenStream> {
+        let crate_path = &self.crate_path;
+        let mut capabilities = vec![
+            quote!(#crate_path::backend::Backend),
+            quote!(#crate_path::backend::BackendValues),
+            quote!(#crate_path::backend::BackendCallables),
+            quote!(#crate_path::backend::BackendClasses),
+        ];
+
+        if self.members.iter().any(|member| {
+            matches!(
+                member,
+                ClassMember::AsyncMethod(_) | ClassMember::AsyncRawMethod(_),
+            )
+        }) {
+            capabilities.extend([
+                quote!(#crate_path::backend::BackendModules),
+                quote!(#crate_path::backend::BackendCoroutines),
+                quote!(#crate_path::backend::BackendExceptions),
+            ]);
+        }
+
+        capabilities
     }
 
     fn classify_method(
@@ -598,6 +693,7 @@ impl HostClassDefinition {
     }
 
     fn render(self, item: &ItemImpl) -> TokenStream {
+        let capabilities = self.capabilities();
         let Self {
             name,
             crate_path,
@@ -609,6 +705,7 @@ impl HostClassDefinition {
         } = self;
         let target = item.self_ty.as_ref();
         let backend_type = backend.ty();
+        let turbofish = backend.turbofish();
         let mut generics = item.generics.clone();
 
         generics
@@ -631,36 +728,18 @@ impl HostClassDefinition {
                 ) -> ::core::result::Result<Self, #crate_path::errors::Error> {
                     #setup
 
-                    Self::#ident(#(#bindings),*)
+                    Self::#ident #turbofish (#(#bindings),*)
                         .map_err(::core::convert::Into::into)
                 }
             }
         });
-        let has_async_method = members.iter().any(|member| {
-            matches!(member, ClassMember::AsyncMethod(_) | ClassMember::AsyncRawMethod(_),)
-        });
-        let mut capabilities = vec![
-            quote!(#crate_path::backend::Backend),
-            quote!(#crate_path::backend::BackendValues),
-            quote!(#crate_path::backend::BackendCallables),
-            quote!(#crate_path::backend::BackendClasses),
-        ];
-
-        if has_async_method {
-            capabilities.extend([
-                quote!(#crate_path::backend::BackendModules),
-                quote!(#crate_path::backend::BackendCoroutines),
-                quote!(#crate_path::backend::BackendExceptions),
-            ]);
-        }
-
         let definition_generics = backend.definition_generics(&item.generics, &capabilities);
 
         let (definition_impl_generics, _, definition_where_clause) =
             definition_generics.split_for_impl();
         let registrations = members
             .iter()
-            .map(|member| member.registration(&crate_path, &backend_type));
+            .map(|member| member.registration(&crate_path, &backend));
         let bases = extends
             .iter()
             .map(|base| quote!(builder.base::<#base>();));
@@ -926,7 +1005,7 @@ mod tests {
     #[test]
     fn pins_a_class_to_a_concrete_backend() {
         let output = expand(
-            quote!(name = "Envelope", backend = RustPython, crate_path = crate),
+            quote!(name = "Envelope", backend(pin = RustPython), crate_path = crate),
             parse_quote! {
                 impl Envelope {
                     #[guestpy(class_method)]
@@ -941,6 +1020,104 @@ mod tests {
         assert!(output.contains("ClassBuilder < RustPython , Self >"));
         assert!(output.contains("Class < RustPython >"));
         assert!(!output.contains("HostClassDefinition < B >"));
+    }
+
+    #[test]
+    fn introduces_a_backend_parameter_on_members() {
+        let output = expand(
+            quote!(name = "Contract", backend = B, subscriptable, crate_path = crate),
+            parse_quote! {
+                impl Contract {
+                    #[guestpy(constructor)]
+                    fn new() -> Result<Self, Error> {
+                        Ok(Self)
+                    }
+
+                    #[guestpy(raw_method)]
+                    fn invoke(#[guestpy(this)] this: &Object<B>) -> Result<String, Error> {
+                        this.type_name()
+                    }
+                }
+            },
+        );
+
+        assert!(output.contains("fn new < B > ()"));
+        assert!(output.contains("fn invoke < B > (this : & Object < B >)"));
+        assert!(output.contains("B : crate :: backend :: Backend"));
+        assert!(output.contains("Self :: new :: < B > ()"));
+        assert!(output.contains("Self :: invoke :: < B > (__guestpy_arg0)"));
+        assert!(output.contains("HostClassDefinition < B > for Contract"));
+        assert!(output.contains("ClassBuilder < B , Self >"));
+    }
+
+    #[test]
+    fn leaves_members_alone_for_a_declared_backend() {
+        let output = expand(
+            quote!(name = "Envelope", backend = B, crate_path = crate),
+            parse_quote! {
+                impl<B: Backend> Envelope<B> {
+                    #[guestpy(get)]
+                    fn payload(&self) -> Result<Object<B>, Error> {
+                        Ok(self.payload.clone())
+                    }
+                }
+            },
+        );
+
+        assert!(output.contains("fn payload (& self)"));
+        assert!(!output.contains(":: < B > ("));
+    }
+
+    #[test]
+    fn accepts_a_lifetime_on_a_member() {
+        let output = expand(
+            quote!(name = "Contract", backend = B, crate_path = crate),
+            parse_quote! {
+                impl Contract {
+                    #[guestpy(raw_method)]
+                    fn invoke<'py>(
+                        #[guestpy(this)] this: &Object<B>,
+                        #[guestpy(enter)] enter: &Enter<'py, B>,
+                    ) -> Result<String, Error> {
+                        this.type_name()
+                    }
+                }
+            },
+        );
+
+        assert!(output.contains("fn invoke < 'py , B >"));
+    }
+
+    #[test]
+    fn rejects_a_type_parameter_on_a_member() {
+        let Err(HostMacroError::Syntax(error)) = HostClassMacro::new(
+            quote!(name = "Contract", crate_path = crate),
+            parse_quote! {
+                impl Contract {
+                    #[guestpy(static_method)]
+                    fn convert<T>(value: T) -> Result<String, Error> {
+                        Ok(String::new())
+                    }
+                }
+            },
+        ) else {
+            panic!("a member declaring a type parameter returns a syntax error");
+        };
+
+        assert!(error.to_string().contains("backend = <name>"));
+    }
+
+    #[test]
+    fn rejects_a_qualified_backend_name() {
+        assert!(
+            HostClassMacro::new(
+                quote!(name = "Envelope", backend = guestpy::CPython, crate_path = crate),
+                parse_quote! {
+                    impl Envelope {}
+                },
+            )
+            .is_err(),
+        );
     }
 
     #[test]

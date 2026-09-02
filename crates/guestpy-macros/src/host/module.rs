@@ -5,13 +5,13 @@ use darling::{
 };
 use proc_macro2::{Span, TokenStream};
 use quote::quote;
-use syn::{FnArg, ImplItem, ImplItemFn, ItemImpl, Path, Type, spanned::Spanned};
+use syn::{FnArg, ImplItem, ImplItemFn, ItemImpl, Path, parse_quote, spanned::Spanned};
 
 use crate::{
     attributes::HelperAttributes,
     host::{
         HostMacroError,
-        backend::BackendParameter,
+        backend::{BackendOption, BackendParameter},
         callable::{Callable, Parameter, Receiver},
         target::HostTarget,
         types::TypeList,
@@ -26,7 +26,7 @@ struct ModuleOptions {
     name: Option<String>,
     rename_all: Option<RenameRule>,
     method_name: Option<syn::Ident>,
-    backend: Option<Type>,
+    backend: Option<BackendOption>,
     classes: TypeList,
     exceptions: PathList,
     crate_path: Option<Path>,
@@ -88,7 +88,16 @@ impl ModuleMember {
         }
     }
 
-    fn registration(&self) -> TokenStream {
+    fn ident(&self) -> &syn::Ident {
+        match self {
+            Self::Function(callable) | Self::Getter(callable) => callable.ident(),
+            Self::Init { ident, .. }
+            | Self::Object { ident, .. }
+            | Self::Constant { ident, .. } => ident,
+        }
+    }
+
+    fn registration(&self, backend: &BackendParameter) -> TokenStream {
         match self {
             Self::Function(callable) if callable.asynchronous() => {
                 let name = callable.name();
@@ -97,13 +106,14 @@ impl ModuleMember {
                 let args = callable.args_ident();
                 let bindings = callable.argument_bindings();
                 let setup = callable.argument_setup();
+                let turbofish = backend.turbofish();
 
                 quote! {
                     .async_function(#name, |#enter, #args| {
                         #setup
 
                         ::core::result::Result::Ok(async move {
-                            Self::#ident(#(#bindings),*)
+                            Self::#ident #turbofish (#(#bindings),*)
                                 .await
                                 .map_err(::core::convert::Into::into)
                         })
@@ -117,9 +127,11 @@ impl ModuleMember {
                 let args = callable.args_ident();
                 let bindings = callable.argument_bindings();
                 let setup = callable.argument_setup();
+                let turbofish = backend.turbofish();
                 let invocation = Self::invoke(
                     shared,
                     callable.ident(),
+                    &turbofish,
                     &bindings
                         .iter()
                         .map(|binding| quote!(#binding))
@@ -143,7 +155,8 @@ impl ModuleMember {
                 let name = callable.name();
                 let enter = callable.enter_ident();
                 let arguments = callable.accessor_expressions();
-                let invocation = Self::invoke(shared, callable.ident(), &arguments);
+                let turbofish = backend.turbofish();
+                let invocation = Self::invoke(shared, callable.ident(), &turbofish, &arguments);
                 let closure = Self::state_closure(
                     shared,
                     quote!(
@@ -166,7 +179,8 @@ impl ModuleMember {
                 } else {
                     Vec::new()
                 };
-                let invocation = Self::invoke(*shared, ident, &arguments);
+                let turbofish = backend.turbofish();
+                let invocation = Self::invoke(*shared, ident, &turbofish, &arguments);
                 let closure = Self::state_closure(
                     *shared,
                     quote!(
@@ -179,7 +193,13 @@ impl ModuleMember {
                 quote!(.init(#closure))
             }
             Self::Object { ident, name, shared } => {
-                let invocation = Self::invoke(*shared, ident, &[quote!(__guestpy_ns)]);
+                let turbofish = backend.turbofish();
+                let invocation = Self::invoke(
+                    *shared,
+                    ident,
+                    &turbofish,
+                    &[quote!(__guestpy_ns)],
+                );
                 let closure = Self::state_closure(*shared, quote!(|__guestpy_ns| #invocation));
 
                 quote!(.object(#name, #closure))
@@ -188,11 +208,16 @@ impl ModuleMember {
         }
     }
 
-    fn invoke(shared: bool, ident: &syn::Ident, arguments: &[TokenStream]) -> TokenStream {
+    fn invoke(
+        shared: bool,
+        ident: &syn::Ident,
+        turbofish: &TokenStream,
+        arguments: &[TokenStream],
+    ) -> TokenStream {
         if shared {
-            quote!(__guestpy_state.#ident(#(#arguments),*))
+            quote!(__guestpy_state.#ident #turbofish (#(#arguments),*))
         } else {
-            quote!(Self::#ident(#(#arguments),*))
+            quote!(Self::#ident #turbofish (#(#arguments),*))
         }
     }
 
@@ -309,7 +334,7 @@ impl HostModuleDefinition {
             .iter()
             .any(ModuleMember::is_stateful);
 
-        Ok(Self {
+        let definition = Self {
             name: options
                 .name
                 .unwrap_or_else(|| target.name()),
@@ -330,7 +355,75 @@ impl HostModuleDefinition {
                 .collect(),
             members,
             needs_state,
-        })
+        };
+
+        definition.inject_backend_parameter(item);
+
+        Ok(definition)
+    }
+
+    fn inject_backend_parameter(&self, item: &mut ItemImpl) {
+        let Some(backend) = self.backend.introduced() else {
+            return;
+        };
+
+        let capabilities = self.capabilities();
+
+        for element in &mut item.items {
+            let ImplItem::Fn(method) = element else {
+                continue;
+            };
+
+            if !self.exports(&method.sig.ident) {
+                continue;
+            }
+
+            method.sig.generics.params.push(parse_quote!(#backend));
+            method
+                .sig
+                .generics
+                .make_where_clause()
+                .predicates
+                .push(parse_quote!(#backend: #(#capabilities)+*));
+        }
+    }
+
+    fn exports(&self, ident: &syn::Ident) -> bool {
+        self.members.iter().any(|member| member.ident() == ident)
+    }
+
+    fn capabilities(&self) -> Vec<TokenStream> {
+        let crate_path = &self.crate_path;
+        let mut capabilities = vec![
+            quote!(#crate_path::backend::Backend),
+            quote!(#crate_path::backend::BackendValues),
+            quote!(#crate_path::backend::BackendCallables),
+        ];
+        let has_async_function = self.members.iter().any(
+            |member| {
+                matches!(
+                    member,
+                    ModuleMember::Function(callable) if callable.asynchronous(),
+                )
+            },
+        );
+
+        if !self.classes.is_empty() {
+            capabilities.push(quote!(#crate_path::backend::BackendClasses));
+        }
+
+        if has_async_function {
+            capabilities.extend([
+                quote!(#crate_path::backend::BackendModules),
+                quote!(#crate_path::backend::BackendCoroutines),
+            ]);
+        }
+
+        if has_async_function || !self.exceptions.is_empty() {
+            capabilities.push(quote!(#crate_path::backend::BackendExceptions));
+        }
+
+        capabilities
     }
 
     fn classify_method(
@@ -521,6 +614,7 @@ impl HostModuleDefinition {
     }
 
     fn render(self, item: &ItemImpl) -> TokenStream {
+        let capabilities = self.capabilities();
         let Self {
             name,
             method_name,
@@ -536,7 +630,7 @@ impl HostModuleDefinition {
         let (impl_generics, _, where_clause) = generics.split_for_impl();
         let registrations = members
             .iter()
-            .map(ModuleMember::registration);
+            .map(|member| member.registration(&backend));
         let exception_registrations = exceptions.iter().map(|exception| {
             quote!(.exception(
                 #exception,
@@ -552,31 +646,8 @@ impl HostModuleDefinition {
         } else {
             quote!()
         };
-        let has_async_function = members.iter().any(
-            |member| matches!(member, ModuleMember::Function(callable) if callable.asynchronous()),
-        );
         let backend_type = backend.ty();
         let method_generics = backend.method_generics();
-        let mut capabilities = vec![
-            quote!(#crate_path::backend::Backend),
-            quote!(#crate_path::backend::BackendValues),
-            quote!(#crate_path::backend::BackendCallables),
-        ];
-
-        if !classes.is_empty() {
-            capabilities.push(quote!(#crate_path::backend::BackendClasses));
-        }
-
-        if has_async_function {
-            capabilities.extend([
-                quote!(#crate_path::backend::BackendModules),
-                quote!(#crate_path::backend::BackendCoroutines),
-            ]);
-        }
-
-        if has_async_function || !exceptions.is_empty() {
-            capabilities.push(quote!(#crate_path::backend::BackendExceptions));
-        }
 
         let method_where_clause = backend
             .capability_predicate(&capabilities)
@@ -852,7 +923,7 @@ mod tests {
     #[test]
     fn pins_a_module_to_a_concrete_backend() {
         let output = expand(
-            quote!(name = "host_mail", backend = RustPython, crate_path = crate),
+            quote!(name = "host_mail", backend(pin = RustPython), crate_path = crate),
             parse_quote! {
                 impl Mail {}
             },
@@ -860,5 +931,26 @@ mod tests {
 
         assert!(output.contains("ModuleSpec < RustPython >"));
         assert!(!output.contains("where"));
+    }
+
+    #[test]
+    fn introduces_a_backend_parameter_on_module_members() {
+        let output = expand(
+            quote!(name = "host_mail", backend = B, crate_path = crate),
+            parse_quote! {
+                impl Mail {
+                    #[guestpy(function)]
+                    fn describe(payload: Object<B>) -> Result<String, Error> {
+                        payload.type_name()
+                    }
+                }
+            },
+        );
+
+        assert!(output.contains("fn describe < B > (payload : Object < B >)"));
+        assert!(output.contains("B : crate :: backend :: Backend"));
+        assert!(output.contains("Self :: describe :: < B >"));
+        assert!(output.contains("fn module < B >"));
+        assert!(output.contains("ModuleSpec < B >"));
     }
 }
