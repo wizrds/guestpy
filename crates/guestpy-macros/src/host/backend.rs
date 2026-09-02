@@ -62,8 +62,10 @@ impl FromMeta for BackendOption {
                 .map(Self::Named)
                 .map_err(|_| {
                     darling::Error::custom(
-                        "`backend = <name>` names the backend type parameter; pin a concrete \
-                         backend with `backend(pin = <type>)`",
+                        r#"
+`backend = <name>` names the backend type parameter;
+pin a concrete backend with `backend(pin = <type>)`
+"#,
                     )
                     .with_span(&pair.value)
                 }),
@@ -101,8 +103,9 @@ impl BackendParameter {
             return Err(syn::Error::new(
                 item.self_ty.span(),
                 format!(
-                    "#[{attribute}] requires `backend = {ident}` because `{ident}` is \
-                     bounded by `Backend`",
+                    r#"
+#[{attribute}] requires `backend = {ident}` because `{ident}` is bounded by `Backend`
+"#,
                 ),
             )
             .into());

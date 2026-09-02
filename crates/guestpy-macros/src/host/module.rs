@@ -553,8 +553,9 @@ impl HostModuleDefinition {
         if callable.uses_this() {
             return Err(syn::Error::new(
                 callable.span(),
-                "a #[guestpy(this)] parameter is only valid on a host class raw_method, \
-                 async_raw_method, or class_method",
+                r#"
+a #[guestpy(this)] parameter is only valid on a host class method, async_method, or class_method
+"#,
             )
             .into());
         }
@@ -590,14 +591,18 @@ impl HostModuleDefinition {
         match (callable.receiver(), callable.asynchronous()) {
             (Receiver::Exclusive, _) => Err(syn::Error::new(
                 callable.span(),
-                "a #[guestpy(function)] cannot take &mut self; share state through &self and \
-                 interior mutability",
+                r#"
+a #[guestpy(function)] cannot take &mut self;
+share state through &self and interior mutability
+"#,
             )
             .into()),
             (Receiver::Shared, true) => Err(syn::Error::new(
                 callable.span(),
-                "a stateful (&self) async module function is unsupported; make it non-async, or \
-                 make it receiverless",
+                r#"
+a stateful (&self) async module function is unsupported;
+make it non-async, or make it receiverless
+"#,
             )
             .into()),
             (_, true)

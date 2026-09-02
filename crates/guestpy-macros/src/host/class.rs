@@ -33,8 +33,6 @@ struct ClassItemOptions {
     constructor: Flag,
     method: Flag,
     async_method: Flag,
-    raw_method: Flag,
-    async_raw_method: Flag,
     class_method: Flag,
     static_method: Flag,
     get: Flag,
@@ -52,8 +50,6 @@ impl ClassItemOptions {
             self.constructor.is_present(),
             self.method.is_present(),
             self.async_method.is_present(),
-            self.raw_method.is_present(),
-            self.async_raw_method.is_present(),
             self.class_method.is_present(),
             self.static_method.is_present(),
             self.get.is_present(),
@@ -69,11 +65,85 @@ impl ClassItemOptions {
     }
 }
 
+#[derive(Clone, Copy)]
+enum MethodShape {
+    Payload { exclusive: bool },
+    Handle,
+    Paired { exclusive: bool },
+}
+
+impl MethodShape {
+    fn of(callable: &Callable, asynchronous: bool) -> Result<Self, HostMacroError> {
+        let shape = match (callable.receiver(), callable.uses_this()) {
+            (Receiver::None, false) => {
+                return Err(syn::Error::new(
+                    callable.span(),
+                    r#"
+an exported method requires &self, &mut self, or a #[guestpy(this)] parameter;
+use #[guestpy(static_method)] for a function that needs neither
+"#,
+                )
+                .into());
+            }
+            (Receiver::None, true) => Self::Handle,
+            (Receiver::Shared, false) => Self::Payload { exclusive: false },
+            (Receiver::Shared, true) => Self::Paired { exclusive: false },
+            (Receiver::Exclusive, false) => Self::Payload { exclusive: true },
+            (Receiver::Exclusive, true) => Self::Paired { exclusive: true },
+        };
+
+        if asynchronous && shape.exclusive() {
+            return Err(syn::Error::new(
+                callable.span(),
+                r#"
+a #[guestpy(async_method)] requires &self;
+an exclusive borrow cannot be held while the returned future is built
+"#,
+            )
+            .into());
+        }
+
+        Ok(shape)
+    }
+
+    fn exclusive(self) -> bool {
+        matches!(
+            self,
+            Self::Payload { exclusive: true } | Self::Paired { exclusive: true }
+        )
+    }
+
+    fn registrar(self, asynchronous: bool) -> TokenStream {
+        match (self, asynchronous) {
+            (Self::Payload { exclusive: false }, false) => quote!(method),
+            (Self::Payload { exclusive: true }, false) => quote!(method_mut),
+            (Self::Handle, false) => quote!(raw_method),
+            (Self::Paired { exclusive: false }, false) => quote!(method_with_this),
+            (Self::Paired { exclusive: true }, false) => quote!(method_mut_with_this),
+            (Self::Payload { .. }, true) => quote!(async_method),
+            (Self::Handle, true) => quote!(async_raw_method),
+            (Self::Paired { .. }, true) => quote!(async_method_with_this),
+        }
+    }
+
+    fn closure_receivers(self) -> TokenStream {
+        match self {
+            Self::Payload { .. } => quote!(__guestpy_self),
+            Self::Handle => quote!(__guestpy_this),
+            Self::Paired { .. } => quote!(__guestpy_self, __guestpy_this),
+        }
+    }
+
+    fn call_target(self) -> TokenStream {
+        match self {
+            Self::Handle => quote!(Self::),
+            Self::Payload { .. } | Self::Paired { .. } => quote!(__guestpy_self.),
+        }
+    }
+}
+
 enum ClassMember {
-    Method { callable: Callable, exclusive: bool },
-    AsyncMethod(Callable),
-    RawMethod(Callable),
-    AsyncRawMethod(Callable),
+    Method { callable: Callable, shape: MethodShape, asynchronous: bool },
     ClassMethod(Callable),
     StaticMethod(Callable),
     Getter(Callable),
@@ -88,10 +158,7 @@ impl ClassMember {
     fn ident(&self) -> &syn::Ident {
         match self {
             Self::Method { callable, .. } | Self::Dunder { callable, .. } => callable.ident(),
-            Self::AsyncMethod(callable)
-            | Self::RawMethod(callable)
-            | Self::AsyncRawMethod(callable)
-            | Self::ClassMethod(callable)
+            Self::ClassMethod(callable)
             | Self::StaticMethod(callable)
             | Self::Getter(callable)
             | Self::Setter(callable)
@@ -102,12 +169,7 @@ impl ClassMember {
 
     fn registration(&self, krate: &Path, backend: &BackendParameter) -> TokenStream {
         match self {
-            Self::Method { callable, exclusive } => {
-                let verb = if *exclusive {
-                    quote!(method_mut)
-                } else {
-                    quote!(method)
-                };
+            Self::Method { callable, shape, asynchronous } => {
                 let name = callable.name();
                 let ident = callable.ident();
                 let enter = callable.enter_ident();
@@ -115,68 +177,15 @@ impl ClassMember {
                 let bindings = callable.argument_bindings();
                 let setup = callable.argument_setup();
                 let turbofish = backend.turbofish();
+                let registrar = shape.registrar(*asynchronous);
+                let receivers = shape.closure_receivers();
+                let target = shape.call_target();
 
                 quote! {
-                    builder.#verb(#name, |__guestpy_this, #enter, #args| {
+                    builder.#registrar(#name, |#receivers, #enter, #args| {
                         #setup
 
-                        __guestpy_this
-                            .#ident #turbofish (#(#bindings),*)
-                            .map_err(::core::convert::Into::into)
-                    });
-                }
-            }
-            Self::AsyncMethod(callable) => {
-                let name = callable.name();
-                let ident = callable.ident();
-                let enter = callable.enter_ident();
-                let args = callable.args_ident();
-                let bindings = callable.argument_bindings();
-                let setup = callable.argument_setup();
-                let turbofish = backend.turbofish();
-
-                quote! {
-                    builder.async_method(#name, |__guestpy_this, #enter, #args| {
-                        #setup
-
-                        __guestpy_this
-                            .#ident #turbofish (#(#bindings),*)
-                            .map_err(::core::convert::Into::into)
-                    });
-                }
-            }
-            Self::RawMethod(callable) => {
-                let name = callable.name();
-                let ident = callable.ident();
-                let enter = callable.enter_ident();
-                let args = callable.args_ident();
-                let bindings = callable.argument_bindings();
-                let setup = callable.argument_setup();
-                let turbofish = backend.turbofish();
-
-                quote! {
-                    builder.raw_method(#name, |__guestpy_this, #enter, #args| {
-                        #setup
-
-                        Self::#ident #turbofish (#(#bindings),*)
-                            .map_err(::core::convert::Into::into)
-                    });
-                }
-            }
-            Self::AsyncRawMethod(callable) => {
-                let name = callable.name();
-                let ident = callable.ident();
-                let enter = callable.enter_ident();
-                let args = callable.args_ident();
-                let bindings = callable.argument_bindings();
-                let setup = callable.argument_setup();
-                let turbofish = backend.turbofish();
-
-                quote! {
-                    builder.async_raw_method(#name, |__guestpy_this, #enter, #args| {
-                        #setup
-
-                        Self::#ident #turbofish (#(#bindings),*)
+                        #target #ident #turbofish (#(#bindings),*)
                             .map_err(::core::convert::Into::into)
                     });
                 }
@@ -232,8 +241,8 @@ impl ClassMember {
                 let turbofish = backend.turbofish();
 
                 quote! {
-                    builder.getter(#name, |__guestpy_this, #enter| {
-                        __guestpy_this
+                    builder.getter(#name, |__guestpy_self, #enter| {
+                        __guestpy_self
                             .#ident #turbofish (#(#arguments),*)
                             .map_err(::core::convert::Into::into)
                     });
@@ -247,8 +256,8 @@ impl ClassMember {
                 let turbofish = backend.turbofish();
 
                 quote! {
-                    builder.setter(#name, |__guestpy_this, #enter, __guestpy_value| {
-                        __guestpy_this
+                    builder.setter(#name, |__guestpy_self, #enter, __guestpy_value| {
+                        __guestpy_self
                             .#ident #turbofish (#(#arguments),*)
                             .map_err(::core::convert::Into::into)
                     });
@@ -262,8 +271,8 @@ impl ClassMember {
                 let turbofish = backend.turbofish();
 
                 quote! {
-                    builder.deleter(#name, |__guestpy_this, #enter| {
-                        __guestpy_this
+                    builder.deleter(#name, |__guestpy_self, #enter| {
+                        __guestpy_self
                             .#ident #turbofish (#(#arguments),*)
                             .map_err(::core::convert::Into::into)
                     });
@@ -282,10 +291,10 @@ impl ClassMember {
                     builder.dunder(
                         <#krate::host::dunder::Dunder as ::core::str::FromStr>::from_str(#dunder)
                             .expect(#message),
-                        |__guestpy_this, #enter, #args| {
+                        |__guestpy_self, #enter, #args| {
                             #setup
 
-                            __guestpy_this
+                            __guestpy_self
                                 .#ident #turbofish (#(#bindings),*)
                                 .map_err(::core::convert::Into::into)
                         },
@@ -478,12 +487,9 @@ impl HostClassDefinition {
         ];
 
         if constructor.iter().any(Callable::asynchronous)
-            || members.iter().any(|member| {
-                matches!(
-                    member,
-                    ClassMember::AsyncMethod(_) | ClassMember::AsyncRawMethod(_),
-                )
-            })
+            || members
+                .iter()
+                .any(|member| matches!(member, ClassMember::Method { asynchronous: true, .. }))
         {
             capabilities.extend([
                 parse_quote!(#crate_path::backend::BackendModules),
@@ -542,22 +548,26 @@ impl HostClassDefinition {
         if callable.asynchronous() {
             return Err(syn::Error::new(
                 callable.span(),
-                "async fn is unsupported in host classes; for an async method use \
-                 #[guestpy(async_method)] on a non-async fn returning \
-                 Result<impl core::future::Future<Output = Result<R, Error>> + 'static, E>",
+                r#"
+async fn is unsupported in host classes;
+for an async method use #[guestpy(async_method)] on a non-async fn returning
+Result<impl core::future::Future<Output = Result<R, Error>> + use<..>, E>,
+naming the backend type parameter inside use<..>
+"#,
             )
             .into());
         }
 
         if callable.uses_this()
-            && !(options.raw_method.is_present()
-                || options.async_raw_method.is_present()
+            && !(options.method.is_present()
+                || options.async_method.is_present()
                 || options.class_method.is_present())
         {
             return Err(syn::Error::new(
                 callable.span(),
-                "a #[guestpy(this)] parameter is only valid on a raw_method, async_raw_method, \
-                 or class_method",
+                r#"
+a #[guestpy(this)] parameter is only valid on a method, async_method, or class_method
+"#,
             )
             .into());
         }
@@ -575,33 +585,17 @@ impl HostClassDefinition {
 
             *constructor = Some(callable);
         } else if options.method.is_present() {
-            match callable.receiver() {
-                Receiver::Shared => {
-                    members.push(ClassMember::Method { callable, exclusive: false })
-                }
-                Receiver::Exclusive => {
-                    members.push(ClassMember::Method { callable, exclusive: true })
-                }
-                Receiver::None => {
-                    return Err(syn::Error::new(
-                        callable.span(),
-                        "a #[guestpy(method)] requires &self or &mut self; use \
-                         #[guestpy(static_method)] for a receiverless function",
-                    )
-                    .into());
-                }
-            }
+            members.push(ClassMember::Method {
+                shape: MethodShape::of(&callable, false)?,
+                callable,
+                asynchronous: false,
+            });
         } else if options.async_method.is_present() {
-            Self::require_receiver(&callable, Receiver::Shared, "an async_method")?;
-            members.push(ClassMember::AsyncMethod(callable));
-        } else if options.raw_method.is_present() {
-            Self::require_receiver(&callable, Receiver::None, "a raw_method")?;
-            Self::require_this(&callable, "a raw_method")?;
-            members.push(ClassMember::RawMethod(callable));
-        } else if options.async_raw_method.is_present() {
-            Self::require_receiver(&callable, Receiver::None, "an async_raw_method")?;
-            Self::require_this(&callable, "an async_raw_method")?;
-            members.push(ClassMember::AsyncRawMethod(callable));
+            members.push(ClassMember::Method {
+                shape: MethodShape::of(&callable, true)?,
+                callable,
+                asynchronous: true,
+            });
         } else if options.class_method.is_present() {
             Self::require_receiver(&callable, Receiver::None, "a class_method")?;
             Self::require_this(&callable, "a class_method")?;
@@ -867,12 +861,12 @@ mod tests {
     }
 
     #[test]
-    fn generates_raw_class_and_delete_roles_and_a_generic_hook() {
+    fn generates_handle_and_delete_roles_and_a_generic_hook() {
         let output = expand(
             quote!(name = "Contract", backend = B, generic, crate_path = crate,),
             parse_quote! {
                 impl<B> Contract<B> {
-                    #[guestpy(raw_method)]
+                    #[guestpy(method)]
                     fn describe(
                         #[guestpy(this)] this: &Object<B>,
                     ) -> Result<String, Error> {
@@ -899,6 +893,108 @@ mod tests {
         assert!(output.contains("class_method (\"of\""));
         assert!(output.contains("deleter (\"clear\""));
         assert!(output.contains("HostClassDefinition < B > for Contract < B >"));
+    }
+
+    #[test]
+    fn selects_the_paired_registrar_for_a_shared_receiver_and_this() {
+        let output = expand(
+            quote!(name = "Ledger", backend = B, crate_path = crate),
+            parse_quote! {
+                impl Ledger {
+                    #[guestpy(method)]
+                    fn describe(&self, #[guestpy(this)] this: &Object<B>) -> Result<String, Error> {
+                        this.type_name()
+                    }
+                }
+            },
+        );
+
+        assert!(output.contains("builder . method_with_this (\"describe\""));
+        assert!(output.contains("| __guestpy_self , __guestpy_this ,"));
+        assert!(output.contains("__guestpy_self . describe"));
+    }
+
+    #[test]
+    fn selects_the_exclusive_paired_registrar_for_an_exclusive_receiver_and_this() {
+        let output = expand(
+            quote!(name = "Ledger", backend = B, crate_path = crate),
+            parse_quote! {
+                impl Ledger {
+                    #[guestpy(method)]
+                    fn record(
+                        &mut self,
+                        #[guestpy(this)] this: &Object<B>,
+                    ) -> Result<String, Error> {
+                        this.type_name()
+                    }
+                }
+            },
+        );
+
+        assert!(output.contains("builder . method_mut_with_this (\"record\""));
+    }
+
+    #[test]
+    fn selects_the_paired_async_registrar_for_a_shared_receiver_and_this() {
+        let output = expand(
+            quote!(name = "Ledger", backend = B, crate_path = crate),
+            parse_quote! {
+                impl Ledger {
+                    #[guestpy(async_method)]
+                    fn describe_later(
+                        &self,
+                        #[guestpy(this)] this: &Object<B>,
+                    ) -> Result<impl Future<Output = Result<String, Error>> + use<B>, Error> {
+                        let this = this.clone();
+
+                        Ok(async move { this.type_name() })
+                    }
+                }
+            },
+        );
+
+        assert!(output.contains("builder . async_method_with_this (\"describe_later\""));
+        assert!(output.contains("BackendCoroutines"));
+    }
+
+    #[test]
+    fn rejects_an_exclusive_receiver_on_an_async_method() {
+        let Err(HostMacroError::Syntax(error)) = HostClassMacro::new(
+            quote!(name = "Ledger", backend = B, crate_path = crate),
+            parse_quote! {
+                impl Ledger {
+                    #[guestpy(async_method)]
+                    fn record(
+                        &mut self,
+                    ) -> Result<impl Future<Output = Result<String, Error>> + use<B>, Error> {
+                        Ok(async move { Ok(String::new()) })
+                    }
+                }
+            },
+        ) else {
+            panic!("an exclusive receiver on an async method returns a syntax error");
+        };
+
+        assert!(error.to_string().contains("requires &self"));
+    }
+
+    #[test]
+    fn rejects_a_method_with_neither_a_receiver_nor_this() {
+        let Err(HostMacroError::Syntax(error)) = HostClassMacro::new(
+            quote!(name = "Ledger", backend = B, crate_path = crate),
+            parse_quote! {
+                impl Ledger {
+                    #[guestpy(method)]
+                    fn describe() -> Result<String, Error> {
+                        Ok(String::new())
+                    }
+                }
+            },
+        ) else {
+            panic!("a method with no way to reach its instance returns a syntax error");
+        };
+
+        assert!(error.to_string().contains("#[guestpy(static_method)]"));
     }
 
     #[test]
@@ -1055,7 +1151,7 @@ mod tests {
                         Ok(Self)
                     }
 
-                    #[guestpy(raw_method)]
+                    #[guestpy(method)]
                     fn invoke(#[guestpy(this)] this: &Object<B>) -> Result<String, Error> {
                         this.type_name()
                     }
@@ -1096,7 +1192,7 @@ mod tests {
             quote!(name = "Contract", backend = B, crate_path = crate),
             parse_quote! {
                 impl Contract {
-                    #[guestpy(raw_method)]
+                    #[guestpy(method)]
                     fn invoke<'py>(
                         #[guestpy(this)] this: &Object<B>,
                         #[guestpy(enter)] enter: &Enter<'py, B>,
@@ -1148,7 +1244,7 @@ mod tests {
             quote!(backend = B, crate_path = crate),
             parse_quote! {
                 impl Contract {
-                    #[guestpy(raw_method)]
+                    #[guestpy(method)]
                     fn invoke(#[guestpy(this)] this: &Object<B>) -> Result<Object<B>, Error>
                     where
                         B: InterpreterBackend,
@@ -1170,7 +1266,7 @@ mod tests {
             quote!(backend = B, crate_path = crate),
             parse_quote! {
                 impl<B> Contract<B> {
-                    #[guestpy(raw_method)]
+                    #[guestpy(method)]
                     fn invoke(#[guestpy(this)] this: &Object<B>) -> Result<Object<B>, Error>
                     where
                         B: InterpreterBackend,
@@ -1191,7 +1287,7 @@ mod tests {
             quote!(backend = B, crate_path = crate),
             parse_quote! {
                 impl Contract {
-                    #[guestpy(raw_method)]
+                    #[guestpy(method)]
                     fn invoke(#[guestpy(this)] this: &Object<B>) -> Result<Object<B>, Error>
                     where
                         Self: Sized,

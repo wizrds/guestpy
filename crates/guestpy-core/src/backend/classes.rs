@@ -152,6 +152,60 @@ pub mod fixtures {
         }
     }
 
+    struct Ledger {
+        prefix: String,
+    }
+
+    impl HostClass for Ledger {
+        const NAME: &'static str = "Ledger";
+    }
+
+    impl<B> HostClassDefinition<B> for Ledger
+    where
+        B: Backend
+            + BackendValues
+            + BackendCallables
+            + BackendClasses
+            + BackendModules
+            + BackendCoroutines
+            + BackendExceptions,
+    {
+        fn construct<'py>(enter: &Enter<'py, B>, args: Args<'py, B>) -> Result<Self, Error> {
+            let prefix = args.required::<String>(enter, 0, "prefix")?;
+
+            args.finish()?;
+
+            Ok(Self { prefix })
+        }
+
+        fn build(builder: &mut ClassBuilder<B, Self>) {
+            builder.method_with_this("describe", |ledger, this, _, args| {
+                args.finish()?;
+
+                Ok::<_, Error>(format!(
+                    "{}/{}",
+                    ledger.prefix,
+                    this.call_method::<_, String>("label", ())?,
+                ))
+            });
+
+            builder.async_method_with_this("describe_later", |ledger, this, _, args| {
+                args.finish()?;
+
+                let prefix = ledger.prefix.clone();
+                let this = this.clone();
+
+                Ok::<_, Error>(async move {
+                    Ok(format!(
+                        "{}/{}",
+                        prefix,
+                        this.call_method::<_, String>("label", ())?,
+                    ))
+                })
+            });
+        }
+    }
+
     guest_fixture! {
         pub fn host_borrows_dynamic_and_typed_payloads<B>()
         where B: [
@@ -711,6 +765,82 @@ class Impl(host_lib.Contract):
     }
 
     guest_fixture! {
+        pub fn paired_method_reads_payload_and_calls_override<B>()
+        where B: [
+            Backend,
+            BackendValues,
+            BackendCallables,
+            BackendClasses,
+            BackendModules,
+            BackendCoroutines,
+            BackendExceptions,
+            BackendInterrupt,
+        ]
+        using Runtime::<B>::builder()
+            .bind(ModuleSpec::new("host_lib").class::<Ledger>());
+        |guest| {
+            guest.exec("import host_lib").unwrap();
+            guest
+                .exec(
+                    r#"
+class Detailed(host_lib.Ledger):
+    def label(self):
+        return 'detailed'
+"#,
+                )
+                .unwrap();
+
+            assert_eq!(
+                guest
+                    .eval::<Instance<B>>("Detailed('ledger')")
+                    .unwrap()
+                    .call_method::<_, String>("describe", ())
+                    .unwrap(),
+                "ledger/detailed",
+            );
+        }
+    }
+
+    guest_fixture! {
+        pub async fn paired_async_method_reads_payload_and_calls_override<B>()
+        where B: [
+            Backend,
+            BackendValues,
+            BackendCallables,
+            BackendClasses,
+            BackendModules,
+            BackendCoroutines,
+            BackendExceptions,
+            BackendInterrupt,
+        ]
+        using Runtime::<B>::builder()
+            .bind(ModuleSpec::new("host_lib").class::<Ledger>());
+        |guest| {
+            guest.exec("import host_lib").unwrap();
+            guest
+                .exec(
+                    r#"
+class Detailed(host_lib.Ledger):
+    def label(self):
+        return 'detailed'
+"#,
+                )
+                .unwrap();
+
+            assert_eq!(
+                guest
+                    .eval::<Instance<B>>("Detailed('ledger')")
+                    .unwrap()
+                    .call_method::<_, Coroutine<B, String>>("describe_later", ())
+                    .unwrap()
+                    .await
+                    .unwrap(),
+                "ledger/detailed",
+            );
+        }
+    }
+
+    guest_fixture! {
         pub fn annotations_preserve_declaration_order<B>()
         where B: [
             Backend,
@@ -875,6 +1005,21 @@ def twice(value):
             #[tokio::test]
             async fn host_base_method_calls_guest_override() {
                 $crate::backend::classes::fixtures::host_base_method_calls_guest_override::<
+                    $backend,
+                >()
+                .await;
+            }
+
+            #[test]
+            fn paired_method_reads_payload_and_calls_override() {
+                $crate::backend::classes::fixtures::paired_method_reads_payload_and_calls_override::<
+                    $backend,
+                >();
+            }
+
+            #[tokio::test]
+            async fn paired_async_method_reads_payload_and_calls_override() {
+                $crate::backend::classes::fixtures::paired_async_method_reads_payload_and_calls_override::<
                     $backend,
                 >()
                 .await;

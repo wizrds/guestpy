@@ -427,8 +427,10 @@ impl Callable {
         {
             return Err(syn::Error::new_spanned(
                 parameter,
-                "an exported host callable cannot declare type or const parameters; name the backend \
-                 with `backend = <name>` on the attribute instead",
+                r#"
+an exported host callable cannot declare type or const parameters;
+name the backend with `backend = <name>` on the attribute instead
+"#,
             )
             .into());
         }

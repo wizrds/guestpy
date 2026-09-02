@@ -402,7 +402,7 @@
 //!
 //! #[guestpy::host_class(backend = B)]
 //! impl Contract {
-//!     #[guestpy(raw_method)]
+//!     #[guestpy(method)]
 //!     fn invoke(#[guestpy(this)] this: &Object<B>) -> Result<String, Error> {
 //!         this.type_name()
 //!     }
