@@ -11,8 +11,11 @@ use syn::{
     Token,
     Type,
     TypeParam,
+    TypeParamBound,
+    WherePredicate,
     parse::{ParseStream, Parser},
     parse_quote,
+    punctuated::Punctuated,
     spanned::Spanned,
 };
 
@@ -151,6 +154,15 @@ impl BackendParameter {
         }
     }
 
+    pub(crate) fn named(&self) -> Option<&Ident> {
+        match self {
+            Self::Synthesized(ident) | Self::Declared(ident) | Self::Introduced(ident) => {
+                Some(ident)
+            }
+            Self::Concrete(_) => None,
+        }
+    }
+
     pub(crate) fn introduced(&self) -> Option<&Ident> {
         match self {
             Self::Introduced(ident) => Some(ident),
@@ -172,22 +184,10 @@ impl BackendParameter {
         }
     }
 
-    pub(crate) fn capability_predicate(
-        &self,
-        capabilities: &[TokenStream],
-    ) -> Option<TokenStream> {
-        match self {
-            Self::Synthesized(ident) | Self::Declared(ident) | Self::Introduced(ident) => {
-                Some(quote!(#ident: #(#capabilities)+*))
-            }
-            Self::Concrete(_) => None,
-        }
-    }
-
     pub(crate) fn definition_generics(
         &self,
         generics: &Generics,
-        capabilities: &[TokenStream],
+        bounds: &BackendBounds,
     ) -> Generics {
         let mut definition = generics.clone();
 
@@ -195,13 +195,90 @@ impl BackendParameter {
             definition.params.push(parse_quote!(#ident));
         }
 
-        if let Some(predicate) = self.capability_predicate(capabilities) {
+        if let Some(predicate) = bounds.predicate() {
             definition
                 .make_where_clause()
                 .predicates
-                .push(parse_quote!(#predicate));
+                .push(predicate);
         }
 
         definition
+    }
+}
+
+pub(crate) struct BackendBounds {
+    parameter: Option<Ident>,
+    bounds: Vec<TypeParamBound>,
+}
+
+impl BackendBounds {
+    pub(crate) fn new(
+        backend: &BackendParameter,
+        capabilities: Vec<TypeParamBound>,
+    ) -> Self {
+        Self {
+            parameter: backend.named().cloned(),
+            bounds: capabilities,
+        }
+    }
+
+    fn push(&mut self, bound: TypeParamBound) {
+        let rendered = bound.to_token_stream().to_string();
+
+        if self
+            .bounds
+            .iter()
+            .any(|existing| existing.to_token_stream().to_string() == rendered)
+        {
+            return;
+        }
+
+        self.bounds.push(bound);
+    }
+
+    fn bounds_backend(&self, predicate: &WherePredicate) -> bool {
+        let (Some(parameter), WherePredicate::Type(bounded)) = (&self.parameter, predicate) else {
+            return false;
+        };
+
+        matches!(
+            &bounded.bounded_ty,
+            Type::Path(path) if path.qself.is_none() && path.path.is_ident(parameter)
+        )
+    }
+
+    pub(crate) fn absorb(&mut self, generics: &mut Generics) {
+        let Some(clause) = generics.where_clause.as_mut() else {
+            return;
+        };
+        let mut retained = Punctuated::new();
+
+        for predicate in core::mem::take(&mut clause.predicates) {
+            if !self.bounds_backend(&predicate) {
+                retained.push(predicate);
+                continue;
+            }
+
+            let WherePredicate::Type(bounded) = predicate else {
+                continue;
+            };
+
+            for bound in bounded.bounds {
+                self.push(bound);
+            }
+        }
+
+        clause.predicates = retained;
+
+        if clause.predicates.is_empty() {
+            generics.where_clause = None;
+        }
+    }
+
+    pub(crate) fn predicate(&self) -> Option<WherePredicate> {
+        let parameter = self.parameter.as_ref()?;
+        let bounds = &self.bounds;
+
+        Some(parse_quote!(#parameter: #(#bounds)+*))
     }
 }

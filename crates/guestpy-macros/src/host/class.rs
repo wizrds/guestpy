@@ -1,13 +1,13 @@
 use darling::{FromMeta, ast::NestedMeta, util::Flag};
 use proc_macro2::TokenStream;
 use quote::quote;
-use syn::{ImplItem, ItemImpl, Path, parse_quote};
+use syn::{ImplItem, ImplItemFn, ItemImpl, Path, TypeParamBound, parse_quote};
 
 use crate::{
     attributes::HelperAttributes,
     host::{
         HostMacroError,
-        backend::{BackendOption, BackendParameter},
+        backend::{BackendBounds, BackendOption, BackendParameter},
         callable::{Callable, Parameter, Receiver},
         target::HostTarget,
         types::TypeList,
@@ -319,6 +319,7 @@ struct HostClassDefinition {
     subscriptable: bool,
     constructor: Option<Callable>,
     members: Vec<ClassMember>,
+    bounds: BackendBounds,
 }
 
 impl HostClassMacro {
@@ -395,16 +396,28 @@ impl HostClassDefinition {
             }
         }
 
+        let backend = BackendParameter::resolve(options.backend, item, "host_class")?;
+        let crate_path = CratePath::new(options.crate_path).resolve();
+        let mut bounds = BackendBounds::new(
+            &backend,
+            Self::capabilities(&crate_path, &constructor, &members),
+        );
+
+        for method in Self::exported_methods(item, &constructor, &members) {
+            bounds.absorb(&mut method.sig.generics);
+        }
+
         let definition = Self {
             name: options
                 .name
                 .unwrap_or_else(|| target.name()),
-            crate_path: CratePath::new(options.crate_path).resolve(),
-            backend: BackendParameter::resolve(options.backend, item, "host_class")?,
+            crate_path,
+            backend,
             extends: options.extends,
             subscriptable: options.subscriptable.is_present(),
             constructor,
             members,
+            bounds,
         };
 
         definition.inject_backend_parameter(item);
@@ -412,61 +425,70 @@ impl HostClassDefinition {
         Ok(definition)
     }
 
+    fn exported_methods<'item>(
+        item: &'item mut ItemImpl,
+        constructor: &'item Option<Callable>,
+        members: &'item [ClassMember],
+    ) -> impl Iterator<Item = &'item mut ImplItemFn> {
+        item.items
+            .iter_mut()
+            .filter_map(|element| match element {
+                ImplItem::Fn(method) => Some(method),
+                _ => None,
+            })
+            .filter(|method| {
+                constructor
+                    .as_ref()
+                    .is_some_and(|callable| callable.ident() == &method.sig.ident)
+                    || members
+                        .iter()
+                        .any(|member| member.ident() == &method.sig.ident)
+            })
+    }
+
     fn inject_backend_parameter(&self, item: &mut ItemImpl) {
         let Some(backend) = self.backend.introduced() else {
             return;
         };
+        let Some(predicate) = self.bounds.predicate() else {
+            return;
+        };
 
-        let capabilities = self.capabilities();
-
-        for element in &mut item.items {
-            let ImplItem::Fn(method) = element else {
-                continue;
-            };
-
-            if !self.exports(&method.sig.ident) {
-                continue;
-            }
-
+        for method in Self::exported_methods(item, &self.constructor, &self.members) {
             method.sig.generics.params.push(parse_quote!(#backend));
             method
                 .sig
                 .generics
                 .make_where_clause()
                 .predicates
-                .push(parse_quote!(#backend: #(#capabilities)+*));
+                .push(predicate.clone());
         }
     }
 
-    fn exports(&self, ident: &syn::Ident) -> bool {
-        self.constructor
-            .as_ref()
-            .is_some_and(|callable| callable.ident() == ident)
-            || self
-                .members
-                .iter()
-                .any(|member| member.ident() == ident)
-    }
-
-    fn capabilities(&self) -> Vec<TokenStream> {
-        let crate_path = &self.crate_path;
+    fn capabilities(
+        crate_path: &Path,
+        constructor: &Option<Callable>,
+        members: &[ClassMember],
+    ) -> Vec<TypeParamBound> {
         let mut capabilities = vec![
-            quote!(#crate_path::backend::Backend),
-            quote!(#crate_path::backend::BackendValues),
-            quote!(#crate_path::backend::BackendCallables),
-            quote!(#crate_path::backend::BackendClasses),
+            parse_quote!(#crate_path::backend::Backend),
+            parse_quote!(#crate_path::backend::BackendValues),
+            parse_quote!(#crate_path::backend::BackendCallables),
+            parse_quote!(#crate_path::backend::BackendClasses),
         ];
 
-        if self.members.iter().any(|member| {
-            matches!(
-                member,
-                ClassMember::AsyncMethod(_) | ClassMember::AsyncRawMethod(_),
-            )
-        }) {
+        if constructor.iter().any(Callable::asynchronous)
+            || members.iter().any(|member| {
+                matches!(
+                    member,
+                    ClassMember::AsyncMethod(_) | ClassMember::AsyncRawMethod(_),
+                )
+            })
+        {
             capabilities.extend([
-                quote!(#crate_path::backend::BackendModules),
-                quote!(#crate_path::backend::BackendCoroutines),
-                quote!(#crate_path::backend::BackendExceptions),
+                parse_quote!(#crate_path::backend::BackendModules),
+                parse_quote!(#crate_path::backend::BackendCoroutines),
+                parse_quote!(#crate_path::backend::BackendExceptions),
             ]);
         }
 
@@ -693,7 +715,6 @@ impl HostClassDefinition {
     }
 
     fn render(self, item: &ItemImpl) -> TokenStream {
-        let capabilities = self.capabilities();
         let Self {
             name,
             crate_path,
@@ -702,6 +723,7 @@ impl HostClassDefinition {
             subscriptable,
             constructor,
             members,
+            bounds,
         } = self;
         let target = item.self_ty.as_ref();
         let backend_type = backend.ty();
@@ -733,7 +755,7 @@ impl HostClassDefinition {
                 }
             }
         });
-        let definition_generics = backend.definition_generics(&item.generics, &capabilities);
+        let definition_generics = backend.definition_generics(&item.generics, &bounds);
 
         let (definition_impl_generics, _, definition_where_clause) =
             definition_generics.split_for_impl();
@@ -1118,6 +1140,70 @@ mod tests {
             )
             .is_err(),
         );
+    }
+
+    #[test]
+    fn hoists_a_member_bound_onto_the_definition() {
+        let output = expand(
+            quote!(backend = B, crate_path = crate),
+            parse_quote! {
+                impl Contract {
+                    #[guestpy(raw_method)]
+                    fn invoke(#[guestpy(this)] this: &Object<B>) -> Result<Object<B>, Error>
+                    where
+                        B: InterpreterBackend,
+                    {
+                        Ok(this.clone())
+                    }
+                }
+            },
+        );
+
+        assert!(output.contains("HostClassDefinition < B > for Contract where B :"));
+        assert!(output.contains("+ InterpreterBackend"));
+        assert_eq!(output.matches("InterpreterBackend").count(), 2);
+    }
+
+    #[test]
+    fn hoists_a_member_bound_for_a_declared_backend() {
+        let output = expand(
+            quote!(backend = B, crate_path = crate),
+            parse_quote! {
+                impl<B> Contract<B> {
+                    #[guestpy(raw_method)]
+                    fn invoke(#[guestpy(this)] this: &Object<B>) -> Result<Object<B>, Error>
+                    where
+                        B: InterpreterBackend,
+                    {
+                        Ok(this.clone())
+                    }
+                }
+            },
+        );
+
+        assert!(output.contains("+ InterpreterBackend"));
+        assert!(!output.contains("Self :: invoke :: <"));
+    }
+
+    #[test]
+    fn retains_a_member_bound_that_does_not_name_the_backend() {
+        let output = expand(
+            quote!(backend = B, crate_path = crate),
+            parse_quote! {
+                impl Contract {
+                    #[guestpy(raw_method)]
+                    fn invoke(#[guestpy(this)] this: &Object<B>) -> Result<Object<B>, Error>
+                    where
+                        Self: Sized,
+                    {
+                        Ok(this.clone())
+                    }
+                }
+            },
+        );
+
+        assert!(output.contains("where Self : Sized"));
+        assert!(!output.contains("HostClassDefinition < B > for Contract where Self : Sized"));
     }
 
     #[test]

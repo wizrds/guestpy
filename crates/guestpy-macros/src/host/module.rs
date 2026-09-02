@@ -5,13 +5,22 @@ use darling::{
 };
 use proc_macro2::{Span, TokenStream};
 use quote::quote;
-use syn::{FnArg, ImplItem, ImplItemFn, ItemImpl, Path, parse_quote, spanned::Spanned};
+use syn::{
+    FnArg,
+    ImplItem,
+    ImplItemFn,
+    ItemImpl,
+    Path,
+    TypeParamBound,
+    parse_quote,
+    spanned::Spanned,
+};
 
 use crate::{
     attributes::HelperAttributes,
     host::{
         HostMacroError,
-        backend::{BackendOption, BackendParameter},
+        backend::{BackendBounds, BackendOption, BackendParameter},
         callable::{Callable, Parameter, Receiver},
         target::HostTarget,
         types::TypeList,
@@ -248,6 +257,7 @@ struct HostModuleDefinition {
     exceptions: Vec<String>,
     members: Vec<ModuleMember>,
     needs_state: bool,
+    bounds: BackendBounds,
 }
 
 impl HostModuleMacro {
@@ -334,6 +344,22 @@ impl HostModuleDefinition {
             .iter()
             .any(ModuleMember::is_stateful);
 
+        let backend = BackendParameter::resolve(options.backend, item, "host_module")?;
+        let crate_path = CratePath::new(options.crate_path).resolve();
+        let mut bounds = BackendBounds::new(
+            &backend,
+            Self::capabilities(
+                &crate_path,
+                &options.classes,
+                &options.exceptions,
+                &members,
+            ),
+        );
+
+        for method in Self::exported_methods(item, &members) {
+            bounds.absorb(&mut method.sig.generics);
+        }
+
         let definition = Self {
             name: options
                 .name
@@ -341,8 +367,8 @@ impl HostModuleDefinition {
             method_name: options
                 .method_name
                 .unwrap_or_else(|| syn::Ident::new("module", Span::call_site())),
-            crate_path: CratePath::new(options.crate_path).resolve(),
-            backend: BackendParameter::resolve(options.backend, item, "host_module")?,
+            crate_path,
+            backend,
             classes: options.classes,
             exceptions: options
                 .exceptions
@@ -355,6 +381,7 @@ impl HostModuleDefinition {
                 .collect(),
             members,
             needs_state,
+            bounds,
         };
 
         definition.inject_backend_parameter(item);
@@ -362,44 +389,54 @@ impl HostModuleDefinition {
         Ok(definition)
     }
 
+    fn exported_methods<'item>(
+        item: &'item mut ItemImpl,
+        members: &'item [ModuleMember],
+    ) -> impl Iterator<Item = &'item mut ImplItemFn> {
+        item.items
+            .iter_mut()
+            .filter_map(|element| match element {
+                ImplItem::Fn(method) => Some(method),
+                _ => None,
+            })
+            .filter(|method| {
+                members
+                    .iter()
+                    .any(|member| member.ident() == &method.sig.ident)
+            })
+    }
+
     fn inject_backend_parameter(&self, item: &mut ItemImpl) {
         let Some(backend) = self.backend.introduced() else {
             return;
         };
+        let Some(predicate) = self.bounds.predicate() else {
+            return;
+        };
 
-        let capabilities = self.capabilities();
-
-        for element in &mut item.items {
-            let ImplItem::Fn(method) = element else {
-                continue;
-            };
-
-            if !self.exports(&method.sig.ident) {
-                continue;
-            }
-
+        for method in Self::exported_methods(item, &self.members) {
             method.sig.generics.params.push(parse_quote!(#backend));
             method
                 .sig
                 .generics
                 .make_where_clause()
                 .predicates
-                .push(parse_quote!(#backend: #(#capabilities)+*));
+                .push(predicate.clone());
         }
     }
 
-    fn exports(&self, ident: &syn::Ident) -> bool {
-        self.members.iter().any(|member| member.ident() == ident)
-    }
-
-    fn capabilities(&self) -> Vec<TokenStream> {
-        let crate_path = &self.crate_path;
+    fn capabilities(
+        crate_path: &Path,
+        classes: &TypeList,
+        exceptions: &PathList,
+        members: &[ModuleMember],
+    ) -> Vec<TypeParamBound> {
         let mut capabilities = vec![
-            quote!(#crate_path::backend::Backend),
-            quote!(#crate_path::backend::BackendValues),
-            quote!(#crate_path::backend::BackendCallables),
+            parse_quote!(#crate_path::backend::Backend),
+            parse_quote!(#crate_path::backend::BackendValues),
+            parse_quote!(#crate_path::backend::BackendCallables),
         ];
-        let has_async_function = self.members.iter().any(
+        let has_async_function = members.iter().any(
             |member| {
                 matches!(
                     member,
@@ -408,19 +445,19 @@ impl HostModuleDefinition {
             },
         );
 
-        if !self.classes.is_empty() {
-            capabilities.push(quote!(#crate_path::backend::BackendClasses));
+        if !classes.is_empty() {
+            capabilities.push(parse_quote!(#crate_path::backend::BackendClasses));
         }
 
         if has_async_function {
             capabilities.extend([
-                quote!(#crate_path::backend::BackendModules),
-                quote!(#crate_path::backend::BackendCoroutines),
+                parse_quote!(#crate_path::backend::BackendModules),
+                parse_quote!(#crate_path::backend::BackendCoroutines),
             ]);
         }
 
-        if has_async_function || !self.exceptions.is_empty() {
-            capabilities.push(quote!(#crate_path::backend::BackendExceptions));
+        if has_async_function || !exceptions.is_empty() {
+            capabilities.push(parse_quote!(#crate_path::backend::BackendExceptions));
         }
 
         capabilities
@@ -614,7 +651,6 @@ impl HostModuleDefinition {
     }
 
     fn render(self, item: &ItemImpl) -> TokenStream {
-        let capabilities = self.capabilities();
         let Self {
             name,
             method_name,
@@ -624,6 +660,7 @@ impl HostModuleDefinition {
             exceptions,
             members,
             needs_state,
+            bounds,
         } = self;
         let target = item.self_ty.as_ref();
         let generics = item.generics.clone();
@@ -649,8 +686,8 @@ impl HostModuleDefinition {
         let backend_type = backend.ty();
         let method_generics = backend.method_generics();
 
-        let method_where_clause = backend
-            .capability_predicate(&capabilities)
+        let method_where_clause = bounds
+            .predicate()
             .map(|predicate| {
                 let class_definition_bounds = classes.iter().map(|class| {
                     quote!(#class: #crate_path::host::class::HostClassDefinition<#backend_type>,)
@@ -952,5 +989,26 @@ mod tests {
         assert!(output.contains("Self :: describe :: < B >"));
         assert!(output.contains("fn module < B >"));
         assert!(output.contains("ModuleSpec < B >"));
+    }
+
+    #[test]
+    fn hoists_a_module_member_bound_onto_the_method() {
+        let output = expand(
+            quote!(backend = B, crate_path = crate),
+            parse_quote! {
+                impl Registry {
+                    #[guestpy(function)]
+                    fn ping(#[guestpy(enter)] enter: &Enter<'_, B>) -> Result<(), Error>
+                    where
+                        B: InterpreterBackend,
+                    {
+                        Ok(())
+                    }
+                }
+            },
+        );
+
+        assert!(output.contains("+ InterpreterBackend"));
+        assert_eq!(output.matches("InterpreterBackend").count(), 2);
     }
 }
