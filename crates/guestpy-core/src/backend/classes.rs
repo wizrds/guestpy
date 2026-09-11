@@ -927,6 +927,79 @@ def twice(value):
         }
     }
 
+    guest_fixture! {
+        pub fn import_resolves_a_standard_library_module<B>()
+        where B: [
+            Backend,
+            BackendValues,
+            BackendCallables,
+            BackendClasses,
+            BackendModules,
+            BackendCoroutines,
+            BackendExceptions,
+            BackendInterrupt,
+        ]
+        using Runtime::<B>::builder();
+        |guest| {
+            assert!(
+                guest
+                    .import("dataclasses")
+                    .unwrap()
+                    .function("is_dataclass")
+                    .is_ok()
+            );
+        }
+    }
+
+    guest_fixture! {
+        pub fn import_resolves_a_standard_library_submodule_to_its_leaf<B>()
+        where B: [
+            Backend,
+            BackendValues,
+            BackendCallables,
+            BackendClasses,
+            BackendModules,
+            BackendCoroutines,
+            BackendExceptions,
+            BackendInterrupt,
+        ]
+        using Runtime::<B>::builder();
+        |guest| {
+            assert!(
+                guest
+                    .import("os.path")
+                    .unwrap()
+                    .function("join")
+                    .is_ok()
+            );
+        }
+    }
+
+    guest_fixture! {
+        pub fn import_keeps_denied_standard_library_modules_denied<B>()
+        where B: [
+            Backend,
+            BackendValues,
+            BackendCallables,
+            BackendClasses,
+            BackendModules,
+            BackendCoroutines,
+            BackendExceptions,
+            BackendInterrupt,
+        ]
+        using Runtime::<B>::builder().deny("subprocess");
+        |guest| {
+            assert!(
+                guest
+                    .import("subprocess")
+                    .err()
+                    .unwrap()
+                    .to_string()
+                    .contains("denied")
+            );
+        }
+    }
+
     #[doc(hidden)]
     #[macro_export]
     macro_rules! __guestpy_backend_classes_tests {
@@ -1035,6 +1108,27 @@ def twice(value):
             #[test]
             fn any_handle_calls_a_callable_and_reports_a_clear_error_otherwise() {
                 $crate::backend::classes::fixtures::any_handle_calls_a_callable_and_reports_a_clear_error_otherwise::<
+                    $backend,
+                >();
+            }
+
+            #[test]
+            fn import_resolves_a_standard_library_module() {
+                $crate::backend::classes::fixtures::import_resolves_a_standard_library_module::<
+                    $backend,
+                >();
+            }
+
+            #[test]
+            fn import_resolves_a_standard_library_submodule_to_its_leaf() {
+                $crate::backend::classes::fixtures::import_resolves_a_standard_library_submodule_to_its_leaf::<
+                    $backend,
+                >();
+            }
+
+            #[test]
+            fn import_keeps_denied_standard_library_modules_denied() {
+                $crate::backend::classes::fixtures::import_keeps_denied_standard_library_modules_denied::<
                     $backend,
                 >();
             }

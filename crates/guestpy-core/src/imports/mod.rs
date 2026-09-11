@@ -126,6 +126,30 @@ where
         )
     }
 
+    fn leaf(&self, head: B::Value<'py>, dotted: &str) -> Result<B::Value<'py>, Error> {
+        dotted
+            .split('.')
+            .skip(1)
+            .try_fold(head, |module, name| B::get_attr(self.enter.token(), &module, name))
+    }
+
+    fn is_bound(&self, resolved: &str) -> Result<bool, Error> {
+        if self
+            .enter
+            .guest()
+            .bindings()
+            .is_denied(resolved)
+        {
+            return Err(Error::import(resolved, "this module is denied to this guest"));
+        }
+
+        Ok(self
+            .enter
+            .guest()
+            .bindings()
+            .contains(DottedName(resolved).head()))
+    }
+
     pub(crate) fn is_host_module(&self, dotted: &str) -> bool {
         self.enter
             .guest()
@@ -141,13 +165,8 @@ where
     }
 
     pub(crate) fn module(&self, dotted: &str) -> Result<B::Value<'py>, Error> {
-        if self
-            .enter
-            .guest()
-            .bindings()
-            .is_denied(dotted)
-        {
-            return Err(Error::import(dotted, "this module is denied to this guest"));
+        if !self.is_bound(dotted)? {
+            return self.leaf(self.delegate(dotted, None, None, None, None)?, dotted);
         }
 
         Realiser::new(self.enter).module(dotted)
@@ -176,21 +195,7 @@ where
             DottedName::absolutise(&package, &name, depth)?
         };
 
-        if self
-            .enter
-            .guest()
-            .bindings()
-            .is_denied(&resolved)
-        {
-            return Err(Error::import(resolved, "this module is denied to this guest"));
-        }
-
-        if !self
-            .enter
-            .guest()
-            .bindings()
-            .contains(DottedName(&resolved).head())
-        {
+        if !self.is_bound(&resolved)? {
             return self.delegate(&name, globals, locals, fromlist, level);
         }
 
