@@ -1,6 +1,12 @@
 # Changelog
 
 ---
+## [0.3.1](https://github.com/wizrds/guestpy/compare/0.3.0..0.3.1) - 2026-09-11
+
+### Bug Fixes
+
+- Delegate to python import in host import method when target is not bound directly - ([ec3860b](https://github.com/wizrds/guestpy/commit/ec3860bc8f43bff886a17268cec2262fadfb589d)) - Timothy Pogue
+---
 ## [0.3.0](https://github.com/wizrds/guestpy/compare/0.2.1..0.3.0) - 2026-09-02
 
 ### Bug Fixes
