@@ -6,8 +6,8 @@ use futures::{Stream, StreamExt};
 
 use crate::{
     backend::{
-        Backend, BackendCallables, BackendClasses, BackendCoroutines, BackendExceptions,
-        BackendModules, BackendValues, callables::PendingValue,
+        Backend, BackendCallables, BackendClasses, BackendCoroutines, BackendModules,
+        BackendValues, callables::PendingValue,
     },
     errors::Error,
     handle::Value,
@@ -101,8 +101,7 @@ where
         + BackendCallables
         + BackendClasses
         + BackendModules
-        + BackendCoroutines
-        + BackendExceptions,
+        + BackendCoroutines,
     T: ToGuest<B> + 'static,
 {
     fn to_guest<'py>(self, enter: &Enter<'py, B>) -> Result<B::Value<'py>, Error> {

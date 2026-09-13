@@ -266,7 +266,7 @@ pub(crate) mod tests {
         BackendInterrupt, BackendLibrary, NoNativeExtensions, Step, Tok, Val, callables::RawBody,
         modules::BackendModules, values::BackendValues,
     };
-    use crate::errors::{Error, GuestException};
+    use crate::errors::Error;
 
     pub(crate) struct Stub;
 
@@ -644,26 +644,7 @@ pub(crate) mod tests {
     }
 
     impl BackendExceptions for Stub {
-        type Raw = ();
-
-        fn take_error<'py>(_: Tok<'py, Self>, _: Self::Raw) -> GuestException {
-            unimplemented!()
-        }
-        fn raise<'py>(_: Tok<'py, Self>, _: Error) -> Self::Raw {
-            unimplemented!()
-        }
-        fn exception_object<'py>(_: Tok<'py, Self>, _: Error) -> Result<Val<'py, Self>, Error> {
-            unimplemented!()
-        }
-        fn exception_class<'py>(_: Tok<'py, Self>, _: &str) -> Result<Val<'py, Self>, Error> {
-            unimplemented!()
-        }
-        fn new_exception_class<'py>(
-            _: Tok<'py, Self>,
-            _: &str,
-            _: &str,
-            _: Option<&Val<'py, Self>>,
-        ) -> Result<Val<'py, Self>, Error> {
+        fn traceback<'py>(_: Tok<'py, Self>, _: &Val<'py, Self>) -> Option<String> {
             unimplemented!()
         }
     }

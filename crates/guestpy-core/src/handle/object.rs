@@ -2,11 +2,11 @@
 
 use crate::{
     backend::{
-        Backend, BackendCallables, BackendCoroutines, BackendExceptions, BackendInterrupt,
-        BackendModules, BackendValues,
+        Backend, BackendCallables, BackendCoroutines, BackendInterrupt, BackendModules,
+        BackendValues,
     },
     errors::Error,
-    handle::{AsyncIter, Handle, traits::HasHandle},
+    handle::{traits::HasHandle, AsyncIter, Handle},
     marshal::{FromGuest, ToGuest},
     scope::Enter,
 };
@@ -42,7 +42,6 @@ where
         + BackendCallables
         + BackendModules
         + BackendCoroutines
-        + BackendExceptions
         + BackendInterrupt,
 {
     pub fn aiter<T: FromGuest<B>>(&self) -> Result<AsyncIter<B, T>, Error> {

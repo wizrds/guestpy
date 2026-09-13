@@ -1,11 +1,16 @@
 pub mod args;
 pub mod collections;
+mod exception;
 pub mod primitives;
 
 #[cfg(feature = "serde")]
 pub mod serde;
 
-use crate::{backend::Backend, errors::Error, scope::Enter};
+use crate::{
+    backend::{Backend, Tok, Val},
+    errors::Error,
+    scope::Enter,
+};
 
 pub trait ToGuest<B: Backend> {
     fn to_guest<'py>(self, enter: &Enter<'py, B>) -> Result<B::Value<'py>, Error>;
@@ -37,6 +42,10 @@ pub trait FromGuestMut<'py, B: Backend> {
         enter: &Enter<'py, B>,
         value: &'a B::Value<'py>,
     ) -> Result<Self::Mut<'a>, Error>;
+}
+
+pub trait FromException<B: Backend> {
+    fn from_exception<'py>(token: Tok<'py, B>, exception: Val<'py, B>) -> Self;
 }
 
 #[cfg(test)]

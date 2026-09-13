@@ -10,8 +10,8 @@ use futures::Stream;
 
 use crate::{
     backend::{
-        Backend, BackendCallables, BackendCoroutines, BackendExceptions, BackendInterrupt,
-        BackendModules, BackendValues, Step, Tok, Val,
+        Backend, BackendCallables, BackendCoroutines, BackendInterrupt, BackendModules,
+        BackendValues, Step, Tok, Val,
     },
     driver::CoroutineFuture,
     errors::Error,
@@ -186,7 +186,6 @@ where
         + BackendCallables
         + BackendModules
         + BackendCoroutines
-        + BackendExceptions
         + BackendInterrupt,
     T: FromGuest<B>,
 {
@@ -298,7 +297,6 @@ where
         + BackendCallables
         + BackendModules
         + BackendCoroutines
-        + BackendExceptions
         + BackendInterrupt,
     T: FromGuest<B>,
 {

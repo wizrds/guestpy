@@ -1,29 +1,22 @@
 use darling::{
-    FromMeta,
     ast::NestedMeta,
     util::{Flag, PathList},
+    FromMeta,
 };
 use proc_macro2::{Span, TokenStream};
 use quote::quote;
 use syn::{
-    FnArg,
-    ImplItem,
-    ImplItemFn,
-    ItemImpl,
-    Path,
-    TypeParamBound,
-    parse_quote,
-    spanned::Spanned,
+    parse_quote, spanned::Spanned, FnArg, ImplItem, ImplItemFn, ItemImpl, Path, TypeParamBound,
 };
 
 use crate::{
     attributes::HelperAttributes,
     host::{
-        HostMacroError,
         backend::{BackendBounds, BackendOption, BackendParameter},
         callable::{Callable, Parameter, Receiver},
         target::HostTarget,
         types::TypeList,
+        HostMacroError,
     },
     naming::{Naming, RenameRule},
     path::CratePath,
@@ -203,12 +196,7 @@ impl ModuleMember {
             }
             Self::Object { ident, name, shared } => {
                 let turbofish = backend.turbofish();
-                let invocation = Self::invoke(
-                    *shared,
-                    ident,
-                    &turbofish,
-                    &[quote!(__guestpy_ns)],
-                );
+                let invocation = Self::invoke(*shared, ident, &turbofish, &[quote!(__guestpy_ns)]);
                 let closure = Self::state_closure(*shared, quote!(|__guestpy_ns| #invocation));
 
                 quote!(.object(#name, #closure))
@@ -348,12 +336,7 @@ impl HostModuleDefinition {
         let crate_path = CratePath::new(options.crate_path).resolve();
         let mut bounds = BackendBounds::new(
             &backend,
-            Self::capabilities(
-                &crate_path,
-                &options.classes,
-                &options.exceptions,
-                &members,
-            ),
+            Self::capabilities(&crate_path, &options.classes, &options.exceptions, &members),
         );
 
         for method in Self::exported_methods(item, &members) {
@@ -415,7 +398,11 @@ impl HostModuleDefinition {
         };
 
         for method in Self::exported_methods(item, &self.members) {
-            method.sig.generics.params.push(parse_quote!(#backend));
+            method
+                .sig
+                .generics
+                .params
+                .push(parse_quote!(#backend));
             method
                 .sig
                 .generics
@@ -436,28 +423,26 @@ impl HostModuleDefinition {
             parse_quote!(#crate_path::backend::BackendValues),
             parse_quote!(#crate_path::backend::BackendCallables),
         ];
-        let has_async_function = members.iter().any(
-            |member| {
-                matches!(
-                    member,
-                    ModuleMember::Function(callable) if callable.asynchronous(),
-                )
-            },
-        );
+        let has_async_function = members.iter().any(|member| {
+            matches!(
+                member,
+                ModuleMember::Function(callable) if callable.asynchronous(),
+            )
+        });
 
         if !classes.is_empty() {
             capabilities.push(parse_quote!(#crate_path::backend::BackendClasses));
         }
 
-        if has_async_function {
-            capabilities.extend([
-                parse_quote!(#crate_path::backend::BackendModules),
-                parse_quote!(#crate_path::backend::BackendCoroutines),
-            ]);
+        if has_async_function || !exceptions.is_empty() {
+            capabilities.push(parse_quote!(#crate_path::backend::BackendModules));
         }
 
-        if has_async_function || !exceptions.is_empty() {
-            capabilities.push(parse_quote!(#crate_path::backend::BackendExceptions));
+        if has_async_function {
+            capabilities.extend([
+                parse_quote!(#crate_path::backend::BackendCoroutines),
+                parse_quote!(#crate_path::backend::BackendExceptions),
+            ]);
         }
 
         capabilities
@@ -676,7 +661,7 @@ make it non-async, or make it receiverless
         let exception_registrations = exceptions.iter().map(|exception| {
             quote!(.exception(
                 #exception,
-                #crate_path::host::exception::ExceptionBase::Exception,
+                #crate_path::host::exception::ExceptionClass::exception(),
             ))
         });
         let class_registrations = classes
@@ -691,19 +676,17 @@ make it non-async, or make it receiverless
         let backend_type = backend.ty();
         let method_generics = backend.method_generics();
 
-        let method_where_clause = bounds
-            .predicate()
-            .map(|predicate| {
-                let class_definition_bounds = classes.iter().map(|class| {
+        let method_where_clause = bounds.predicate().map(|predicate| {
+            let class_definition_bounds = classes.iter().map(|class| {
                     quote!(#class: #crate_path::host::class::HostClassDefinition<#backend_type>,)
                 });
 
-                quote! {
-                    where
-                        #predicate,
-                        #(#class_definition_bounds)*
-                }
-            });
+            quote! {
+                where
+                    #predicate,
+                    #(#class_definition_bounds)*
+            }
+        });
 
         quote! {
             impl #impl_generics #target #where_clause {
@@ -783,7 +766,7 @@ mod tests {
         assert!(output.contains(". exception (\"GeometryError\""));
         assert!(output.contains(". class :: < Vector2 > ()"));
         assert!(output.contains("BackendClasses"));
-        assert!(output.contains("BackendExceptions"));
+        assert!(output.contains("BackendModules"));
         assert!(output.contains(". finish () ?"));
     }
 
@@ -874,7 +857,8 @@ mod tests {
 
         assert!(output.contains("pub fn module < B > ()"));
         assert!(output.contains(". exception (\"GeometryError\""));
-        assert!(output.contains("BackendExceptions"));
+        assert!(output.contains("BackendModules"));
+        assert!(!output.contains("BackendExceptions"));
     }
 
     #[test]
@@ -902,35 +886,31 @@ mod tests {
 
     #[test]
     fn rejects_mut_self_and_stateful_async() {
-        assert!(
-            HostModuleMacro::new(
-                quote!(name = "bad", crate_path = crate),
-                parse_quote! {
-                    impl Bad {
-                        #[guestpy(function)]
-                        fn tick(&mut self) -> Result<(), Error> {
-                            Ok(())
-                        }
+        assert!(HostModuleMacro::new(
+            quote!(name = "bad", crate_path = crate),
+            parse_quote! {
+                impl Bad {
+                    #[guestpy(function)]
+                    fn tick(&mut self) -> Result<(), Error> {
+                        Ok(())
                     }
-                },
-            )
-            .is_err(),
-        );
+                }
+            },
+        )
+        .is_err(),);
 
-        assert!(
-            HostModuleMacro::new(
-                quote!(name = "bad", crate_path = crate),
-                parse_quote! {
-                    impl Bad {
-                        #[guestpy(function)]
-                        async fn tick(&self) -> Result<(), Error> {
-                            Ok(())
-                        }
+        assert!(HostModuleMacro::new(
+            quote!(name = "bad", crate_path = crate),
+            parse_quote! {
+                impl Bad {
+                    #[guestpy(function)]
+                    async fn tick(&self) -> Result<(), Error> {
+                        Ok(())
                     }
-                },
-            )
-            .is_err(),
-        );
+                }
+            },
+        )
+        .is_err(),);
     }
 
     #[test]
@@ -943,10 +923,8 @@ mod tests {
         );
 
         assert!(output.contains(". class :: < Envelope < B > > ()"));
-        assert!(
-            output
-                .contains("Envelope < B > : crate :: host :: class :: HostClassDefinition < B >",),
-        );
+        assert!(output
+            .contains("Envelope < B > : crate :: host :: class :: HostClassDefinition < B >",),);
     }
 
     #[test]
@@ -1014,6 +992,11 @@ mod tests {
         );
 
         assert!(output.contains("+ InterpreterBackend"));
-        assert_eq!(output.matches("InterpreterBackend").count(), 2);
+        assert_eq!(
+            output
+                .matches("InterpreterBackend")
+                .count(),
+            2
+        );
     }
 }

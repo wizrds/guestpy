@@ -4,9 +4,9 @@ use std::{
 
 use crate::{
     backend::{
-        Backend, BackendCallables, BackendClasses, BackendCoroutines, BackendExceptions,
-        BackendModules, BackendValues, Val,
         callables::{HostBody, PendingValue, RawBody},
+        Backend, BackendCallables, BackendClasses, BackendCoroutines, BackendModules,
+        BackendValues, Val,
     },
     errors::Error,
     handle::{Object, Value},
@@ -15,7 +15,7 @@ use crate::{
         dunder::Dunder,
         namespace::{Namespace, ValueDeclaration},
     },
-    marshal::{FromGuest, FromGuestMut, FromGuestRef, ToGuest, args::Args},
+    marshal::{args::Args, FromGuest, FromGuestMut, FromGuestRef, ToGuest},
     scope::Enter,
 };
 
@@ -46,7 +46,8 @@ struct MethodDeclaration<B: Backend> {
 impl<B: Backend> MethodDeclaration<B> {
     fn new<F>(body: F) -> Self
     where
-        F: for<'py> Fn(&Enter<'py, B>, Val<'py, B>, Args<'py, B>) -> Result<Val<'py, B>, Error> + 'static,
+        F: for<'py> Fn(&Enter<'py, B>, Val<'py, B>, Args<'py, B>) -> Result<Val<'py, B>, Error>
+            + 'static,
     {
         Self { body: Rc::new(body) }
     }
@@ -72,7 +73,8 @@ struct ClassMethodDeclaration<B: Backend> {
 impl<B: Backend> ClassMethodDeclaration<B> {
     fn new<F>(body: F) -> Self
     where
-        F: for<'py> Fn(&Enter<'py, B>, Val<'py, B>, Args<'py, B>) -> Result<Val<'py, B>, Error> + 'static,
+        F: for<'py> Fn(&Enter<'py, B>, Val<'py, B>, Args<'py, B>) -> Result<Val<'py, B>, Error>
+            + 'static,
     {
         Self { body: Rc::new(body) }
     }
@@ -151,7 +153,8 @@ impl<B: Backend> ClassPropertyDeclaration<B> {
 
     fn set_get<F>(&self, get: F)
     where
-        F: for<'py> Fn(&Enter<'py, B>, Val<'py, B>, Args<'py, B>) -> Result<Val<'py, B>, Error> + 'static,
+        F: for<'py> Fn(&Enter<'py, B>, Val<'py, B>, Args<'py, B>) -> Result<Val<'py, B>, Error>
+            + 'static,
     {
         *self.get.borrow_mut() = Some(Rc::new(get));
     }
@@ -690,9 +693,7 @@ where
         F: for<'py> Fn(&mut C, &Enter<'py, B>) -> Result<(), Error> + 'static,
     {
         self.property_slot(name)
-            .set_del(move |enter, receiver| {
-                del(&mut *C::from_guest_mut(enter, &receiver)?, enter)
-            });
+            .set_del(move |enter, receiver| del(&mut *C::from_guest_mut(enter, &receiver)?, enter));
 
         self
     }
@@ -764,8 +765,7 @@ where
         + BackendCallables
         + BackendClasses
         + BackendModules
-        + BackendCoroutines
-        + BackendExceptions,
+        + BackendCoroutines,
     C: HostClass + HostClassDefinition<B>,
 {
     fn pending<'py, Fut, R>(enter: &Enter<'py, B>, future: Fut) -> Result<B::Value<'py>, Error>

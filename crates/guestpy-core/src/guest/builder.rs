@@ -6,6 +6,7 @@ use crate::{
     errors::Error,
     guest::{ActiveGuest, Guest, GuestId, GuestInner},
     host::{
+        exception::FatalExceptions,
         library::{HostInitializer, HostLibrary, HostLibraryEntry},
         module::ModuleSpec,
     },
@@ -95,6 +96,8 @@ where
     B: Backend + BackendValues + BackendCallables + BackendModules,
 {
     pub fn build(self) -> Result<Guest<B>, Error> {
+        FatalExceptions::reserve(&self.modules)?;
+
         let runtime = &self.runtime.inner;
         let id = GuestId::new(runtime.take_next_id());
 

@@ -2,14 +2,14 @@ use std::{future::Future, rc::Rc};
 
 use crate::{
     backend::{
-        Backend, BackendCallables, BackendClasses, BackendCoroutines, BackendExceptions,
-        BackendModules, BackendValues,
+        Backend, BackendCallables, BackendClasses, BackendCoroutines, BackendModules,
+        BackendValues,
     },
     errors::Error,
     host::{
         class::{ClassDeclaration, ClassSpec, HostClass, HostClassDefinition},
         declaration::Member,
-        exception::{ExceptionBase, ExceptionDeclaration, ExceptionSpec},
+        exception::{ExceptionClass, ExceptionDeclaration, ExceptionSpec, HostException},
         namespace::Namespace,
     },
     marshal::{ToGuest, args::Args},
@@ -125,8 +125,7 @@ where
         + BackendValues
         + BackendCallables
         + BackendModules
-        + BackendCoroutines
-        + BackendExceptions,
+        + BackendCoroutines,
 {
     pub fn async_function<F, Fut, R>(mut self, name: &str, function: F) -> Self
     where
@@ -143,14 +142,24 @@ where
 
 impl<B> ModuleSpec<B>
 where
-    B: Backend + BackendValues + BackendCallables + BackendExceptions,
+    B: Backend + BackendValues + BackendCallables + BackendModules,
 {
-    pub fn exception(mut self, name: &str, base: ExceptionBase) -> Self {
-        let spec = Rc::new(ExceptionSpec::new(&self.name, name, base));
+    pub fn exception(mut self, name: &str, base: ExceptionClass) -> Self {
+        let spec = Rc::new(ExceptionSpec::named(&self.name, name, base));
 
         self.exceptions.push(spec.clone());
         self.namespace
             .push(name, Rc::new(ExceptionDeclaration::new(spec)));
+
+        self
+    }
+
+    pub fn exception_type<E: HostException>(mut self) -> Self {
+        let spec = Rc::new(ExceptionSpec::typed::<E>(&self.name));
+
+        self.exceptions.push(spec.clone());
+        self.namespace
+            .push(E::NAME, Rc::new(ExceptionDeclaration::new(spec)));
 
         self
     }
@@ -188,7 +197,7 @@ mod tests {
         host::{
             class::{ClassBuilder, HostClass, HostClassDefinition},
             dunder::Dunder,
-            exception::ExceptionBase,
+            exception::ExceptionClass,
         },
         marshal::args::Args,
         scope::Enter,
@@ -282,7 +291,7 @@ mod tests {
                     .constant("name", "geometry")
                     .property("version", |_| Ok::<_, Error>(1), |_, _: i64| Ok::<_, Error>(()));
             })
-            .exception("GeometryError", ExceptionBase::Exception)
+            .exception("GeometryError", ExceptionClass::exception())
             .class::<Vector2>()
             .init(|_| Ok::<_, Error>(()));
     }

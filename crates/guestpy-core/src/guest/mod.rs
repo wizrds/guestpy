@@ -2,11 +2,14 @@
 
 mod activity;
 mod builder;
+mod errors;
 mod registry;
 
 pub(crate) use activity::ActiveGuest;
-pub use builder::GuestBuilder;
+pub(crate) use errors::{ExceptionRaiser, GuestErrorHandler};
 pub(crate) use registry::GuestRegistry;
+
+pub use builder::GuestBuilder;
 
 use std::{
     cell::{Cell, Ref},
@@ -18,8 +21,7 @@ use activity::{Activation, GuestActivity};
 
 use crate::{
     backend::{
-        Backend, BackendCallables, BackendCoroutines, BackendExceptions, BackendModules,
-        BackendValues,
+        Backend, BackendCallables, BackendCoroutines, BackendModules, BackendValues,
         callables::{HostBody, RawBody, RawCall},
     },
     bundle::Bundle,
@@ -150,6 +152,21 @@ impl<B> GuestInner<B>
 where
     B: Backend + BackendValues,
 {
+    fn guest_enter_with<'py, F, R>(
+        self: &Rc<Self>,
+        token: B::Token<'py>,
+        f: F,
+    ) -> Result<R, Error>
+    where
+        F: FnOnce(&Enter<'py, B>) -> Result<R, Error>,
+    {
+        let _active = ActiveGuest::operation(self)
+            .map_err(|error| self.runtime.errors().raise_runtime(token, &self.runtime, error))?;
+        let enter = Enter::new(token, Guest { inner: self.clone() });
+
+        f(&enter).map_err(|error| self.runtime.errors().raise_guest(&enter, error))
+    }
+
     pub(crate) fn raw_body(
         runtime: &Rc<RuntimeInner<B>>,
         guest_id: GuestId,
@@ -159,15 +176,15 @@ where
 
         Rc::new(move |call| {
             let RawCall { token, positional, keyword } = call;
+            let runtime = runtime.upgrade().ok_or(Error::Closed)?;
             let guest = runtime
-                .upgrade()
-                .ok_or(Error::Closed)?
                 .registry()
-                .get(guest_id)?;
+                .get(guest_id)
+                .map_err(|error| runtime.errors().raise_runtime(token, &runtime, error))?;
 
-            let _active = ActiveGuest::operation(&guest)?;
-
-            body(&Enter::new(token, Guest { inner: guest }), Args::new(positional, keyword))
+            guest.guest_enter_with(token, |enter| {
+                body(enter, Args::new(positional, keyword))
+            })
         })
     }
 }
@@ -223,10 +240,10 @@ where
             let Some(guest) = Self::attribute(&runtime, token, positional.get(1)) else {
                 return Self::delegate(token, &runtime, &positional, &keyword);
             };
-            let _active = ActiveGuest::operation(&guest)?;
 
-            Imports::new(&Enter::new(token, Guest { inner: guest }))
-                .dispatch(&Args::new(positional, keyword))
+            guest.guest_enter_with(token, |enter| {
+                Imports::new(enter).dispatch(&Args::new(positional, keyword))
+            })
         })
     }
 }
@@ -282,6 +299,10 @@ impl<B: Backend> Guest<B> {
 
     pub(crate) fn bindings(&self) -> &GuestBindings<B> {
         &self.inner.bindings
+    }
+
+    pub(crate) fn errors(&self) -> &dyn GuestErrorHandler<B> {
+        self.inner.runtime.errors()
     }
 
     pub fn id(&self) -> GuestId {
@@ -443,8 +464,7 @@ where
         + BackendValues
         + BackendCallables
         + BackendModules
-        + BackendCoroutines
-        + BackendExceptions,
+        + BackendCoroutines,
 {
     const CLOSE_DRIVE_BUDGET: usize = 1000;
 
@@ -549,8 +569,7 @@ where
         + BackendValues
         + BackendCallables
         + BackendModules
-        + BackendCoroutines
-        + BackendExceptions,
+        + BackendCoroutines,
 {
     pub(crate) fn driver(&self) -> Ref<'_, dyn AsyncDriver<B>> {
         self.guest

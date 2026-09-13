@@ -7,8 +7,8 @@ use std::{
 
 use crate::{
     backend::{
-        Backend, BackendCallables, BackendCoroutines, BackendExceptions, BackendInterrupt,
-        BackendModules, BackendValues,
+        Backend, BackendCallables, BackendCoroutines, BackendInterrupt, BackendModules,
+        BackendValues,
     },
     driver::{Progress, Timer},
     errors::Error,
@@ -30,12 +30,7 @@ impl<B: Backend, T> Unpin for CoroutineFuture<B, T> {}
 
 impl<B, T> CoroutineFuture<B, T>
 where
-    B: Backend
-        + BackendValues
-        + BackendCallables
-        + BackendModules
-        + BackendCoroutines
-        + BackendExceptions,
+    B: Backend + BackendValues + BackendCallables + BackendModules + BackendCoroutines,
     T: FromGuest<B>,
 {
     pub(crate) fn new(guest: Guest<B>, owned: B::Owned) -> Self {
@@ -127,7 +122,6 @@ where
         + BackendCallables
         + BackendModules
         + BackendCoroutines
-        + BackendExceptions
         + BackendInterrupt,
     T: FromGuest<B>,
 {

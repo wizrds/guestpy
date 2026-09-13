@@ -4,8 +4,8 @@ use std::{future::Future, marker::PhantomData, rc::Rc};
 
 use crate::{
     backend::{
-        Backend, BackendCallables, BackendCoroutines, BackendExceptions, BackendModules,
-        BackendValues, Val, callables::PendingValue,
+        callables::PendingValue, Backend, BackendCallables, BackendCoroutines, BackendModules,
+        BackendValues, Val,
     },
     errors::Error,
     handle::Value,
@@ -13,7 +13,7 @@ use crate::{
         declaration::{DeclarationContext, DeclareMember, Member, ModuleGetter},
         function::{AsyncFunctionDeclaration, FunctionDeclaration},
     },
-    marshal::{FromGuest, ToGuest, args::Args},
+    marshal::{args::Args, FromGuest, ToGuest},
     scope::Enter,
 };
 
@@ -315,12 +315,7 @@ where
 
 impl<B> Namespace<B>
 where
-    B: Backend
-        + BackendValues
-        + BackendCallables
-        + BackendModules
-        + BackendCoroutines
-        + BackendExceptions,
+    B: Backend + BackendValues + BackendCallables + BackendModules + BackendCoroutines,
 {
     pub fn async_function<F, Fut, R>(&mut self, name: &str, function: F) -> &mut Self
     where
