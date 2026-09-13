@@ -65,8 +65,8 @@ pub trait BackendClasses: Backend + BackendValues + BackendCallables {
 pub mod fixtures {
     use crate::{
         backend::{
-            Backend, BackendCallables, BackendClasses, BackendCoroutines, BackendExceptions,
-            BackendInterrupt, BackendModules, BackendValues, guest_fixture,
+            Backend, BackendCallables, BackendClasses, BackendCoroutines, BackendInterrupt,
+            BackendModules, BackendValues, BackendExceptions, guest_fixture,
         },
         errors::Error,
         handle::{
@@ -130,8 +130,7 @@ pub mod fixtures {
             + BackendCallables
             + BackendClasses
             + BackendModules
-            + BackendCoroutines
-            + BackendExceptions,
+                + BackendCoroutines,
     {
         fn construct<'py>(_: &Enter<'py, B>, args: Args<'py, B>) -> Result<Self, Error> {
             args.finish()?;
@@ -167,8 +166,7 @@ pub mod fixtures {
             + BackendCallables
             + BackendClasses
             + BackendModules
-            + BackendCoroutines
-            + BackendExceptions,
+                + BackendCoroutines,
     {
         fn construct<'py>(enter: &Enter<'py, B>, args: Args<'py, B>) -> Result<Self, Error> {
             let prefix = args.required::<String>(enter, 0, "prefix")?;
@@ -215,7 +213,6 @@ pub mod fixtures {
             BackendClasses,
             BackendModules,
             BackendCoroutines,
-            BackendExceptions,
             BackendInterrupt,
         ]
         using Runtime::<B>::builder()
@@ -255,7 +252,6 @@ pub mod fixtures {
             BackendClasses,
             BackendModules,
             BackendCoroutines,
-            BackendExceptions,
             BackendInterrupt,
         ]
         using Runtime::<B>::builder()
@@ -296,7 +292,6 @@ value = GuestVector(3)
             BackendClasses,
             BackendModules,
             BackendCoroutines,
-            BackendExceptions,
             BackendInterrupt,
         ]
         using Runtime::<B>::builder()
@@ -333,7 +328,6 @@ def callable_value():
             BackendClasses,
             BackendModules,
             BackendCoroutines,
-            BackendExceptions,
             BackendInterrupt,
         ]
         using Runtime::<B>::builder()
@@ -378,7 +372,6 @@ def callable_value():
             BackendClasses,
             BackendModules,
             BackendCoroutines,
-            BackendExceptions,
             BackendInterrupt,
         ]
         using Runtime::<B>::builder()
@@ -418,7 +411,6 @@ t = Tagged(3, 4)
             BackendClasses,
             BackendModules,
             BackendCoroutines,
-            BackendExceptions,
             BackendInterrupt,
         ]
         using Runtime::<B>::builder()
@@ -457,7 +449,6 @@ e = Empty(3, 4)
             BackendClasses,
             BackendModules,
             BackendCoroutines,
-            BackendExceptions,
             BackendInterrupt,
         ]
         using Runtime::<B>::builder();
@@ -490,7 +481,6 @@ class Impl:
             BackendClasses,
             BackendModules,
             BackendCoroutines,
-            BackendExceptions,
             BackendInterrupt,
         ]
         using Runtime::<B>::builder();
@@ -542,7 +532,6 @@ def scale(value: int, factor: float) -> float:
             BackendClasses,
             BackendModules,
             BackendCoroutines,
-            BackendExceptions,
             BackendInterrupt,
         ]
         using Runtime::<B>::builder();
@@ -597,7 +586,6 @@ class Derived(Base):
             BackendClasses,
             BackendModules,
             BackendCoroutines,
-            BackendExceptions,
             BackendInterrupt,
         ]
         using Runtime::<B>::builder()
@@ -643,7 +631,6 @@ p = Plain()
             BackendClasses,
             BackendModules,
             BackendCoroutines,
-            BackendExceptions,
             BackendInterrupt,
         ]
         using Runtime::<B>::builder()
@@ -734,7 +721,6 @@ class Impl(host_lib.Contract[Args, Result]):
             BackendClasses,
             BackendModules,
             BackendCoroutines,
-            BackendExceptions,
             BackendInterrupt,
         ]
         using Runtime::<B>::builder()
@@ -773,7 +759,6 @@ class Impl(host_lib.Contract):
             BackendClasses,
             BackendModules,
             BackendCoroutines,
-            BackendExceptions,
             BackendInterrupt,
         ]
         using Runtime::<B>::builder()
@@ -810,7 +795,6 @@ class Detailed(host_lib.Ledger):
             BackendClasses,
             BackendModules,
             BackendCoroutines,
-            BackendExceptions,
             BackendInterrupt,
         ]
         using Runtime::<B>::builder()
@@ -849,7 +833,6 @@ class Detailed(host_lib.Ledger):
             BackendClasses,
             BackendModules,
             BackendCoroutines,
-            BackendExceptions,
             BackendInterrupt,
         ]
         using Runtime::<B>::builder();
@@ -892,7 +875,6 @@ class Row:
             BackendClasses,
             BackendModules,
             BackendCoroutines,
-            BackendExceptions,
             BackendInterrupt,
         ]
         using Runtime::<B>::builder()
@@ -936,7 +918,6 @@ def twice(value):
             BackendClasses,
             BackendModules,
             BackendCoroutines,
-            BackendExceptions,
             BackendInterrupt,
         ]
         using Runtime::<B>::builder();
@@ -960,7 +941,6 @@ def twice(value):
             BackendClasses,
             BackendModules,
             BackendCoroutines,
-            BackendExceptions,
             BackendInterrupt,
         ]
         using Runtime::<B>::builder();

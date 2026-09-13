@@ -117,8 +117,8 @@ pub mod fixtures {
     use std::collections::HashMap;
 
     use super::{
-        Backend, BackendCallables, BackendClasses, BackendCoroutines, BackendExceptions,
-        BackendInterrupt, BackendModules, BackendValues,
+        Backend, BackendCallables, BackendClasses, BackendCoroutines, BackendInterrupt,
+        BackendModules, BackendValues,
     };
     use crate::{
         errors::Error,
@@ -136,7 +136,6 @@ pub mod fixtures {
             BackendClasses,
             BackendModules,
             BackendCoroutines,
-            BackendExceptions,
             BackendInterrupt,
         ]
         using Runtime::<B>::builder();
@@ -163,7 +162,6 @@ def double(n):
             BackendClasses,
             BackendModules,
             BackendCoroutines,
-            BackendExceptions,
             BackendInterrupt,
         ]
         using Runtime::<B>::builder();

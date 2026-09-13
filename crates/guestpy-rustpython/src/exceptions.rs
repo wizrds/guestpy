@@ -14,3 +14,10 @@ impl BackendExceptions for RustPython {
         (!traceback.is_empty()).then_some(traceback)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::engine::RustPython;
+
+    guestpy_core::backend::exceptions::fixtures::tests!(RustPython);
+}

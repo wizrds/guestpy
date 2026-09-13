@@ -22,7 +22,7 @@ pub trait BackendValues: Backend {
         pairs: Vec<(Val<'py, Self>, Val<'py, Self>)>,
     ) -> Result<Val<'py, Self>, Error>;
     fn set<'py>(token: Tok<'py, Self>, items: Vec<Val<'py, Self>>)
-    -> Result<Val<'py, Self>, Error>;
+        -> Result<Val<'py, Self>, Error>;
     fn new_dict<'py>(token: Tok<'py, Self>) -> Result<Val<'py, Self>, Error>;
     fn is_bool<'py>(token: Tok<'py, Self>, value: &Val<'py, Self>) -> bool;
     fn is_int<'py>(token: Tok<'py, Self>, value: &Val<'py, Self>) -> bool;
@@ -130,8 +130,8 @@ pub trait BackendValues: Backend {
 pub mod fixtures {
     use crate::{
         backend::{
-            Backend, BackendCallables, BackendClasses, BackendCoroutines, BackendExceptions,
-            BackendInterrupt, BackendModules, BackendValues, guest_fixture,
+            guest_fixture, Backend, BackendCallables, BackendClasses, BackendCoroutines,
+            BackendInterrupt, BackendModules, BackendValues,
         },
         runtime::Runtime,
     };
@@ -145,7 +145,6 @@ pub mod fixtures {
             BackendClasses,
             BackendModules,
             BackendCoroutines,
-            BackendExceptions,
             BackendInterrupt,
         ]
         using Runtime::<B>::builder();
@@ -174,7 +173,6 @@ pub mod fixtures {
             BackendClasses,
             BackendModules,
             BackendCoroutines,
-            BackendExceptions,
             BackendInterrupt,
         ]
         using Runtime::<B>::builder();

@@ -38,8 +38,8 @@ pub trait BackendCoroutines: Backend + BackendValues {
 pub mod fixtures {
     use crate::{
         backend::{
-            Backend, BackendCallables, BackendClasses, BackendCoroutines, BackendExceptions,
-            BackendInterrupt, BackendModules, BackendValues, guest_fixture,
+            guest_fixture, Backend, BackendCallables, BackendClasses, BackendCoroutines,
+            BackendInterrupt, BackendModules, BackendValues,
         },
         handle::{AsyncGenerator, AsyncIter, Object},
         runtime::Runtime,
@@ -54,7 +54,6 @@ pub mod fixtures {
             BackendClasses,
             BackendModules,
             BackendCoroutines,
-            BackendExceptions,
             BackendInterrupt,
         ]
         using Runtime::<B>::builder();
@@ -99,7 +98,6 @@ class Counter:
             BackendClasses,
             BackendModules,
             BackendCoroutines,
-            BackendExceptions,
             BackendInterrupt,
         ]
         using Runtime::<B>::builder();

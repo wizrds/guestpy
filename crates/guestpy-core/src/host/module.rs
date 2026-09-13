@@ -190,8 +190,8 @@ mod tests {
     use super::ModuleSpec;
     use crate::{
         backend::{
-            Backend, BackendCallables, BackendClasses, BackendCoroutines, BackendExceptions,
-            BackendModules, BackendValues, tests::Stub,
+            Backend, BackendCallables, BackendClasses, BackendCoroutines, BackendModules,
+            BackendValues, tests::Stub,
         },
         errors::Error,
         host::{
@@ -229,11 +229,10 @@ mod tests {
     where
         B: Backend
             + BackendValues
-            + BackendCallables
-            + BackendClasses
-            + BackendModules
-            + BackendCoroutines
-            + BackendExceptions,
+                + BackendCallables
+                + BackendClasses
+                + BackendModules
+                + BackendCoroutines,
     {
         fn construct<'py>(_: &Enter<'py, B>, _: Args<'py, B>) -> Result<Self, Error> {
             Ok(Self { x: 3, y: 4 })

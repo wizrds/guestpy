@@ -17,3 +17,10 @@ impl BackendExceptions for CPython {
             })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::engine::CPython;
+
+    guestpy_core::backend::exceptions::fixtures::tests!(CPython);
+}
