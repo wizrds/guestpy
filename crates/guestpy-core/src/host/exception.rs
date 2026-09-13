@@ -8,12 +8,12 @@ use std::{
 use crate::{
     backend::{Backend, BackendCallables, BackendModules, BackendValues, Tok, Val},
     catalog::RealisationCache,
-    errors::{ErasedRaise, Error},
+    errors::{ErasedRaise, Error, GuestException},
     host::{
         declaration::{DeclarationContext, DeclareMember},
         module::ModuleSpec,
     },
-    marshal::ToGuest,
+    marshal::{FromGuest, ToGuest},
     scope::Enter,
 };
 
@@ -175,6 +175,15 @@ impl ExceptionClass {
             }),
             Self::Typed { id, name } => Some(ExceptionKey::Typed { id: *id, name: *name }),
             Self::Builtin(_) | Self::Guest { .. } => None,
+        }
+    }
+
+    pub fn matches(&self, exception: &GuestException) -> bool {
+        match self {
+            Self::Builtin(name) => exception.matches(&format!("builtins.{name}")),
+            Self::Host { module, name } => exception.matches(&format!("{module}.{name}")),
+            Self::Guest { module, qualname } => exception.matches(&format!("{module}.{qualname}")),
+            Self::Typed { id, .. } => exception.matches_type(*id),
         }
     }
 }
@@ -348,6 +357,73 @@ pub trait HostException: Sized + 'static {
 
 pub trait IntoRaise<B: Backend>: HostException {
     fn values(self, raise: Raise<B>) -> Raise<B>;
+}
+
+pub struct Raised<'py, 'e, B: Backend> {
+    enter: &'e Enter<'py, B>,
+    exception: Val<'py, B>,
+}
+
+impl<'py, 'e, B> Raised<'py, 'e, B>
+where
+    B: Backend + BackendValues,
+{
+    pub(crate) fn new(enter: &'e Enter<'py, B>, exception: Val<'py, B>) -> Self {
+        Self { enter, exception }
+    }
+
+    pub fn arg<T: FromGuest<B>>(&self, index: usize) -> Result<T::Owned, Error> {
+        T::from_guest(
+            self.enter,
+            B::get_item_opt(
+                self.enter.token(),
+                &B::get_attr(self.enter.token(), &self.exception, "args")?,
+                &B::uint(self.enter.token(), index as u64),
+            )?
+            .ok_or_else(|| {
+                Error::conversion(format!("raised exception has no argument {index}"))
+            })?,
+        )
+    }
+
+    // pub fn attr<T: FromGuest<B>>(&self, name: &str) -> Result<T::Owned, Error> {
+    //     T::from_guest(self.enter, B::get_attr(self.enter.token(), &self.exception, name)?)
+    // }
+
+    pub fn attr<T: FromGuest<B>>(&self, name: &str) -> Result<T::Owned, Error> {
+        T::from_guest(
+            self.enter,
+            B::get_attr(self.enter.token(), &self.exception, name)
+                .map_err(|_| Error::attribute(name))?
+        )
+    }
+}
+
+pub trait FromRaised<B: Backend>: HostException {
+    fn from_raised<'py>(raised: &Raised<'py, '_, B>) -> Result<Self, Error>;
+
+    fn caught<'py>(enter: &Enter<'py, B>, exception: &GuestException) -> Result<Option<Self>, Error>
+    where
+        B: BackendValues,
+    {
+        if !Self::class().matches(exception) {
+            return Ok(None);
+        }
+
+        Self::from_raised(&Raised::new(
+            enter,
+            B::attach(
+                enter.token(),
+                exception.object::<B>().ok_or_else(|| {
+                    Error::conversion(format!(
+                        "{} has no object for this backend",
+                        exception.qualified_name(),
+                    ))
+                })?,
+            ),
+        ))
+        .map(Some)
+    }
 }
 
 pub(crate) struct FatalExceptions;

@@ -12,7 +12,7 @@ mod path;
 use bundle::BundleMacro;
 use derive::GuestDerive;
 use guest::{GuestClassMacro, GuestModuleMacro};
-use host::{HostClassMacro, HostModuleMacro};
+use host::{HostClassMacro, HostExceptionDerive, HostModuleMacro};
 use proc_macro::TokenStream;
 use syn::{DeriveInput, ItemImpl, parse_macro_input};
 
@@ -29,6 +29,15 @@ pub fn derive_to_guest(input: TokenStream) -> TokenStream {
 pub fn derive_from_guest(input: TokenStream) -> TokenStream {
     match GuestDerive::new(&parse_macro_input!(input as DeriveInput)) {
         Ok(derive) => derive.from_guest(),
+        Err(error) => error.write_errors(),
+    }
+    .into()
+}
+
+#[proc_macro_derive(HostException, attributes(guestpy))]
+pub fn derive_host_exception(input: TokenStream) -> TokenStream {
+    match HostExceptionDerive::new(&parse_macro_input!(input as DeriveInput)) {
+        Ok(derive) => derive.expand(),
         Err(error) => error.write_errors(),
     }
     .into()

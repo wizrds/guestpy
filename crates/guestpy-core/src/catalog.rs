@@ -11,6 +11,7 @@ use std::{
 use crate::{
     backend::Backend,
     bundle::{Bundle, BundleId},
+    errors::GuestException,
     host::{
         class::ClassSpec,
         exception::{ExceptionKey, ExceptionSpec},
@@ -206,6 +207,23 @@ impl<B: Backend> RealisationCache<B> {
     pub(crate) fn exception_spec(&self, key: &ExceptionKey) -> Option<Rc<ExceptionSpec>> {
         self.exceptions.spec(key)
     }
+
+    pub(crate) fn exception_types(&self, exception: &GuestException) -> Vec<TypeId> {
+        self.exceptions
+            .entries
+            .borrow()
+            .iter()
+            .filter_map(|(key, entry)| {
+                let ExceptionKey::Typed { id, .. } = key else {
+                    return None;
+                };
+
+                exception
+                    .matches(&format!("{}.{}", entry.spec.module(), entry.spec.name(),))
+                    .then_some(*id)
+            })
+            .collect()
+    }
 }
 
 #[cfg(test)]
@@ -215,6 +233,7 @@ mod tests {
     use super::{Interned, RealisationCache};
     use crate::{
         backend::tests::Stub,
+        errors::GuestException,
         host::{
             exception::{ExceptionKey, HostException},
             module::ModuleSpec,
@@ -271,5 +290,17 @@ mod tests {
         assert!(realisation
             .realised_exception(&key)
             .is_some());
+        assert_eq!(
+            realisation.exception_types(&GuestException::new(
+                String::from("Example"),
+                String::from("mod_a.Example"),
+                String::from("example"),
+                None,
+                vec![String::from("mod_a.Example")],
+                None,
+                None,
+            )),
+            vec![TypeId::of::<Example>()],
+        );
     }
 }

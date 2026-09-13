@@ -1,10 +1,6 @@
-use darling::{
-    ast::NestedMeta,
-    util::{Flag, PathList},
-    FromMeta,
-};
+use darling::{ast::NestedMeta, util::Flag, FromMeta};
 use proc_macro2::{Span, TokenStream};
-use quote::quote;
+use quote::{quote, quote_spanned};
 use syn::{
     parse_quote, spanned::Spanned, FnArg, ImplItem, ImplItemFn, ItemImpl, Path, TypeParamBound,
 };
@@ -30,7 +26,7 @@ struct ModuleOptions {
     method_name: Option<syn::Ident>,
     backend: Option<BackendOption>,
     classes: TypeList,
-    exceptions: PathList,
+    exceptions: TypeList,
     crate_path: Option<Path>,
 }
 
@@ -242,7 +238,7 @@ struct HostModuleDefinition {
     crate_path: Path,
     backend: BackendParameter,
     classes: TypeList,
-    exceptions: Vec<String>,
+    exceptions: TypeList,
     members: Vec<ModuleMember>,
     needs_state: bool,
     bounds: BackendBounds,
@@ -353,15 +349,7 @@ impl HostModuleDefinition {
             crate_path,
             backend,
             classes: options.classes,
-            exceptions: options
-                .exceptions
-                .iter()
-                .filter_map(|path| {
-                    path.segments
-                        .last()
-                        .map(|segment| segment.ident.to_string())
-                })
-                .collect(),
+            exceptions: options.exceptions,
             members,
             needs_state,
             bounds,
@@ -415,7 +403,7 @@ impl HostModuleDefinition {
     fn capabilities(
         crate_path: &Path,
         classes: &TypeList,
-        exceptions: &PathList,
+        exceptions: &TypeList,
         members: &[ModuleMember],
     ) -> Vec<TypeParamBound> {
         let mut capabilities = vec![
@@ -658,12 +646,9 @@ make it non-async, or make it receiverless
         let registrations = members
             .iter()
             .map(|member| member.registration(&backend));
-        let exception_registrations = exceptions.iter().map(|exception| {
-            quote!(.exception(
-                #exception,
-                #crate_path::host::exception::ExceptionClass::exception(),
-            ))
-        });
+        let exception_registrations = exceptions
+            .iter()
+            .map(|exception| quote_spanned!(exception.span()=> .exception_type::<#exception>()));
         let class_registrations = classes
             .iter()
             .map(|class| quote!(.class::<#class>()));

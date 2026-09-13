@@ -119,6 +119,7 @@ where
         B::enter(self.runtime.engine(), |token| {
             f(&Enter::new(token, Guest { inner: self.clone() }))
         })
+        .map_err(|error| error.resolve_exception_types(self.runtime.realisation()))
     }
 
     pub(crate) fn id(&self) -> GuestId {

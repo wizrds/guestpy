@@ -1,10 +1,13 @@
 use std::{
-    any::Any,
+    any::{Any, TypeId},
     error::Error as StdError,
     fmt::{self, Debug, Display, Formatter},
 };
 
-use crate::backend::{Backend, BackendValues, Tok, Val};
+use crate::{
+    backend::{Backend, BackendValues, Tok, Val},
+    catalog::RealisationCache,
+};
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub enum BorrowKind {
@@ -97,6 +100,7 @@ pub struct GuestException {
     message: String,
     name: Option<String>,
     mro: Vec<String>,
+    typed_mro: Vec<TypeId>,
     traceback: Option<String>,
     object: Option<ErasedOwned>,
 }
@@ -118,6 +122,7 @@ impl GuestException {
             message,
             name,
             mro,
+            typed_mro: Vec::new(),
             traceback,
             object,
         }
@@ -220,6 +225,14 @@ impl GuestException {
                     .rsplit_once('.')
                     .is_some_and(|(_, bare_name)| bare_name == name)
         })
+    }
+
+    pub(crate) fn identify(&mut self, types: Vec<TypeId>) {
+        self.typed_mro = types;
+    }
+
+    pub(crate) fn matches_type(&self, id: TypeId) -> bool {
+        self.typed_mro.contains(&id)
     }
 
     pub fn object<B: Backend>(&self) -> Option<&B::Owned> {
@@ -398,6 +411,17 @@ impl Error {
         }
     }
 
+    pub(crate) fn resolve_exception_types<B: Backend>(
+        mut self,
+        realisation: &RealisationCache<B>,
+    ) -> Self {
+        if let Self::Guest(exception) = &mut self {
+            exception.identify(realisation.exception_types(exception));
+        }
+
+        self
+    }
+
     pub fn is_fatal(&self) -> bool {
         matches!(self, Self::Timeout | Self::Cancelled | Self::Interrupted | Self::Closed)
     }
@@ -448,6 +472,7 @@ impl ::serde::de::Error for Error {
 #[cfg(test)]
 mod tests {
     use super::{ErasedRaise, Error, GuestException};
+    use crate::{backend::tests::Stub, catalog::RealisationCache};
 
     struct Errors;
 
@@ -512,5 +537,13 @@ mod tests {
     fn stop_iteration_variants_are_not_fatal() {
         assert!(!Error::StopIteration.is_fatal());
         assert!(!Error::StopAsyncIteration.is_fatal());
+    }
+
+    #[test]
+    fn resolving_exception_types_preserves_non_guest_errors() {
+        assert!(matches!(
+            Error::Closed.resolve_exception_types(&RealisationCache::<Stub>::new()),
+            Error::Closed,
+        ));
     }
 }
