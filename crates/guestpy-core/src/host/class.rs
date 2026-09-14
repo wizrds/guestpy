@@ -12,6 +12,7 @@ use crate::{
     errors::Error,
     handle::{Class, Object, TypeProtocol, Value},
     host::{
+        context::{FromContext, Requirements},
         declaration::{DeclarationContext, DeclareMember, Member},
         dunder::Dunder,
         exception::{ExceptionClass, Raise},
@@ -298,6 +299,7 @@ pub struct ClassSpec<B: Backend> {
     members: Vec<(MemberName, Member<B>)>,
     statics: Namespace<B>,
     payload: TypeId,
+    requirements: Requirements<B>,
 }
 
 impl<B: Backend> ClassSpec<B> {
@@ -320,6 +322,22 @@ impl<B: Backend> ClassSpec<B> {
 
     pub(crate) fn payload(&self) -> TypeId {
         self.payload
+    }
+
+    pub(crate) fn requirements(&self) -> &Requirements<B> {
+        &self.requirements
+    }
+
+    pub(crate) fn host_lineage(self: &Rc<Self>) -> Vec<Rc<ClassSpec<B>>> {
+        let mut lineage = vec![self.clone()];
+
+        for base in &self.bases {
+            if let ClassBase::Host(base) = base {
+                lineage.extend(base.host_lineage());
+            }
+        }
+
+        lineage
     }
 
     pub(crate) fn doc(&self) -> Option<&'static str> {
@@ -625,10 +643,6 @@ pub trait HostClass: Sized + 'static {
 }
 
 pub trait HostClassDefinition<B: Backend>: HostClass {
-    fn construct<'py>(_enter: &Enter<'py, B>, _args: Args<'py, B>) -> Result<Self, Error> {
-        Err(Error::unsupported(format!("host class {} cannot be constructed", Self::NAME)))
-    }
-
     fn build(builder: &mut ClassBuilder<B, Self>);
 }
 
@@ -652,12 +666,16 @@ where
                 module: RefCell::new(None),
                 bases: Vec::new(),
                 alloc: Rc::new(|enter, class| B::alloc::<C>(enter.token(), &class)),
-                init: Rc::new(|enter, instance, args| {
-                    B::set_payload::<C>(enter.token(), &instance, C::construct(enter, args)?)
+                init: Rc::new(|_, _, _| {
+                    Err(Error::unsupported(format!(
+                        "host class {} cannot be constructed",
+                        C::NAME,
+                    )))
                 }),
                 members: Vec::new(),
                 statics: Namespace::new(),
                 payload: TypeId::of::<C>(),
+                requirements: Requirements::new(),
             },
             error: None,
             properties: HashMap::new(),
@@ -709,6 +727,23 @@ where
         self.push(name.into(), property.clone());
 
         property
+    }
+
+    pub fn constructor<F>(&mut self, construct: F) -> &mut Self
+    where
+        F: for<'py> Fn(&Enter<'py, B>, Args<'py, B>) -> Result<C, Error> + 'static,
+    {
+        self.spec.init = Rc::new(move |enter, instance, args| {
+            B::set_payload::<C>(enter.token(), &instance, construct(enter, args)?)
+        });
+
+        self
+    }
+
+    pub fn require<T: FromContext<B>>(&mut self) -> &mut Self {
+        T::declare(&mut self.spec.requirements);
+
+        self
     }
 
     pub fn method<F, R>(&mut self, name: impl Into<MemberName>, function: F) -> &mut Self

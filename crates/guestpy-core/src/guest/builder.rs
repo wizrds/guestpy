@@ -98,6 +98,10 @@ where
     pub fn build(self) -> Result<Guest<B>, Error> {
         FatalExceptions::reserve(&self.modules)?;
 
+        self.modules
+            .iter()
+            .try_for_each(|module| module.validate())?;
+
         let runtime = &self.runtime.inner;
         let id = GuestId::new(runtime.take_next_id());
 

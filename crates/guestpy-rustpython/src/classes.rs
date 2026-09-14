@@ -10,11 +10,10 @@ use guestpy_core::{
     errors::{BorrowKind, Error},
 };
 use rustpython_vm::{
-    AsObject, Context, Py, PyObjectRef, PyPayload, PyRef,
     builtins::{PyGenericAlias, PyType},
     class::{PyClassImpl, StaticType},
     object::{MaybeTraverse, TraverseFn},
-    pyclass,
+    pyclass, AsObject, Context, Py, PyObjectRef, PyPayload, PyRef,
 };
 
 use crate::{engine::RustPython, errors::NativeErrors};
@@ -180,9 +179,7 @@ mod tests {
             dunder::Dunder,
             module::ModuleSpec,
         },
-        marshal::args::Args,
         runtime::Runtime,
-        scope::Enter,
     };
 
     use crate::engine::RustPython;
@@ -230,17 +227,16 @@ mod tests {
     where
         B: Backend + BackendValues + BackendCallables + BackendClasses,
     {
-        fn construct<'py>(enter: &Enter<'py, B>, args: Args<'py, B>) -> Result<Self, Error> {
-            let x = args.required::<f64>(enter, 0, "x")?;
-            let y = args.required::<f64>(enter, 1, "y")?;
-
-            args.finish()?;
-
-            Ok(Self { x, y })
-        }
-
         fn build(builder: &mut ClassBuilder<B, Self>) {
             builder
+                .constructor(|enter, args| {
+                    let x = args.required::<f64>(enter, 0, "x")?;
+                    let y = args.required::<f64>(enter, 1, "y")?;
+
+                    args.finish()?;
+
+                    Ok(Self { x, y })
+                })
                 .method("length", |vector, _, _| Ok::<_, Error>(vector.x.hypot(vector.y)))
                 .getter("x", |vector, _| Ok::<_, Error>(vector.x))
                 .setter("x", |vector, _, value: f64| {
@@ -319,11 +315,9 @@ mod tests {
             .eval::<f64>("geometry.Vector2(3, 4, 5).length()")
             .unwrap_err();
 
-        assert!(
-            error
-                .to_string()
-                .contains("expected at most 2 positional arguments"),
-        );
+        assert!(error
+            .to_string()
+            .contains("expected at most 2 positional arguments"),);
     }
 
     #[test]
@@ -334,11 +328,9 @@ mod tests {
             .eval::<f64>("geometry.Vector2(x=3, y=4, z=5).length()")
             .unwrap_err();
 
-        assert!(
-            error
-                .to_string()
-                .contains("unexpected keyword argument 'z'"),
-        );
+        assert!(error
+            .to_string()
+            .contains("unexpected keyword argument 'z'"),);
     }
 
     #[test]
@@ -375,16 +367,12 @@ mod tests {
                 .unwrap(),
             "_guestpy_object",
         );
-        assert!(
-            !guest
-                .eval::<bool>("hasattr(geometry, 'BaseVector')")
-                .unwrap()
-        );
-        assert!(
-            !guest
-                .eval::<bool>("hasattr(geometry, 'RootVector')")
-                .unwrap()
-        );
+        assert!(!guest
+            .eval::<bool>("hasattr(geometry, 'BaseVector')")
+            .unwrap());
+        assert!(!guest
+            .eval::<bool>("hasattr(geometry, 'RootVector')")
+            .unwrap());
     }
 
     #[test]
@@ -430,11 +418,9 @@ v.x = 1"#,
                 .unwrap(),
             "vector"
         );
-        assert!(
-            guest
-                .eval::<bool>("geometry.Vector2.zero() == (0.0, 0.0)")
-                .unwrap()
-        );
+        assert!(guest
+            .eval::<bool>("geometry.Vector2.zero() == (0.0, 0.0)")
+            .unwrap());
     }
 
     #[test]
@@ -447,11 +433,9 @@ v.x = 1"#,
                 .unwrap(),
             2
         );
-        assert!(
-            guest
-                .eval::<bool>("geometry.Vector2(3, 4) == geometry.Vector2(3, 4)")
-                .unwrap()
-        );
+        assert!(guest
+            .eval::<bool>("geometry.Vector2(3, 4) == geometry.Vector2(3, 4)")
+            .unwrap());
         assert_eq!(
             guest
                 .eval::<f64>("geometry.Vector2(3, 4)[0]")
@@ -490,11 +474,9 @@ a = geometry.Vector2(3, 4)"#,
             )
             .unwrap();
 
-        assert!(
-            second
-                .eval::<bool>("isinstance(a, geometry.Vector2)")
-                .unwrap()
-        );
+        assert!(second
+            .eval::<bool>("isinstance(a, geometry.Vector2)")
+            .unwrap());
     }
 
     #[test]
@@ -513,10 +495,8 @@ import shapes"#,
             )
             .unwrap();
 
-        assert!(
-            guest
-                .eval::<bool>("geometry.Vector2 is shapes.Vector2")
-                .unwrap()
-        );
+        assert!(guest
+            .eval::<bool>("geometry.Vector2 is shapes.Vector2")
+            .unwrap());
     }
 }

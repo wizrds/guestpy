@@ -64,6 +64,7 @@ struct ParameterOptions {
     borrow_mut: Flag,
     enter: Flag,
     this: Flag,
+    context: Flag,
 }
 
 impl ParameterOptions {
@@ -75,6 +76,7 @@ impl ParameterOptions {
             self.borrow_mut.is_present(),
             self.enter.is_present(),
             self.this.is_present(),
+            self.context.is_present(),
         ]
         .into_iter()
         .filter(|present| *present)
@@ -89,6 +91,7 @@ enum ParameterRole {
     Borrow { value_type: Type, mutable: bool },
     Enter,
     This,
+    Context { value_type: Type },
 }
 
 struct ResultType;
@@ -156,7 +159,7 @@ impl Parameter {
         if options.role_count() > 1 {
             return Err(syn::Error::new(
                 argument.span(),
-                "a host parameter may declare only one of kw, rest, borrow, borrow_mut, enter, this",
+                "a host parameter may declare only one of kw, rest, borrow, borrow_mut, enter, this, context",
             )
             .into());
         }
@@ -174,6 +177,10 @@ impl Parameter {
             ParameterRole::This
         } else if options.enter.is_present() {
             ParameterRole::Enter
+        } else if options.context.is_present() {
+            ParameterRole::Context {
+                value_type: value_type.clone(),
+            }
         } else if options.borrow.is_present() {
             ParameterRole::Borrow {
                 value_type: TypeShape::reference_target(value_type, false)?,
@@ -270,7 +277,14 @@ impl Parameter {
     }
 
     pub(crate) fn consumes_arg(&self) -> bool {
-        !matches!(self.role, ParameterRole::Enter | ParameterRole::This)
+        !matches!(
+            self.role,
+            ParameterRole::Enter | ParameterRole::This | ParameterRole::Context { .. }
+        )
+    }
+
+    fn is_context(&self) -> bool {
+        matches!(self.role, ParameterRole::Context { .. })
     }
 
     pub(crate) fn is_enter(&self) -> bool {
@@ -283,6 +297,13 @@ impl Parameter {
 
     fn is_rest(&self) -> bool {
         matches!(self.role, ParameterRole::Rest { .. })
+    }
+
+    fn context_type(&self) -> Option<&Type> {
+        match &self.role {
+            ParameterRole::Context { value_type } => Some(value_type),
+            _ => None,
+        }
     }
 
     fn expression(&self) -> TokenStream {
@@ -357,6 +378,7 @@ impl Parameter {
             }
             ParameterRole::Enter => quote!(__guestpy_enter),
             ParameterRole::This => quote!(__guestpy_this),
+            ParameterRole::Context { .. } => quote!(__guestpy_context.resolve()?),
         }
     }
 
@@ -373,6 +395,7 @@ impl Parameter {
         match &self.role {
             ParameterRole::Value { .. } => quote!(__guestpy_value),
             ParameterRole::Enter => quote!(__guestpy_enter),
+            ParameterRole::Context { .. } => quote!(__guestpy_context.resolve()?),
             ParameterRole::Keyword { .. }
             | ParameterRole::Rest { .. }
             | ParameterRole::Borrow { .. }
@@ -474,12 +497,34 @@ name the backend with `backend = <name>` on the attribute instead
             .any(Parameter::consumes_arg)
     }
 
+    pub(crate) fn uses_context(&self) -> bool {
+        self.parameters
+            .iter()
+            .any(Parameter::is_context)
+    }
+
     pub(crate) fn uses_enter(&self) -> bool {
         self.uses_args()
+            || self.uses_context()
             || self
                 .parameters
                 .iter()
                 .any(Parameter::is_enter)
+    }
+
+    pub(crate) fn context_setup(&self, context: TokenStream) -> TokenStream {
+        if self.uses_context() {
+            quote!(let __guestpy_context = #context;)
+        } else {
+            quote!()
+        }
+    }
+
+    pub(crate) fn context_types(&self) -> Vec<&Type> {
+        self.parameters
+            .iter()
+            .filter_map(Parameter::context_type)
+            .collect()
     }
 
     pub(crate) fn uses_this(&self) -> bool {

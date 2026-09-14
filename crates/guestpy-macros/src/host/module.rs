@@ -1,18 +1,19 @@
-use darling::{FromMeta, ast::NestedMeta, util::Flag};
+use darling::{ast::NestedMeta, util::Flag, FromMeta};
 use proc_macro2::{Span, TokenStream};
 use quote::{quote, quote_spanned};
 use syn::{
-    FnArg, ImplItem, ImplItemFn, ItemImpl, Path, TypeParamBound, parse_quote, spanned::Spanned,
+    parse_quote, spanned::Spanned, FnArg, ImplItem, ImplItemFn, ItemImpl, Path, Type,
+    TypeParamBound,
 };
 
 use crate::{
     attributes::HelperAttributes,
     host::{
-        HostMacroError,
         backend::{BackendBounds, BackendOption, BackendParameter},
         callable::{Callable, Parameter, Receiver},
         target::HostTarget,
         types::TypeList,
+        HostMacroError,
     },
     naming::{Naming, RenameRule},
     path::CratePath,
@@ -95,35 +96,35 @@ impl ModuleMember {
         }
     }
 
-    fn registration(&self, backend: &BackendParameter) -> TokenStream {
+    fn context_types(&self) -> Vec<&Type> {
+        match self {
+            Self::Function(callable) | Self::Getter(callable) => callable.context_types(),
+            Self::Init { .. } | Self::Object { .. } | Self::Constant { .. } => Vec::new(),
+        }
+    }
+
+    fn registration(
+        &self,
+        crate_path: &Path,
+        module_name: &str,
+        backend: &BackendParameter,
+    ) -> TokenStream {
         match self {
             Self::Function(callable) if callable.asynchronous() => {
+                let shared = self.is_stateful();
                 let name = callable.name();
-                let ident = callable.ident();
-                let enter = callable.enter_ident();
+                let enter = if shared {
+                    quote!(__guestpy_enter)
+                } else {
+                    let enter = callable.enter_ident();
+
+                    quote!(#enter)
+                };
                 let args = callable.args_ident();
                 let bindings = callable.argument_bindings();
-                let setup = callable.argument_setup();
-                let turbofish = backend.turbofish();
-
-                quote! {
-                    .async_function(#name, |#enter, #args| {
-                        #setup
-
-                        ::core::result::Result::Ok(async move {
-                            Self::#ident #turbofish (#(#bindings),*)
-                                .await
-                                .map_err(::core::convert::Into::into)
-                        })
-                    })
-                }
-            }
-            Self::Function(callable) => {
-                let shared = matches!(callable.receiver(), Receiver::Shared);
-                let name = callable.name();
-                let enter = callable.enter_ident();
-                let args = callable.args_ident();
-                let bindings = callable.argument_bindings();
+                let context = callable.context_setup(quote!(
+                    #crate_path::host::context::CallContext::module(#enter, #module_name)
+                ));
                 let setup = callable.argument_setup();
                 let turbofish = backend.turbofish();
                 let invocation = Self::invoke(
@@ -135,39 +136,89 @@ impl ModuleMember {
                         .map(|binding| quote!(#binding))
                         .collect::<Vec<_>>(),
                 );
-                let closure = Self::state_closure(
+                let state = Self::state_resolution(shared, &enter, crate_path, module_name);
+
+                quote! {
+                    .async_function(#name, |#enter, #args| {
+                        #state
+                        #context
+                        #setup
+
+                        ::core::result::Result::Ok(async move {
+                            #invocation
+                                .await
+                                .map_err(::core::convert::Into::into)
+                        })
+                    })
+                }
+            }
+            Self::Function(callable) => {
+                let shared = self.is_stateful();
+                let name = callable.name();
+                let enter = if shared {
+                    quote!(__guestpy_enter)
+                } else {
+                    let enter = callable.enter_ident();
+
+                    quote!(#enter)
+                };
+                let args = callable.args_ident();
+                let bindings = callable.argument_bindings();
+                let context = callable.context_setup(quote!(
+                    #crate_path::host::context::CallContext::module(#enter, #module_name)
+                ));
+                let setup = callable.argument_setup();
+                let turbofish = backend.turbofish();
+                let invocation = Self::invoke(
                     shared,
-                    quote!(
-                        |#enter, #args| {
-                            #setup
-
-                            #invocation.map_err(::core::convert::Into::into)
-                        }
-                    ),
+                    callable.ident(),
+                    &turbofish,
+                    &bindings
+                        .iter()
+                        .map(|binding| quote!(#binding))
+                        .collect::<Vec<_>>(),
                 );
+                let state = Self::state_resolution(shared, &enter, crate_path, module_name);
 
-                quote!(.function(#name, #closure))
+                quote! {
+                    .function(#name, |#enter, #args| {
+                        #state
+                        #context
+                        #setup
+
+                        #invocation.map_err(::core::convert::Into::into)
+                    })
+                }
             }
             Self::Getter(callable) => {
-                let shared = matches!(callable.receiver(), Receiver::Shared);
+                let shared = self.is_stateful();
                 let name = callable.name();
-                let enter = callable.enter_ident();
+                let enter = if shared {
+                    quote!(__guestpy_enter)
+                } else {
+                    let enter = callable.enter_ident();
+
+                    quote!(#enter)
+                };
                 let arguments = callable.accessor_expressions();
+                let context = callable.context_setup(quote!(
+                    #crate_path::host::context::CallContext::module(#enter, #module_name)
+                ));
                 let turbofish = backend.turbofish();
                 let invocation = Self::invoke(shared, callable.ident(), &turbofish, &arguments);
-                let closure = Self::state_closure(
-                    shared,
-                    quote!(
-                        |#enter| {
-                            #invocation.map_err(::core::convert::Into::into)
-                        }
-                    ),
-                );
+                let state = Self::state_resolution(shared, &enter, crate_path, module_name);
 
-                quote!(.getter(#name, #closure))
+                quote! {
+                    .getter(#name, |#enter| {
+                        #state
+                        #context
+
+                        #invocation.map_err(::core::convert::Into::into)
+                    })
+                }
             }
             Self::Init { ident, shared, takes_enter } => {
-                let enter = if *takes_enter {
+                let enter = if *takes_enter || *shared {
                     quote!(__guestpy_enter)
                 } else {
                     quote!(_enter)
@@ -179,23 +230,22 @@ impl ModuleMember {
                 };
                 let turbofish = backend.turbofish();
                 let invocation = Self::invoke(*shared, ident, &turbofish, &arguments);
-                let closure = Self::state_closure(
-                    *shared,
-                    quote!(
-                        |#enter| {
-                            #invocation.map_err(::core::convert::Into::into)
-                        }
-                    ),
-                );
+                let state = Self::state_resolution(*shared, &enter, crate_path, module_name);
 
-                quote!(.init(#closure))
+                quote! {
+                    .init(|#enter| {
+                        #state
+
+                        #invocation.map_err(::core::convert::Into::into)
+                    })
+                }
             }
             Self::Object { ident, name, shared } => {
                 let turbofish = backend.turbofish();
-                let invocation = Self::invoke(*shared, ident, &turbofish, &[quote!(__guestpy_ns)]);
-                let closure = Self::state_closure(*shared, quote!(|__guestpy_ns| #invocation));
+                let invocation =
+                    Self::invoke_on_self(*shared, ident, &turbofish, &[quote!(__guestpy_ns)]);
 
-                quote!(.object(#name, #closure))
+                quote!(.object(#name, |__guestpy_ns| #invocation))
             }
             Self::Constant { ident, name } => quote!(.constant(#name, Self::#ident)),
         }
@@ -214,15 +264,35 @@ impl ModuleMember {
         }
     }
 
-    fn state_closure(shared: bool, closure: TokenStream) -> TokenStream {
+    fn invoke_on_self(
+        shared: bool,
+        ident: &syn::Ident,
+        turbofish: &TokenStream,
+        arguments: &[TokenStream],
+    ) -> TokenStream {
         if shared {
-            quote! {{
-                let __guestpy_state = ::std::rc::Rc::clone(&__guestpy_state);
-
-                move #closure
-            }}
+            quote!(self.#ident #turbofish (#(#arguments),*))
         } else {
-            closure
+            quote!(Self::#ident #turbofish (#(#arguments),*))
+        }
+    }
+
+    fn state_resolution(
+        shared: bool,
+        enter: &TokenStream,
+        crate_path: &Path,
+        module_name: &str,
+    ) -> TokenStream {
+        if shared {
+            quote! {
+                let __guestpy_state = #crate_path::host::context::CallContext::module(
+                    #enter,
+                    #module_name,
+                )
+                .resolve::<#crate_path::host::state::ModuleState<Self>>()?;
+            }
+        } else {
+            quote!()
         }
     }
 }
@@ -570,14 +640,6 @@ share state through &self and interior mutability
 "#,
             )
             .into()),
-            (Receiver::Shared, true) => Err(syn::Error::new(
-                callable.span(),
-                r#"
-a stateful (&self) async module function is unsupported;
-make it non-async, or make it receiverless
-"#,
-            )
-            .into()),
             (_, true)
                 if callable
                     .parameters()
@@ -643,9 +705,26 @@ make it non-async, or make it receiverless
         let target = item.self_ty.as_ref();
         let generics = item.generics.clone();
         let (impl_generics, _, where_clause) = generics.split_for_impl();
+        let mut context_types = Vec::new();
+
+        for context_type in members
+            .iter()
+            .flat_map(ModuleMember::context_types)
+        {
+            if !context_types
+                .iter()
+                .any(|ty| *ty == context_type)
+            {
+                context_types.push(context_type);
+            }
+        }
+
+        let requirements = context_types
+            .iter()
+            .map(|ty| quote!(.require::<#ty>()));
         let registrations = members
             .iter()
-            .map(|member| member.registration(&backend));
+            .map(|member| member.registration(&crate_path, &name, &backend));
         let exception_registrations = exceptions
             .iter()
             .map(|exception| quote_spanned!(exception.span()=> .exception_type::<#exception>()));
@@ -654,7 +733,10 @@ make it non-async, or make it receiverless
             .map(|class| quote!(.class::<#class>()?));
         let receiver = if needs_state { quote!(self) } else { quote!() };
         let state = if needs_state {
-            quote!(let __guestpy_state = ::std::rc::Rc::new(self);)
+            quote! {
+                .require::<#crate_path::host::state::ModuleState<Self>>()
+                .state(self)
+            }
         } else {
             quote!()
         };
@@ -682,13 +764,13 @@ make it non-async, or make it receiverless
                     >
                 #method_where_clause
                 {
-                    #state
-
                     ::core::result::Result::Ok(
                         #crate_path::host::module::ModuleSpec::<#backend_type>::new(#name)
+                            #(#requirements)*
                             #(#registrations)*
                             #(#exception_registrations)*
                             #(#class_registrations)*
+                            #state
                     )
                 }
             }
@@ -711,7 +793,7 @@ mod tests {
     }
 
     #[test]
-    fn generates_stateful_module_with_rc_and_registrations() {
+    fn generates_stateful_module_with_context_and_registrations() {
         let output = expand(
             quote!(
                 name = "geometry",
@@ -725,7 +807,12 @@ mod tests {
                     const API_VERSION: i64 = 1;
 
                     #[guestpy(function)]
-                    fn hypot(&self, x: f64, y: f64) -> Result<f64, Error> {
+                    fn hypot(
+                        &self,
+                        #[guestpy(context)] _settings: Settings,
+                        x: f64,
+                        y: f64,
+                    ) -> Result<f64, Error> {
                         Ok((x * x + y * y).sqrt() * self.scale)
                     }
 
@@ -746,8 +833,19 @@ mod tests {
 
         assert!(output.contains("pub fn module < B >"));
         assert!(output.contains("(self)"));
-        assert!(output.contains("let __guestpy_state = :: std :: rc :: Rc :: new (self)"));
-        assert!(output.contains(":: std :: rc :: Rc :: clone (& __guestpy_state)"));
+        assert!(output.contains(
+            "CallContext :: module (__guestpy_enter , \"geometry\" ,)",
+        ));
+        assert!(output.contains(
+            ". resolve :: < crate :: host :: state :: ModuleState",
+        ));
+        assert!(output.contains("ModuleState < Self"));
+        assert!(output.contains(". require :: < Settings > ()"));
+        assert!(output.contains(
+            ". require :: < crate :: host :: state :: ModuleState",
+        ));
+        assert!(output.contains("ModuleState < Self"));
+        assert!(output.contains(". state (self)"));
         assert!(output.contains("ModuleSpec :: < B > :: new (\"geometry\")"));
         assert!(output.contains(". constant (\"API_VERSION\" , Self :: API_VERSION)"));
         assert!(output.contains(". function (\"hypot\""));
@@ -875,36 +973,40 @@ mod tests {
     }
 
     #[test]
-    fn rejects_mut_self_and_stateful_async() {
-        assert!(
-            HostModuleMacro::new(
-                quote!(name = "bad", crate_path = crate),
-                parse_quote! {
-                    impl Bad {
-                        #[guestpy(function)]
-                        fn tick(&mut self) -> Result<(), Error> {
-                            Ok(())
-                        }
+    fn rejects_mut_self_and_accepts_stateful_async() {
+        assert!(HostModuleMacro::new(
+            quote!(name = "bad", crate_path = crate),
+            parse_quote! {
+                impl Bad {
+                    #[guestpy(function)]
+                    fn tick(&mut self) -> Result<(), Error> {
+                        Ok(())
                     }
-                },
-            )
-            .is_err(),
+                }
+            },
+        )
+        .is_err());
+
+        let output = expand(
+            quote!(name = "clock", crate_path = crate),
+            parse_quote! {
+                impl Clock {
+                    #[guestpy(function)]
+                    async fn tick(&self) -> Result<(), Error> {
+                        Ok(())
+                    }
+                }
+            },
         );
 
-        assert!(
-            HostModuleMacro::new(
-                quote!(name = "bad", crate_path = crate),
-                parse_quote! {
-                    impl Bad {
-                        #[guestpy(function)]
-                        async fn tick(&self) -> Result<(), Error> {
-                            Ok(())
-                        }
-                    }
-                },
-            )
-            .is_err(),
-        );
+        assert!(output.contains(". async_function (\"tick\""));
+        assert!(output.contains(
+            "CallContext :: module (__guestpy_enter , \"clock\" ,)",
+        ));
+        assert!(output.contains(
+            ". resolve :: < crate :: host :: state :: ModuleState",
+        ));
+        assert!(output.contains(". state (self)"));
     }
 
     #[test]
@@ -917,10 +1019,8 @@ mod tests {
         );
 
         assert!(output.contains(". class :: < Envelope < B > > ()"));
-        assert!(
-            output
-                .contains("Envelope < B > : crate :: host :: class :: HostClassDefinition < B >",),
-        );
+        assert!(output
+            .contains("Envelope < B > : crate :: host :: class :: HostClassDefinition < B >",),);
     }
 
     #[test]

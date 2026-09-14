@@ -1,4 +1,4 @@
-use std::{future::Future, rc::Rc};
+use std::{any::Any, future::Future, rc::Rc};
 
 use crate::{
     backend::{
@@ -7,6 +7,7 @@ use crate::{
     errors::Error,
     host::{
         class::{ClassDeclaration, ClassSpec, HostClass, HostClassDefinition},
+        context::{FromContext, Requirements},
         declaration::Member,
         exception::{ExceptionClass, ExceptionDeclaration, ExceptionSpec, HostException},
         namespace::Namespace,
@@ -20,10 +21,12 @@ pub(crate) type InitHook<B> = Rc<dyn for<'py> Fn(&Enter<'py, B>) -> Result<(), E
 pub struct ModuleSpec<B: Backend> {
     name: String,
     doc: Option<String>,
+    state: Option<Rc<dyn Any>>,
     namespace: Namespace<B>,
     classes: Vec<Rc<ClassSpec<B>>>,
     exceptions: Vec<Rc<ExceptionSpec>>,
     init: Option<InitHook<B>>,
+    requirements: Requirements<B>,
 }
 
 impl<B: Backend> ModuleSpec<B> {
@@ -46,6 +49,22 @@ impl<B: Backend> ModuleSpec<B> {
     pub(crate) fn exceptions(&self) -> impl Iterator<Item = &Rc<ExceptionSpec>> {
         self.exceptions.iter()
     }
+
+    pub(crate) fn state_of<S: 'static>(&self) -> Option<Rc<S>> {
+        self.state
+            .clone()?
+            .downcast::<S>()
+            .ok()
+    }
+
+    pub(crate) fn validate(&self) -> Result<(), Error> {
+        self.requirements.check(self)?;
+
+        self.classes
+            .iter()
+            .flat_map(ClassSpec::host_lineage)
+            .try_for_each(|class| class.requirements().check(self))
+    }
 }
 
 impl<B> ModuleSpec<B>
@@ -56,15 +75,29 @@ where
         Self {
             name: name.into(),
             doc: None,
+            state: None,
             namespace: Namespace::new(),
             classes: Vec::new(),
             exceptions: Vec::new(),
             init: None,
+            requirements: Requirements::new(),
         }
     }
 
     pub fn doc(mut self, doc: impl Into<String>) -> Self {
         self.doc = Some(doc.into());
+
+        self
+    }
+
+    pub fn state<S: 'static>(mut self, state: S) -> Self {
+        self.state = Some(Rc::new(state));
+
+        self
+    }
+
+    pub fn require<T: FromContext<B>>(mut self) -> Self {
+        T::declare(&mut self.requirements);
 
         self
     }
@@ -193,10 +226,11 @@ mod tests {
             class::{ClassBuilder, HostClass, HostClassDefinition},
             dunder::Dunder,
             exception::ExceptionClass,
+            state::ModuleState,
         },
-        marshal::args::Args,
-        scope::Enter,
     };
+
+    struct GeometryState;
 
     struct BaseVector;
 
@@ -229,12 +263,9 @@ mod tests {
             + BackendModules
             + BackendCoroutines,
     {
-        fn construct<'py>(_: &Enter<'py, B>, _: Args<'py, B>) -> Result<Self, Error> {
-            Ok(Self { x: 3, y: 4 })
-        }
-
         fn build(builder: &mut ClassBuilder<B, Self>) {
             builder
+                .constructor(|_, _| Ok(Self { x: 3, y: 4 }))
                 .method("length", |vector, _, _| Ok::<_, Error>(vector.x + vector.y))
                 .method_mut("translate", |vector, _, _| {
                     vector.x += 1;
@@ -274,6 +305,8 @@ mod tests {
     fn declaration() -> Result<(), Error> {
         let _ = ModuleSpec::<Stub>::new("geometry")
             .doc("Geometry helpers.")
+            .state(GeometryState)
+            .require::<ModuleState<GeometryState>>()
             .constant("api_version", 1)
             .function("hypot", |_, _| Ok::<_, Error>(13.0_f64))
             .async_function("resolve", |_, _| {
@@ -290,5 +323,22 @@ mod tests {
             .init(|_| Ok::<_, Error>(()));
 
         Ok(())
+    }
+
+    #[test]
+    fn validates_declared_module_state() {
+        assert!(
+            ModuleSpec::<Stub>::new("missing")
+                .require::<ModuleState<GeometryState>>()
+                .validate()
+                .is_err(),
+        );
+        assert!(
+            ModuleSpec::<Stub>::new("present")
+                .require::<ModuleState<GeometryState>>()
+                .state(GeometryState)
+                .validate()
+                .is_ok(),
+        );
     }
 }

@@ -1,16 +1,16 @@
-use darling::{FromMeta, ast::NestedMeta, util::Flag};
+use darling::{ast::NestedMeta, util::Flag, FromMeta};
 use proc_macro2::TokenStream;
 use quote::quote;
-use syn::{ImplItem, ImplItemFn, ItemImpl, Path, TypeParamBound, parse_quote};
+use syn::{parse_quote, ImplItem, ImplItemFn, ItemImpl, Path, Type, TypeParamBound};
 
 use crate::{
     attributes::HelperAttributes,
     host::{
-        HostMacroError,
         backend::{BackendBounds, BackendOption, BackendParameter},
         callable::{Callable, Parameter, Receiver},
         target::HostTarget,
         types::{BaseItem, BaseList},
+        HostMacroError,
     },
     naming::{Naming, RenameRule},
     path::CratePath,
@@ -170,6 +170,18 @@ impl ClassMember {
         }
     }
 
+    fn context_types(&self) -> Vec<&Type> {
+        match self {
+            Self::Method { callable, .. }
+            | Self::ClassMethod(callable)
+            | Self::StaticMethod(callable)
+            | Self::Getter(callable)
+            | Self::Setter(callable)
+            | Self::Deleter(callable) => callable.context_types(),
+            Self::Statics(_) | Self::Constant { .. } => Vec::new(),
+        }
+    }
+
     fn registration(&self, krate: &Path, backend: &BackendParameter) -> TokenStream {
         match self {
             Self::Method { callable, shape, asynchronous, dunder } => {
@@ -178,6 +190,9 @@ impl ClassMember {
                 let enter = callable.enter_ident();
                 let args = callable.args_ident();
                 let bindings = callable.argument_bindings();
+                let context = callable.context_setup(quote!(
+                    #krate::host::context::CallContext::class::<Self>(#enter)
+                ));
                 let setup = callable.argument_setup();
                 let turbofish = backend.turbofish();
                 let registrar = shape.registrar(*asynchronous);
@@ -194,6 +209,7 @@ impl ClassMember {
 
                 quote! {
                     builder.#registrar(#name, |#receivers, #enter, #args| {
+                        #context
                         #setup
 
                         #target #ident #turbofish (#(#bindings),*)
@@ -207,6 +223,9 @@ impl ClassMember {
                 let enter = callable.enter_ident();
                 let args = callable.args_ident();
                 let bindings = callable.argument_bindings();
+                let context = callable.context_setup(quote!(
+                    #krate::host::context::CallContext::class::<Self>(#enter)
+                ));
                 let setup = callable.argument_setup();
                 let backend_type = backend.ty();
                 let turbofish = backend.turbofish();
@@ -219,6 +238,7 @@ impl ClassMember {
                         >::from_guest(__guestpy_enter, __guestpy_class)?;
                         let #enter = __guestpy_enter;
 
+                        #context
                         #setup
 
                         Self::#ident #turbofish (#(#bindings),*)
@@ -232,11 +252,15 @@ impl ClassMember {
                 let enter = callable.enter_ident();
                 let args = callable.args_ident();
                 let bindings = callable.argument_bindings();
+                let context = callable.context_setup(quote!(
+                    #krate::host::context::CallContext::class::<Self>(#enter)
+                ));
                 let setup = callable.argument_setup();
                 let turbofish = backend.turbofish();
 
                 quote! {
                     builder.static_method(#name, |#enter, #args| {
+                        #context
                         #setup
 
                         Self::#ident #turbofish (#(#bindings),*)
@@ -249,10 +273,14 @@ impl ClassMember {
                 let ident = callable.ident();
                 let enter = callable.enter_ident();
                 let arguments = callable.accessor_expressions();
+                let context = callable.context_setup(quote!(
+                    #krate::host::context::CallContext::class::<Self>(#enter)
+                ));
                 let turbofish = backend.turbofish();
 
                 quote! {
                     builder.getter(#name, |__guestpy_self, #enter| {
+                        #context
                         __guestpy_self
                             .#ident #turbofish (#(#arguments),*)
                             .map_err(::core::convert::Into::into)
@@ -264,10 +292,14 @@ impl ClassMember {
                 let ident = callable.ident();
                 let enter = callable.enter_ident();
                 let arguments = callable.accessor_expressions();
+                let context = callable.context_setup(quote!(
+                    #krate::host::context::CallContext::class::<Self>(#enter)
+                ));
                 let turbofish = backend.turbofish();
 
                 quote! {
                     builder.setter(#name, |__guestpy_self, #enter, __guestpy_value| {
+                        #context
                         __guestpy_self
                             .#ident #turbofish (#(#arguments),*)
                             .map_err(::core::convert::Into::into)
@@ -279,10 +311,14 @@ impl ClassMember {
                 let ident = callable.ident();
                 let enter = callable.enter_ident();
                 let arguments = callable.accessor_expressions();
+                let context = callable.context_setup(quote!(
+                    #krate::host::context::CallContext::class::<Self>(#enter)
+                ));
                 let turbofish = backend.turbofish();
 
                 quote! {
                     builder.deleter(#name, |__guestpy_self, #enter| {
+                        #context
                         __guestpy_self
                             .#ident #turbofish (#(#arguments),*)
                             .map_err(::core::convert::Into::into)
@@ -743,23 +779,44 @@ a #[guestpy(this)] parameter is only valid on a method, async_method, or class_m
             .push(parse_quote!(#target: 'static));
 
         let (impl_generics, _, where_clause) = generics.split_for_impl();
-        let construct = constructor.map(|callable| {
+        let mut context_types = constructor
+            .iter()
+            .flat_map(Callable::context_types)
+            .collect::<Vec<_>>();
+
+        for context_type in members
+            .iter()
+            .flat_map(ClassMember::context_types)
+        {
+            if !context_types
+                .iter()
+                .any(|ty| *ty == context_type)
+            {
+                context_types.push(context_type);
+            }
+        }
+
+        let requirements = context_types
+            .iter()
+            .map(|ty| quote!(builder.require::<#ty>();));
+        let construct = constructor.as_ref().map(|callable| {
             let ident = callable.ident();
             let enter = callable.enter_ident();
             let args = callable.args_ident();
             let bindings = callable.argument_bindings();
+            let context = callable.context_setup(quote!(
+                #crate_path::host::context::CallContext::class::<Self>(#enter)
+            ));
             let setup = callable.argument_setup();
 
             quote! {
-                fn construct<'py>(
-                    #enter: &#crate_path::scope::Enter<'py, #backend_type>,
-                    #args: #crate_path::marshal::args::Args<'py, #backend_type>,
-                ) -> ::core::result::Result<Self, #crate_path::errors::Error> {
+                builder.constructor(|#enter, #args| {
+                    #context
                     #setup
 
                     Self::#ident #turbofish (#(#bindings),*)
                         .map_err(::core::convert::Into::into)
-                }
+                });
             }
         });
         let definition_generics = backend.definition_generics(&item.generics, &bounds);
@@ -775,7 +832,12 @@ a #[guestpy(this)] parameter is only valid on a method, async_method, or class_m
                 quote!(builder.imported_base(#module, #qualname);)
             }
         });
-        let builder = if members.is_empty() && extends.is_empty() && !generic {
+        let builder = if constructor.is_none()
+            && context_types.is_empty()
+            && members.is_empty()
+            && extends.is_empty()
+            && !generic
+        {
             quote!(_builder)
         } else {
             quote!(builder)
@@ -791,11 +853,11 @@ a #[guestpy(this)] parameter is only valid on a method, async_method, or class_m
                 #crate_path::host::class::HostClassDefinition<#backend_type>
                 for #target #definition_where_clause
             {
-                #construct
-
                 fn build(
                     #builder: &mut #crate_path::host::class::ClassBuilder<#backend_type, Self>,
                 ) {
+                    #(#requirements)*
+                    #construct
                     #generic_hook
                     #(#registrations)*
                     #(#bases)*
@@ -859,19 +921,48 @@ mod tests {
 
         assert!(output.contains("HostClass for Vector2"));
         assert!(output.contains("const NAME : & 'static str = \"Vector2\""));
-        assert!(
-            output.find("fn construct").unwrap()
-                > output
-                    .find("HostClassDefinition")
-                    .unwrap(),
-        );
         assert!(output.contains("HostClassDefinition < B > for Vector2"));
+        assert!(output.contains("builder . constructor ("));
         assert!(output.contains("builder . method (\"length\""));
         assert!(output.contains("builder . method_mut (\"translate\""));
         assert!(output.contains("builder . getter (\"x\""));
         assert!(output.contains("from_str (\"__repr__\")"));
         assert!(output.contains("builder . base :: < BaseVector > ()"));
         assert!(output.contains("BackendClasses"));
+    }
+
+    #[test]
+    fn generates_one_requirement_for_repeated_class_context() {
+        let output = expand(
+            quote!(name = "Client", crate_path = crate),
+            parse_quote! {
+                impl Client {
+                    #[guestpy(constructor)]
+                    fn new(
+                        #[guestpy(context)] module: ModuleState<HttpModule>,
+                    ) -> Result<Self, Error> {
+                        Ok(Self::new(module))
+                    }
+
+                    #[guestpy(get)]
+                    fn pool_size(
+                        &self,
+                        #[guestpy(context)] module: ModuleState<HttpModule>,
+                    ) -> Result<usize, Error> {
+                        Ok(module.pool_size)
+                    }
+                }
+            },
+        );
+
+        assert_eq!(
+            output
+                .matches("builder . require :: < ModuleState < HttpModule > > ()")
+                .count(),
+            1,
+        );
+        assert!(output.contains("CallContext :: class :: < Self > (__guestpy_enter)"));
+        assert!(output.contains("__guestpy_context . resolve () ?"));
     }
 
     #[test]
@@ -970,11 +1061,9 @@ mod tests {
             panic!("dunder combined with name returns a syntax error");
         };
 
-        assert!(
-            error
-                .to_string()
-                .contains("dunder and name")
-        );
+        assert!(error
+            .to_string()
+            .contains("dunder and name"));
     }
 
     #[test]
@@ -993,11 +1082,9 @@ mod tests {
             panic!("dunder combined with an unrelated role returns a syntax error");
         };
 
-        assert!(
-            error
-                .to_string()
-                .contains("dunder only combines with method or async_method")
-        );
+        assert!(error
+            .to_string()
+            .contains("dunder only combines with method or async_method"));
     }
 
     #[test]
@@ -1115,11 +1202,9 @@ mod tests {
             panic!("an exclusive receiver on an async method returns a syntax error");
         };
 
-        assert!(
-            error
-                .to_string()
-                .contains("requires &self")
-        );
+        assert!(error
+            .to_string()
+            .contains("requires &self"));
     }
 
     #[test]
@@ -1138,11 +1223,9 @@ mod tests {
             panic!("a method with no way to reach its instance returns a syntax error");
         };
 
-        assert!(
-            error
-                .to_string()
-                .contains("#[guestpy(static_method)]")
-        );
+        assert!(error
+            .to_string()
+            .contains("#[guestpy(static_method)]"));
     }
 
     #[test]
@@ -1173,7 +1256,7 @@ mod tests {
     }
 
     #[test]
-    fn omits_construct_when_no_constructor() {
+    fn omits_constructor_registration_when_no_constructor() {
         let output = expand(
             quote!(name = "Session", crate_path = crate),
             parse_quote! {
@@ -1187,6 +1270,7 @@ mod tests {
         );
 
         assert!(output.contains("builder . method (\"id\""));
+        assert!(!output.contains("builder . constructor ("));
     }
 
     #[test]
@@ -1212,35 +1296,31 @@ mod tests {
 
     #[test]
     fn rejects_async_fn_and_receiverless_method() {
-        assert!(
-            HostClassMacro::new(
-                quote!(name = "Bad", crate_path = crate),
-                parse_quote! {
-                    impl Bad {
-                        #[guestpy(async_method)]
-                        async fn go(&self) -> Result<i32, Error> {
-                            Ok(1)
-                        }
+        assert!(HostClassMacro::new(
+            quote!(name = "Bad", crate_path = crate),
+            parse_quote! {
+                impl Bad {
+                    #[guestpy(async_method)]
+                    async fn go(&self) -> Result<i32, Error> {
+                        Ok(1)
                     }
-                },
-            )
-            .is_err(),
-        );
+                }
+            },
+        )
+        .is_err(),);
 
-        assert!(
-            HostClassMacro::new(
-                quote!(name = "Bad", crate_path = crate),
-                parse_quote! {
-                    impl Bad {
-                        #[guestpy(method)]
-                        fn go() -> Result<i32, Error> {
-                            Ok(1)
-                        }
+        assert!(HostClassMacro::new(
+            quote!(name = "Bad", crate_path = crate),
+            parse_quote! {
+                impl Bad {
+                    #[guestpy(method)]
+                    fn go() -> Result<i32, Error> {
+                        Ok(1)
                     }
-                },
-            )
-            .is_err(),
-        );
+                }
+            },
+        )
+        .is_err(),);
     }
 
     #[test]
@@ -1370,24 +1450,20 @@ mod tests {
             panic!("a member declaring a type parameter returns a syntax error");
         };
 
-        assert!(
-            error
-                .to_string()
-                .contains("backend = <name>")
-        );
+        assert!(error
+            .to_string()
+            .contains("backend = <name>"));
     }
 
     #[test]
     fn rejects_a_qualified_backend_name() {
-        assert!(
-            HostClassMacro::new(
-                quote!(name = "Envelope", backend = guestpy::CPython, crate_path = crate),
-                parse_quote! {
-                    impl Envelope {}
-                },
-            )
-            .is_err(),
-        );
+        assert!(HostClassMacro::new(
+            quote!(name = "Envelope", backend = guestpy::CPython, crate_path = crate),
+            parse_quote! {
+                impl Envelope {}
+            },
+        )
+        .is_err(),);
     }
 
     #[test]
@@ -1493,11 +1569,9 @@ mod tests {
             panic!("a Backend-bounded parameter without a declaration returns a syntax error",);
         };
 
-        assert!(
-            error
-                .to_string()
-                .contains("backend = B")
-        );
+        assert!(error
+            .to_string()
+            .contains("backend = B"));
     }
 
     #[test]

@@ -13,7 +13,7 @@ use crate::{
     bundle::{Bundle, BundleId},
     errors::GuestException,
     host::{
-        class::{ClassBase, ClassSpec},
+        class::ClassSpec,
         exception::{ExceptionKey, ExceptionSpec},
         library::HostInitializer,
         module::ModuleSpec,
@@ -141,18 +141,11 @@ impl<B: Backend> RealisationCache<B> {
     }
 
     fn absorb_class(&self, spec: &Rc<ClassSpec<B>>) {
-        let payload = spec.payload();
+        for class in spec.host_lineage() {
+            let payload = class.payload();
 
-        if self.classes.contains(&payload) {
-            return;
-        }
-
-        self.classes
-            .intern(payload, spec.clone());
-
-        for base in spec.bases() {
-            if let ClassBase::Host(base) = base {
-                self.absorb_class(base);
+            if !self.classes.contains(&payload) {
+                self.classes.intern(payload, class);
             }
         }
     }
@@ -289,11 +282,9 @@ mod tests {
                 .as_deref(),
             Some("mod_a"),
         );
-        assert!(
-            realisation
-                .realised_exception(&key)
-                .is_some()
-        );
+        assert!(realisation
+            .realised_exception(&key)
+            .is_some());
         assert_eq!(
             realisation.exception_types(&GuestException::new(
                 String::from("Example"),
