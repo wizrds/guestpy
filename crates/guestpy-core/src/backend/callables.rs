@@ -84,8 +84,8 @@ pub mod fixtures {
 
     use crate::{
         backend::{
-            Backend, BackendCallables, BackendClasses, BackendCoroutines, BackendExceptions,
-            BackendInterrupt, BackendModules, BackendValues, guest_fixture,
+            Backend, BackendCallables, BackendClasses, BackendCoroutines, BackendInterrupt,
+            BackendModules, BackendValues, guest_fixture,
         },
         errors::{Error, GuestException},
         host::module::ModuleSpec,
@@ -103,7 +103,6 @@ pub mod fixtures {
                 + BackendClasses
                 + BackendModules
                 + BackendCoroutines
-                + BackendExceptions
                 + BackendInterrupt,
         {
             ModuleSpec::new("codec")
@@ -150,7 +149,6 @@ pub mod fixtures {
             BackendClasses,
             BackendModules,
             BackendCoroutines,
-            BackendExceptions,
             BackendInterrupt,
         ]
         using Runtime::<B>::builder().bind(Codec::module());
@@ -191,7 +189,6 @@ pub mod fixtures {
             BackendClasses,
             BackendModules,
             BackendCoroutines,
-            BackendExceptions,
             BackendInterrupt,
         ]
         using Runtime::<B>::builder().bind(Codec::module());
@@ -241,7 +238,6 @@ pub mod fixtures {
             BackendClasses,
             BackendModules,
             BackendCoroutines,
-            BackendExceptions,
             BackendInterrupt,
         ]
         using Runtime::<B>::builder().bind(Codec::module());
@@ -266,7 +262,6 @@ pub mod fixtures {
             BackendClasses,
             BackendModules,
             BackendCoroutines,
-            BackendExceptions,
             BackendInterrupt,
         ]
         using Runtime::<B>::builder().bind(Codec::module());
@@ -295,7 +290,6 @@ pub mod fixtures {
             BackendClasses,
             BackendModules,
             BackendCoroutines,
-            BackendExceptions,
             BackendInterrupt,
         ]
         using Runtime::<B>::builder().bind(Codec::module());
@@ -325,7 +319,6 @@ pub mod fixtures {
             BackendClasses,
             BackendModules,
             BackendCoroutines,
-            BackendExceptions,
             BackendInterrupt,
         ]
         using Runtime::<B>::builder().bind(Codec::module());
@@ -368,7 +361,6 @@ except TypeError as e:
             + BackendClasses
             + BackendModules
             + BackendCoroutines
-            + BackendExceptions
             + BackendInterrupt,
     {
         let log = Rc::new(RefCell::new(Vec::new()));

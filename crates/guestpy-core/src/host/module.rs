@@ -2,14 +2,13 @@ use std::{future::Future, rc::Rc};
 
 use crate::{
     backend::{
-        Backend, BackendCallables, BackendClasses, BackendCoroutines, BackendExceptions,
-        BackendModules, BackendValues,
+        Backend, BackendCallables, BackendClasses, BackendCoroutines, BackendModules, BackendValues,
     },
     errors::Error,
     host::{
         class::{ClassDeclaration, ClassSpec, HostClass, HostClassDefinition},
         declaration::Member,
-        exception::{ExceptionBase, ExceptionDeclaration, ExceptionSpec},
+        exception::{ExceptionClass, ExceptionDeclaration, ExceptionSpec, HostException},
         namespace::Namespace,
     },
     marshal::{ToGuest, args::Args},
@@ -121,12 +120,7 @@ where
 
 impl<B> ModuleSpec<B>
 where
-    B: Backend
-        + BackendValues
-        + BackendCallables
-        + BackendModules
-        + BackendCoroutines
-        + BackendExceptions,
+    B: Backend + BackendValues + BackendCallables + BackendModules + BackendCoroutines,
 {
     pub fn async_function<F, Fut, R>(mut self, name: &str, function: F) -> Self
     where
@@ -143,10 +137,10 @@ where
 
 impl<B> ModuleSpec<B>
 where
-    B: Backend + BackendValues + BackendCallables + BackendExceptions,
+    B: Backend + BackendValues + BackendCallables + BackendModules,
 {
-    pub fn exception(mut self, name: &str, base: ExceptionBase) -> Self {
-        let spec = Rc::new(ExceptionSpec::new(&self.name, name, base));
+    pub fn exception(mut self, name: &str, base: ExceptionClass) -> Self {
+        let spec = Rc::new(ExceptionSpec::named(&self.name, name, base));
 
         self.exceptions.push(spec.clone());
         self.namespace
@@ -154,17 +148,27 @@ where
 
         self
     }
+
+    pub fn exception_type<E: HostException>(mut self) -> Self {
+        let spec = Rc::new(ExceptionSpec::typed::<E>(&self.name));
+
+        self.exceptions.push(spec.clone());
+        self.namespace
+            .push(E::NAME, Rc::new(ExceptionDeclaration::new(spec)));
+
+        self
+    }
 }
 
 impl<B> ModuleSpec<B>
 where
-    B: Backend + BackendValues + BackendCallables + BackendClasses,
+    B: Backend + BackendValues + BackendCallables + BackendClasses + BackendModules,
 {
-    pub fn class<C>(mut self) -> Self
+    pub fn class<C>(mut self) -> Result<Self, Error>
     where
         C: HostClass + HostClassDefinition<B>,
     {
-        let spec = ClassSpec::of::<C>();
+        let spec = ClassSpec::of::<C>()?;
 
         spec.set_module(&self.name);
 
@@ -172,7 +176,7 @@ where
         self.namespace
             .push(C::NAME, Rc::new(ClassDeclaration::new(spec)));
 
-        self
+        Ok(self)
     }
 }
 
@@ -181,14 +185,14 @@ mod tests {
     use super::ModuleSpec;
     use crate::{
         backend::{
-            Backend, BackendCallables, BackendClasses, BackendCoroutines, BackendExceptions,
-            BackendModules, BackendValues, tests::Stub,
+            Backend, BackendCallables, BackendClasses, BackendCoroutines, BackendModules,
+            BackendValues, tests::Stub,
         },
         errors::Error,
         host::{
             class::{ClassBuilder, HostClass, HostClassDefinition},
             dunder::Dunder,
-            exception::ExceptionBase,
+            exception::ExceptionClass,
         },
         marshal::args::Args,
         scope::Enter,
@@ -223,8 +227,7 @@ mod tests {
             + BackendCallables
             + BackendClasses
             + BackendModules
-            + BackendCoroutines
-            + BackendExceptions,
+            + BackendCoroutines,
     {
         fn construct<'py>(_: &Enter<'py, B>, _: Args<'py, B>) -> Result<Self, Error> {
             Ok(Self { x: 3, y: 4 })
@@ -257,9 +260,9 @@ mod tests {
                 .class_method("origin", |_, _, _| Ok::<_, Error>(()))
                 .static_method("zero", |_, _| Ok::<_, Error>(()))
                 .constant("dimensions", 2)
-                .dunder(Dunder::Repr, |_, _, _| Ok::<_, Error>("Vector2"))
-                .dunder(Dunder::Len, |_, _, _| Ok::<_, Error>(2))
-                .dunder(Dunder::Add, |_, _, _| Ok::<_, Error>(()))
+                .method(Dunder::Repr, |_, _, _| Ok::<_, Error>("Vector2"))
+                .method(Dunder::Len, |_, _, _| Ok::<_, Error>(2))
+                .method(Dunder::Add, |_, _, _| Ok::<_, Error>(()))
                 .statics(|namespace| {
                     namespace.constant("kind", "vector");
                 })
@@ -268,7 +271,7 @@ mod tests {
     }
 
     #[allow(dead_code)]
-    fn declaration() {
+    fn declaration() -> Result<(), Error> {
         let _ = ModuleSpec::<Stub>::new("geometry")
             .doc("Geometry helpers.")
             .constant("api_version", 1)
@@ -282,8 +285,10 @@ mod tests {
                     .constant("name", "geometry")
                     .property("version", |_| Ok::<_, Error>(1), |_, _: i64| Ok::<_, Error>(()));
             })
-            .exception("GeometryError", ExceptionBase::Exception)
-            .class::<Vector2>()
+            .exception("GeometryError", ExceptionClass::exception())
+            .class::<Vector2>()?
             .init(|_| Ok::<_, Error>(()));
+
+        Ok(())
     }
 }

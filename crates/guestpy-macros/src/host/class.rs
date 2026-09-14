@@ -10,7 +10,7 @@ use crate::{
         backend::{BackendBounds, BackendOption, BackendParameter},
         callable::{Callable, Parameter, Receiver},
         target::HostTarget,
-        types::TypeList,
+        types::{BaseItem, BaseList},
     },
     naming::{Naming, RenameRule},
     path::CratePath,
@@ -22,7 +22,7 @@ struct ClassOptions {
     name: Option<String>,
     rename_all: Option<RenameRule>,
     backend: Option<BackendOption>,
-    extends: TypeList,
+    extends: BaseList,
     generic: Flag,
     crate_path: Option<Path>,
 }
@@ -57,7 +57,6 @@ impl ClassItemOptions {
             self.delete.is_present(),
             self.statics.is_present(),
             self.constant.is_present(),
-            self.dunder.is_some(),
         ]
         .into_iter()
         .filter(|present| *present)
@@ -107,10 +106,7 @@ an exclusive borrow cannot be held while the returned future is built
     }
 
     fn exclusive(self) -> bool {
-        matches!(
-            self,
-            Self::Payload { exclusive: true } | Self::Paired { exclusive: true }
-        )
+        matches!(self, Self::Payload { exclusive: true } | Self::Paired { exclusive: true })
     }
 
     fn registrar(self, asynchronous: bool) -> TokenStream {
@@ -143,21 +139,28 @@ an exclusive borrow cannot be held while the returned future is built
 }
 
 enum ClassMember {
-    Method { callable: Callable, shape: MethodShape, asynchronous: bool },
+    Method {
+        callable: Callable,
+        shape: MethodShape,
+        asynchronous: bool,
+        dunder: bool,
+    },
     ClassMethod(Callable),
     StaticMethod(Callable),
     Getter(Callable),
     Setter(Callable),
     Deleter(Callable),
-    Dunder { dunder: String, callable: Callable },
     Statics(syn::Ident),
-    Constant { ident: syn::Ident, name: String },
+    Constant {
+        ident: syn::Ident,
+        name: String,
+    },
 }
 
 impl ClassMember {
     fn ident(&self) -> &syn::Ident {
         match self {
-            Self::Method { callable, .. } | Self::Dunder { callable, .. } => callable.ident(),
+            Self::Method { callable, .. } => callable.ident(),
             Self::ClassMethod(callable)
             | Self::StaticMethod(callable)
             | Self::Getter(callable)
@@ -169,7 +172,7 @@ impl ClassMember {
 
     fn registration(&self, krate: &Path, backend: &BackendParameter) -> TokenStream {
         match self {
-            Self::Method { callable, shape, asynchronous } => {
+            Self::Method { callable, shape, asynchronous, dunder } => {
                 let name = callable.name();
                 let ident = callable.ident();
                 let enter = callable.enter_ident();
@@ -180,6 +183,14 @@ impl ClassMember {
                 let registrar = shape.registrar(*asynchronous);
                 let receivers = shape.closure_receivers();
                 let target = shape.call_target();
+                let name = if *dunder {
+                    let message =
+                        format!("unknown dunder name {name:?} in #[guestpy(dunder = ...)]");
+
+                    quote!(<#krate::host::dunder::Dunder as ::core::str::FromStr>::from_str(#name).expect(#message))
+                } else {
+                    quote!(#name)
+                };
 
                 quote! {
                     builder.#registrar(#name, |#receivers, #enter, #args| {
@@ -278,29 +289,6 @@ impl ClassMember {
                     });
                 }
             }
-            Self::Dunder { dunder, callable } => {
-                let ident = callable.ident();
-                let enter = callable.enter_ident();
-                let args = callable.args_ident();
-                let bindings = callable.argument_bindings();
-                let setup = callable.argument_setup();
-                let message = format!("unknown dunder name {dunder:?} in #[guestpy(dunder = ...)]");
-                let turbofish = backend.turbofish();
-
-                quote! {
-                    builder.dunder(
-                        <#krate::host::dunder::Dunder as ::core::str::FromStr>::from_str(#dunder)
-                            .expect(#message),
-                        |__guestpy_self, #enter, #args| {
-                            #setup
-
-                            __guestpy_self
-                                .#ident #turbofish (#(#bindings),*)
-                                .map_err(::core::convert::Into::into)
-                        },
-                    );
-                }
-            }
             Self::Statics(ident) => {
                 let turbofish = backend.turbofish();
 
@@ -324,7 +312,7 @@ struct HostClassDefinition {
     name: String,
     crate_path: Path,
     backend: BackendParameter,
-    extends: TypeList,
+    extends: BaseList,
     generic: bool,
     constructor: Option<Callable>,
     members: Vec<ClassMember>,
@@ -407,10 +395,8 @@ impl HostClassDefinition {
 
         let backend = BackendParameter::resolve(options.backend, item, "host_class")?;
         let crate_path = CratePath::new(options.crate_path).resolve();
-        let mut bounds = BackendBounds::new(
-            &backend,
-            Self::capabilities(&crate_path, &constructor, &members),
-        );
+        let mut bounds =
+            BackendBounds::new(&backend, Self::capabilities(&crate_path, &constructor, &members));
 
         for method in Self::exported_methods(item, &constructor, &members) {
             bounds.absorb(&mut method.sig.generics);
@@ -464,7 +450,11 @@ impl HostClassDefinition {
         };
 
         for method in Self::exported_methods(item, &self.constructor, &self.members) {
-            method.sig.generics.params.push(parse_quote!(#backend));
+            method
+                .sig
+                .generics
+                .params
+                .push(parse_quote!(#backend));
             method
                 .sig
                 .generics
@@ -486,7 +476,9 @@ impl HostClassDefinition {
             parse_quote!(#crate_path::backend::BackendClasses),
         ];
 
-        if constructor.iter().any(Callable::asynchronous)
+        if constructor
+            .iter()
+            .any(Callable::asynchronous)
             || members
                 .iter()
                 .any(|member| matches!(member, ClassMember::Method { asynchronous: true, .. }))
@@ -510,7 +502,15 @@ impl HostClassDefinition {
     ) -> Result<(), HostMacroError> {
         let role_count = options.role_count();
 
-        if role_count == 0 {
+        if options.dunder.is_some() && options.name.is_some() {
+            return Err(syn::Error::new(
+                method.sig.ident.span(),
+                "dunder and name cannot both be set; dunder already supplies the member name",
+            )
+            .into());
+        }
+
+        if role_count == 0 && options.dunder.is_none() {
             return Err(syn::Error::new(
                 method.sig.ident.span(),
                 "an exported host class member requires a role",
@@ -522,6 +522,17 @@ impl HostClassDefinition {
             return Err(syn::Error::new(
                 method.sig.ident.span(),
                 "a host class member may declare only one role",
+            )
+            .into());
+        }
+
+        if options.dunder.is_some()
+            && role_count > 0
+            && !(options.method.is_present() || options.async_method.is_present())
+        {
+            return Err(syn::Error::new(
+                method.sig.ident.span(),
+                "dunder only combines with method or async_method",
             )
             .into());
         }
@@ -540,10 +551,12 @@ impl HostClassDefinition {
             return Ok(());
         }
 
-        let callable = Callable::parse(
-            method,
-            Naming::member(&method.sig.ident, options.name.clone(), rename_all),
-        )?;
+        let name = match &options.dunder {
+            Some(dunder) => dunder.clone(),
+            None => Naming::member(&method.sig.ident, options.name.clone(), rename_all),
+        };
+
+        let callable = Callable::parse(method, name)?;
 
         if callable.asynchronous() {
             return Err(syn::Error::new(
@@ -584,17 +597,19 @@ a #[guestpy(this)] parameter is only valid on a method, async_method, or class_m
             }
 
             *constructor = Some(callable);
-        } else if options.method.is_present() {
+        } else if options.method.is_present() || (role_count == 0 && options.dunder.is_some()) {
             members.push(ClassMember::Method {
                 shape: MethodShape::of(&callable, false)?,
                 callable,
                 asynchronous: false,
+                dunder: options.dunder.is_some(),
             });
         } else if options.async_method.is_present() {
             members.push(ClassMember::Method {
                 shape: MethodShape::of(&callable, true)?,
                 callable,
                 asynchronous: true,
+                dunder: options.dunder.is_some(),
             });
         } else if options.class_method.is_present() {
             Self::require_receiver(&callable, Receiver::None, "a class_method")?;
@@ -658,13 +673,11 @@ a #[guestpy(this)] parameter is only valid on a method, async_method, or class_m
 
             members.push(ClassMember::Deleter(callable));
         } else {
-            Self::require_receiver(&callable, Receiver::Shared, "a dunder")?;
-            members.push(ClassMember::Dunder {
-                dunder: options
-                    .dunder
-                    .expect("dunder is the only remaining role"),
-                callable,
-            });
+            return Err(syn::Error::new(
+                method.sig.ident.span(),
+                "#[guestpy(constant)] is only valid on an associated const",
+            )
+            .into());
         }
 
         Ok(())
@@ -756,9 +769,12 @@ a #[guestpy(this)] parameter is only valid on a method, async_method, or class_m
         let registrations = members
             .iter()
             .map(|member| member.registration(&crate_path, &backend));
-        let bases = extends
-            .iter()
-            .map(|base| quote!(builder.base::<#base>();));
+        let bases = extends.iter().map(|base| match base {
+            BaseItem::Host(base) => quote!(builder.base::<#base>();),
+            BaseItem::Imported { module, qualname } => {
+                quote!(builder.imported_base(#module, #qualname);)
+            }
+        });
         let builder = if members.is_empty() && extends.is_empty() && !generic {
             quote!(_builder)
         } else {
@@ -853,11 +869,135 @@ mod tests {
         assert!(output.contains("builder . method (\"length\""));
         assert!(output.contains("builder . method_mut (\"translate\""));
         assert!(output.contains("builder . getter (\"x\""));
-        assert!(output.contains("builder . dunder"));
         assert!(output.contains("from_str (\"__repr__\")"));
         assert!(output.contains("builder . base :: < BaseVector > ()"));
-        assert!(output.contains(". finish () ?"));
         assert!(output.contains("BackendClasses"));
+    }
+
+    #[test]
+    fn renders_a_synchronous_dunder_through_the_method_registrar() {
+        let output = expand(
+            quote!(name = "Vector2", crate_path = crate),
+            parse_quote! {
+                impl Vector2 {
+                    #[guestpy(dunder = "__repr__")]
+                    fn repr(&self) -> Result<String, Error> {
+                        Ok("Vector2".into())
+                    }
+                }
+            },
+        );
+
+        assert!(output.contains("builder . method ("));
+        assert!(output.contains("from_str (\"__repr__\")"));
+        assert!(!output.contains("builder . dunder"));
+    }
+
+    #[test]
+    fn renders_an_async_dunder_with_this_through_the_paired_async_registrar() {
+        let output = expand(
+            quote!(name = "Resource", backend = B, crate_path = crate),
+            parse_quote! {
+                impl Resource {
+                    #[guestpy(async_method, dunder = "__aenter__")]
+                    fn enter(
+                        &self,
+                        #[guestpy(this)] this: &Object<B>,
+                    ) -> Result<impl Future<Output = Result<Object<B>, Error>> + use<B>, Error> {
+                        let this = this.clone();
+
+                        Ok(async move { Ok(this) })
+                    }
+                }
+            },
+        );
+
+        assert!(output.contains("builder . async_method_with_this ("));
+        assert!(output.contains("from_str (\"__aenter__\")"));
+    }
+
+    #[test]
+    fn renders_a_mutable_dunder_through_the_exclusive_registrar() {
+        let output = expand(
+            quote!(name = "Headers", crate_path = crate),
+            parse_quote! {
+                impl Headers {
+                    #[guestpy(dunder = "__setitem__")]
+                    fn set(&mut self, key: String, value: String) -> Result<(), Error> {
+                        self.entries.insert(key, value);
+
+                        Ok(())
+                    }
+                }
+            },
+        );
+
+        assert!(output.contains("builder . method_mut ("));
+        assert!(output.contains("from_str (\"__setitem__\")"));
+    }
+
+    #[test]
+    fn defers_an_unknown_dunder_name_to_the_rendered_literal() {
+        let output = expand(
+            quote!(name = "Vector2", crate_path = crate),
+            parse_quote! {
+                impl Vector2 {
+                    #[guestpy(dunder = "__notreal__")]
+                    fn odd(&self) -> Result<i64, Error> {
+                        Ok(0)
+                    }
+                }
+            },
+        );
+
+        assert!(output.contains("from_str (\"__notreal__\")"));
+        assert!(output.contains(". expect ("));
+    }
+
+    #[test]
+    fn rejects_dunder_combined_with_name() {
+        let Err(HostMacroError::Syntax(error)) = HostClassMacro::new(
+            quote!(name = "Vector2", crate_path = crate),
+            parse_quote! {
+                impl Vector2 {
+                    #[guestpy(dunder = "__repr__", name = "repr")]
+                    fn repr(&self) -> Result<String, Error> {
+                        Ok("Vector2".into())
+                    }
+                }
+            },
+        ) else {
+            panic!("dunder combined with name returns a syntax error");
+        };
+
+        assert!(
+            error
+                .to_string()
+                .contains("dunder and name")
+        );
+    }
+
+    #[test]
+    fn rejects_dunder_combined_with_an_unrelated_role() {
+        let Err(HostMacroError::Syntax(error)) = HostClassMacro::new(
+            quote!(name = "Vector2", crate_path = crate),
+            parse_quote! {
+                impl Vector2 {
+                    #[guestpy(get, dunder = "__len__")]
+                    fn len(&self) -> Result<i64, Error> {
+                        Ok(0)
+                    }
+                }
+            },
+        ) else {
+            panic!("dunder combined with an unrelated role returns a syntax error");
+        };
+
+        assert!(
+            error
+                .to_string()
+                .contains("dunder only combines with method or async_method")
+        );
     }
 
     #[test]
@@ -975,7 +1115,11 @@ mod tests {
             panic!("an exclusive receiver on an async method returns a syntax error");
         };
 
-        assert!(error.to_string().contains("requires &self"));
+        assert!(
+            error
+                .to_string()
+                .contains("requires &self")
+        );
     }
 
     #[test]
@@ -994,7 +1138,11 @@ mod tests {
             panic!("a method with no way to reach its instance returns a syntax error");
         };
 
-        assert!(error.to_string().contains("#[guestpy(static_method)]"));
+        assert!(
+            error
+                .to_string()
+                .contains("#[guestpy(static_method)]")
+        );
     }
 
     #[test]
@@ -1222,7 +1370,11 @@ mod tests {
             panic!("a member declaring a type parameter returns a syntax error");
         };
 
-        assert!(error.to_string().contains("backend = <name>"));
+        assert!(
+            error
+                .to_string()
+                .contains("backend = <name>")
+        );
     }
 
     #[test]
@@ -1257,7 +1409,12 @@ mod tests {
 
         assert!(output.contains("HostClassDefinition < B > for Contract where B :"));
         assert!(output.contains("+ InterpreterBackend"));
-        assert_eq!(output.matches("InterpreterBackend").count(), 2);
+        assert_eq!(
+            output
+                .matches("InterpreterBackend")
+                .count(),
+            2
+        );
     }
 
     #[test]
@@ -1340,6 +1497,21 @@ mod tests {
             error
                 .to_string()
                 .contains("backend = B")
+        );
+    }
+
+    #[test]
+    fn renders_mixed_bases_in_source_order() {
+        let output =
+            expand(quote!(extends(Parent, "collections.abc:Mapping")), parse_quote!(impl Child {}));
+
+        assert!(
+            output
+                .find("builder . base :: < Parent > ()")
+                .unwrap()
+                < output
+                    .find("builder . imported_base (\"collections.abc\" , \"Mapping\")")
+                    .unwrap(),
         );
     }
 }

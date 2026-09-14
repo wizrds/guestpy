@@ -390,7 +390,11 @@ VALUE = 21
         DROPS.with(|drops| drops.set(0));
 
         let runtime = Runtime::<RustPython>::builder()
-            .bind(ModuleSpec::new("host").class::<Payload>())
+            .bind(
+                ModuleSpec::new("host")
+                    .class::<Payload>()
+                    .expect("Payload registers cleanly"),
+            )
             .build()
             .unwrap();
         let guest = runtime.guest().build().unwrap();

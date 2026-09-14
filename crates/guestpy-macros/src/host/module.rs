@@ -1,19 +1,8 @@
-use darling::{
-    FromMeta,
-    ast::NestedMeta,
-    util::{Flag, PathList},
-};
+use darling::{FromMeta, ast::NestedMeta, util::Flag};
 use proc_macro2::{Span, TokenStream};
-use quote::quote;
+use quote::{quote, quote_spanned};
 use syn::{
-    FnArg,
-    ImplItem,
-    ImplItemFn,
-    ItemImpl,
-    Path,
-    TypeParamBound,
-    parse_quote,
-    spanned::Spanned,
+    FnArg, ImplItem, ImplItemFn, ItemImpl, Path, TypeParamBound, parse_quote, spanned::Spanned,
 };
 
 use crate::{
@@ -37,7 +26,7 @@ struct ModuleOptions {
     method_name: Option<syn::Ident>,
     backend: Option<BackendOption>,
     classes: TypeList,
-    exceptions: PathList,
+    exceptions: TypeList,
     crate_path: Option<Path>,
 }
 
@@ -203,12 +192,7 @@ impl ModuleMember {
             }
             Self::Object { ident, name, shared } => {
                 let turbofish = backend.turbofish();
-                let invocation = Self::invoke(
-                    *shared,
-                    ident,
-                    &turbofish,
-                    &[quote!(__guestpy_ns)],
-                );
+                let invocation = Self::invoke(*shared, ident, &turbofish, &[quote!(__guestpy_ns)]);
                 let closure = Self::state_closure(*shared, quote!(|__guestpy_ns| #invocation));
 
                 quote!(.object(#name, #closure))
@@ -254,7 +238,7 @@ struct HostModuleDefinition {
     crate_path: Path,
     backend: BackendParameter,
     classes: TypeList,
-    exceptions: Vec<String>,
+    exceptions: TypeList,
     members: Vec<ModuleMember>,
     needs_state: bool,
     bounds: BackendBounds,
@@ -348,12 +332,7 @@ impl HostModuleDefinition {
         let crate_path = CratePath::new(options.crate_path).resolve();
         let mut bounds = BackendBounds::new(
             &backend,
-            Self::capabilities(
-                &crate_path,
-                &options.classes,
-                &options.exceptions,
-                &members,
-            ),
+            Self::capabilities(&crate_path, &options.classes, &options.exceptions, &members),
         );
 
         for method in Self::exported_methods(item, &members) {
@@ -370,15 +349,7 @@ impl HostModuleDefinition {
             crate_path,
             backend,
             classes: options.classes,
-            exceptions: options
-                .exceptions
-                .iter()
-                .filter_map(|path| {
-                    path.segments
-                        .last()
-                        .map(|segment| segment.ident.to_string())
-                })
-                .collect(),
+            exceptions: options.exceptions,
             members,
             needs_state,
             bounds,
@@ -415,7 +386,11 @@ impl HostModuleDefinition {
         };
 
         for method in Self::exported_methods(item, &self.members) {
-            method.sig.generics.params.push(parse_quote!(#backend));
+            method
+                .sig
+                .generics
+                .params
+                .push(parse_quote!(#backend));
             method
                 .sig
                 .generics
@@ -428,7 +403,7 @@ impl HostModuleDefinition {
     fn capabilities(
         crate_path: &Path,
         classes: &TypeList,
-        exceptions: &PathList,
+        exceptions: &TypeList,
         members: &[ModuleMember],
     ) -> Vec<TypeParamBound> {
         let mut capabilities = vec![
@@ -436,28 +411,26 @@ impl HostModuleDefinition {
             parse_quote!(#crate_path::backend::BackendValues),
             parse_quote!(#crate_path::backend::BackendCallables),
         ];
-        let has_async_function = members.iter().any(
-            |member| {
-                matches!(
-                    member,
-                    ModuleMember::Function(callable) if callable.asynchronous(),
-                )
-            },
-        );
+        let has_async_function = members.iter().any(|member| {
+            matches!(
+                member,
+                ModuleMember::Function(callable) if callable.asynchronous(),
+            )
+        });
 
         if !classes.is_empty() {
             capabilities.push(parse_quote!(#crate_path::backend::BackendClasses));
         }
 
-        if has_async_function {
-            capabilities.extend([
-                parse_quote!(#crate_path::backend::BackendModules),
-                parse_quote!(#crate_path::backend::BackendCoroutines),
-            ]);
+        if has_async_function || !classes.is_empty() || !exceptions.is_empty() {
+            capabilities.push(parse_quote!(#crate_path::backend::BackendModules));
         }
 
-        if has_async_function || !exceptions.is_empty() {
-            capabilities.push(parse_quote!(#crate_path::backend::BackendExceptions));
+        if has_async_function {
+            capabilities.extend([
+                parse_quote!(#crate_path::backend::BackendCoroutines),
+                parse_quote!(#crate_path::backend::BackendExceptions),
+            ]);
         }
 
         capabilities
@@ -673,15 +646,12 @@ make it non-async, or make it receiverless
         let registrations = members
             .iter()
             .map(|member| member.registration(&backend));
-        let exception_registrations = exceptions.iter().map(|exception| {
-            quote!(.exception(
-                #exception,
-                #crate_path::host::exception::ExceptionBase::Exception,
-            ))
-        });
+        let exception_registrations = exceptions
+            .iter()
+            .map(|exception| quote_spanned!(exception.span()=> .exception_type::<#exception>()));
         let class_registrations = classes
             .iter()
-            .map(|class| quote!(.class::<#class>()));
+            .map(|class| quote!(.class::<#class>()?));
         let receiver = if needs_state { quote!(self) } else { quote!() };
         let state = if needs_state {
             quote!(let __guestpy_state = ::std::rc::Rc::new(self);)
@@ -691,32 +661,35 @@ make it non-async, or make it receiverless
         let backend_type = backend.ty();
         let method_generics = backend.method_generics();
 
-        let method_where_clause = bounds
-            .predicate()
-            .map(|predicate| {
-                let class_definition_bounds = classes.iter().map(|class| {
+        let method_where_clause = bounds.predicate().map(|predicate| {
+            let class_definition_bounds = classes.iter().map(|class| {
                     quote!(#class: #crate_path::host::class::HostClassDefinition<#backend_type>,)
                 });
 
-                quote! {
-                    where
-                        #predicate,
-                        #(#class_definition_bounds)*
-                }
-            });
+            quote! {
+                where
+                    #predicate,
+                    #(#class_definition_bounds)*
+            }
+        });
 
         quote! {
             impl #impl_generics #target #where_clause {
                 pub fn #method_name #method_generics (#receiver)
-                    -> #crate_path::host::module::ModuleSpec<#backend_type>
+                    -> ::core::result::Result<
+                        #crate_path::host::module::ModuleSpec<#backend_type>,
+                        #crate_path::errors::Error,
+                    >
                 #method_where_clause
                 {
                     #state
 
-                    #crate_path::host::module::ModuleSpec::<#backend_type>::new(#name)
-                        #(#registrations)*
-                        #(#exception_registrations)*
-                        #(#class_registrations)*
+                    ::core::result::Result::Ok(
+                        #crate_path::host::module::ModuleSpec::<#backend_type>::new(#name)
+                            #(#registrations)*
+                            #(#exception_registrations)*
+                            #(#class_registrations)*
+                    )
                 }
             }
         }
@@ -780,10 +753,10 @@ mod tests {
         assert!(output.contains(". function (\"hypot\""));
         assert!(output.contains(". getter (\"version\""));
         assert!(output.contains(". init ("));
-        assert!(output.contains(". exception (\"GeometryError\""));
+        assert!(output.contains(". exception_type :: < GeometryError > ()"));
         assert!(output.contains(". class :: < Vector2 > ()"));
         assert!(output.contains("BackendClasses"));
-        assert!(output.contains("BackendExceptions"));
+        assert!(output.contains("BackendModules"));
         assert!(output.contains(". finish () ?"));
     }
 
@@ -873,8 +846,9 @@ mod tests {
         );
 
         assert!(output.contains("pub fn module < B > ()"));
-        assert!(output.contains(". exception (\"GeometryError\""));
-        assert!(output.contains("BackendExceptions"));
+        assert!(output.contains(". exception_type :: < GeometryError > ()"));
+        assert!(output.contains("BackendModules"));
+        assert!(!output.contains("BackendExceptions"));
     }
 
     #[test]
@@ -1014,6 +988,11 @@ mod tests {
         );
 
         assert!(output.contains("+ InterpreterBackend"));
-        assert_eq!(output.matches("InterpreterBackend").count(), 2);
+        assert_eq!(
+            output
+                .matches("InterpreterBackend")
+                .count(),
+            2
+        );
     }
 }

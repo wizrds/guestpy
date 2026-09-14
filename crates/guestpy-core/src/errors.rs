@@ -1,10 +1,13 @@
 use std::{
-    any::Any,
+    any::{Any, TypeId},
     error::Error as StdError,
     fmt::{self, Debug, Display, Formatter},
 };
 
-use crate::backend::Backend;
+use crate::{
+    backend::{Backend, BackendValues, Tok, Val},
+    catalog::RealisationCache,
+};
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub enum BorrowKind {
@@ -63,12 +66,41 @@ impl Debug for ErasedOwned {
     }
 }
 
+pub struct ErasedRaise {
+    class: String,
+    payload: Box<dyn Any>,
+}
+
+impl ErasedRaise {
+    pub(crate) fn new(class: String, payload: Box<dyn Any>) -> Self {
+        Self { class, payload }
+    }
+
+    pub fn class(&self) -> &str {
+        &self.class
+    }
+
+    pub(crate) fn into_payload(self) -> Box<dyn Any> {
+        self.payload
+    }
+}
+
+impl Debug for ErasedRaise {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ErasedRaise")
+            .field("class", &self.class)
+            .finish_non_exhaustive()
+    }
+}
+
 pub struct GuestException {
     type_name: String,
     qualified_name: String,
     message: String,
     name: Option<String>,
     mro: Vec<String>,
+    typed_mro: Vec<TypeId>,
     traceback: Option<String>,
     object: Option<ErasedOwned>,
 }
@@ -90,9 +122,80 @@ impl GuestException {
             message,
             name,
             mro,
+            typed_mro: Vec::new(),
             traceback,
             object,
         }
+    }
+
+    pub(crate) fn describe<'py, B>(
+        token: Tok<'py, B>,
+        exception: Val<'py, B>,
+        traceback: Option<String>,
+    ) -> Self
+    where
+        B: Backend + BackendValues,
+    {
+        let class = B::get_attr(token, &exception, "__class__").ok();
+        let type_name = class
+            .as_ref()
+            .and_then(|class| B::get_attr(token, class, "__name__").ok())
+            .and_then(|name| B::as_str(token, &name).ok())
+            .unwrap_or_else(|| String::from("Exception"));
+        let qualified_name = class
+            .as_ref()
+            .and_then(|class| {
+                Some((
+                    B::get_attr(token, class, "__module__").ok()?,
+                    B::get_attr(token, class, "__qualname__").ok()?,
+                ))
+            })
+            .and_then(|(module, qualname)| {
+                Some((B::as_str(token, &module).ok()?, B::as_str(token, &qualname).ok()?))
+            })
+            .map(|(module, qualname)| format!("{module}.{qualname}"))
+            .unwrap_or_else(|| type_name.clone());
+        let message = B::display(token, &exception).unwrap_or_else(|_| type_name.clone());
+        let name = B::get_attr(token, &exception, "name")
+            .ok()
+            .filter(|name| !B::is_none(token, name))
+            .and_then(|name| B::display(token, &name).ok());
+        let mro = class
+            .as_ref()
+            .and_then(|class| B::get_attr(token, class, "__mro__").ok())
+            .and_then(|mro| B::iter(token, &mro).ok())
+            .map(|iterator| {
+                let mut classes = Vec::new();
+
+                while let Ok(Some(class)) = B::next(token, &iterator) {
+                    if let Some((module, qualname)) = B::get_attr(token, &class, "__module__")
+                        .ok()
+                        .and_then(|module| {
+                            Some((
+                                B::as_str(token, &module).ok()?,
+                                B::get_attr(token, &class, "__qualname__")
+                                    .ok()
+                                    .and_then(|qualname| B::as_str(token, &qualname).ok())?,
+                            ))
+                        })
+                    {
+                        classes.push(format!("{module}.{qualname}"));
+                    }
+                }
+
+                classes
+            })
+            .unwrap_or_default();
+
+        Self::new(
+            type_name,
+            qualified_name,
+            message,
+            name,
+            mro,
+            traceback,
+            Some(ErasedOwned::new::<B>(B::detach(token, exception))),
+        )
     }
 
     pub fn type_name(&self) -> &str {
@@ -124,6 +227,14 @@ impl GuestException {
         })
     }
 
+    pub(crate) fn identify(&mut self, types: Vec<TypeId>) {
+        self.typed_mro = types;
+    }
+
+    pub(crate) fn matches_type(&self, id: TypeId) -> bool {
+        self.typed_mro.contains(&id)
+    }
+
     pub fn object<B: Backend>(&self) -> Option<&B::Owned> {
         self.object.as_ref()?.get::<B>()
     }
@@ -153,6 +264,9 @@ impl Debug for GuestException {
 pub enum Error {
     #[error("guest exception: {0}")]
     Guest(Box<GuestException>),
+
+    #[error("raised {}", .0.class())]
+    Raise(Box<ErasedRaise>),
 
     #[error("engine error: {message}")]
     Engine {
@@ -297,6 +411,17 @@ impl Error {
         }
     }
 
+    pub(crate) fn resolve_exception_types<B: Backend>(
+        mut self,
+        realisation: &RealisationCache<B>,
+    ) -> Self {
+        if let Self::Guest(exception) = &mut self {
+            exception.identify(realisation.exception_types(exception));
+        }
+
+        self
+    }
+
     pub fn is_fatal(&self) -> bool {
         matches!(self, Self::Timeout | Self::Cancelled | Self::Interrupted | Self::Closed)
     }
@@ -346,7 +471,8 @@ impl ::serde::de::Error for Error {
 
 #[cfg(test)]
 mod tests {
-    use super::{Error, GuestException};
+    use super::{ErasedRaise, Error, GuestException};
+    use crate::{backend::tests::Stub, catalog::RealisationCache};
 
     struct Errors;
 
@@ -369,6 +495,8 @@ mod tests {
         }
     }
 
+    struct Payload;
+
     #[test]
     fn matches_is_subclass_aware() {
         let exception = Errors::value_error();
@@ -388,6 +516,15 @@ mod tests {
     }
 
     #[test]
+    fn raise_formats_without_its_payload() {
+        let error =
+            Error::Raise(Box::new(ErasedRaise::new("ExampleError".to_owned(), Box::new(Payload))));
+
+        assert_eq!(error.to_string(), "raised ExampleError");
+        assert_eq!(format!("{error:?}"), "Raise(ErasedRaise { class: \"ExampleError\", .. })",);
+    }
+
+    #[test]
     fn fatal_variants() {
         assert!(Error::Timeout.is_fatal());
         assert!(Error::Cancelled.is_fatal());
@@ -400,5 +537,13 @@ mod tests {
     fn stop_iteration_variants_are_not_fatal() {
         assert!(!Error::StopIteration.is_fatal());
         assert!(!Error::StopAsyncIteration.is_fatal());
+    }
+
+    #[test]
+    fn resolving_exception_types_preserves_non_guest_errors() {
+        assert!(matches!(
+            Error::Closed.resolve_exception_types(&RealisationCache::<Stub>::new()),
+            Error::Closed,
+        ));
     }
 }

@@ -4,8 +4,8 @@ use std::{future::IntoFuture, marker::PhantomData};
 
 use crate::{
     backend::{
-        Backend, BackendCallables, BackendCoroutines, BackendExceptions, BackendInterrupt,
-        BackendModules, BackendValues,
+        Backend, BackendCallables, BackendCoroutines, BackendInterrupt, BackendModules,
+        BackendValues,
     },
     driver::CoroutineFuture,
     errors::Error,
@@ -47,7 +47,6 @@ where
         + BackendCallables
         + BackendModules
         + BackendCoroutines
-        + BackendExceptions
         + BackendInterrupt,
     T: FromGuest<B>,
 {
@@ -84,7 +83,6 @@ where
         + BackendCallables
         + BackendModules
         + BackendCoroutines
-        + BackendExceptions
         + BackendInterrupt,
     T: FromGuest<B>,
 {

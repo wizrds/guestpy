@@ -2,8 +2,7 @@ use std::{future::Future, rc::Rc};
 
 use crate::{
     backend::{
-        Backend, BackendCallables, BackendCoroutines, BackendExceptions, BackendModules,
-        BackendValues, Val,
+        Backend, BackendCallables, BackendCoroutines, BackendModules, BackendValues, Val,
         callables::{HostAsyncBody, HostBody, PendingValue},
     },
     errors::Error,
@@ -55,12 +54,7 @@ impl<B: Backend> AsyncFunctionDeclaration<B> {
 
 impl<B> DeclareMember<B> for AsyncFunctionDeclaration<B>
 where
-    B: Backend
-        + BackendValues
-        + BackendCallables
-        + BackendModules
-        + BackendCoroutines
-        + BackendExceptions,
+    B: Backend + BackendValues + BackendCallables + BackendModules + BackendCoroutines,
 {
     fn realise<'py>(
         &self,
@@ -106,12 +100,7 @@ where
 
 impl<B> HostFn<B>
 where
-    B: Backend
-        + BackendValues
-        + BackendCallables
-        + BackendModules
-        + BackendCoroutines
-        + BackendExceptions,
+    B: Backend + BackendValues + BackendCallables + BackendModules + BackendCoroutines,
 {
     pub fn new_async<F, Fut, R>(function: F) -> Self
     where

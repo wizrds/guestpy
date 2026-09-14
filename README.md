@@ -464,8 +464,24 @@ print(vector.length())
 
 Returning a host-class value to Rust preserves the live guest instance rather than cloning the Rust payload. Use `Instance<B, Vector2>::borrow_with` or `borrow_with_mut` when the host needs direct payload access; ordinary facade calls still use Python dispatch.
 
-The macro also supports mutable methods, class-level members, Python protocol methods, inheritance,
-and asynchronous host work. Refer to the API documentation when one of those capabilities is needed.
+### Subclassing
+
+A host class can inherit from other host classes and Python classes. List bases in Python MRO order;
+Rust types name host bases, while a `"module:qualname"` string names a Python base:
+
+```rust
+#[guestpy::host_class(
+    backend = B,
+    extends(Headers, "collections.abc:Mapping"),
+)]
+impl CaseInsensitiveHeaders {}
+```
+
+GuestPy resolves imported bases through the runtime's Python importer, so the resulting class follows
+the normal Python inheritance and metaclass rules.
+
+The macro also supports mutable methods, class-level members, Python protocol methods, and
+asynchronous host work. Refer to the API documentation when one of those capabilities is needed.
 
 ## Backend-generic host classes
 
@@ -595,6 +611,18 @@ let runtime = Runtime::<CPython>::builder()
 Bind one native module directly to a runtime or guest builder. Use `NativeLibrary` when that scope
 needs more than one native module or initializer.
 
+## Direct guest entry
+
+`Guest::enter` gives a synchronous `Enter<'py, B>` outside a host callback, for code that needs
+one but is not already running inside guest work, such as reconstructing a typed exception after
+a call returns:
+
+```rust
+let timeout = guest.enter(|enter| Ok(RequestTimeout::caught(enter, &exception)?))?;
+```
+
+It runs under the same timeout and cancellation policy as any other guest operation.
+
 ## Errors
 
 Every GuestPy operation returns `Result<T, guestpy::Error>`. Inspect a guest exception when Python
@@ -634,6 +662,97 @@ struct GeometryError;
 impl From<GeometryError> for guestpy::Error {
     fn from(error: GeometryError) -> Self {
         guestpy::Error::sourced_unexpected(error.to_string(), error)
+    }
+}
+```
+
+### Typed host exceptions
+
+Use a typed host exception when Python needs to catch a structured failure raised by Rust. Derive
+`HostException`, register it with the host module that exposes the operation, then return
+`Raise::host` from that operation:
+
+```rust
+use guestpy::prelude::*;
+
+#[derive(HostException)]
+#[guestpy(builtin = "TimeoutError")]
+struct RequestTimeout {
+    #[guestpy(arg)]
+    message: String,
+    request_id: String,
+}
+
+#[host_module(name = "http", exceptions(RequestTimeout))]
+impl Http {
+    #[guestpy(function)]
+    fn fetch<B>(request_id: String) -> Result<(), Error>
+    where
+        B: Backend,
+        String: ToGuest<B>,
+    {
+        Err(Raise::<B>::host(RequestTimeout {
+            message: "request timed out".to_owned(),
+            request_id,
+        })
+        .into())
+    }
+}
+```
+
+The registered exception behaves like an ordinary Python exception. Its `#[guestpy(arg)]` fields
+become constructor arguments, while its other fields become attributes:
+
+```python
+import http
+
+try:
+    http.fetch("request-1")
+except http.RequestTimeout as error:
+    assert error.args == ("request timed out",)
+    assert error.request_id == "request-1"
+```
+
+If Python does not catch the exception, Rust receives it as `Error::Guest`. Match the typed class
+without re-entering the guest:
+
+```rust
+match client.call::<_, Response>((request,)) {
+    Err(Error::Guest(exception))
+        if RequestTimeout::class().matches(&exception) =>
+    {
+        retry()
+    }
+    Err(Error::Guest(exception))
+        if ExceptionClass::builtin("KeyError").matches(&exception) =>
+    {
+        use_default()
+    }
+    result => result,
+}
+```
+
+When a host callback needs the structured fields again, request its existing entry context and
+reconstruct the typed exception there:
+
+```rust
+#[guestpy(function)]
+fn forward<B>(
+    #[guestpy(enter)] enter: &Enter<'_, B>,
+    client: Client<B>,
+) -> Result<Response<B>, Error>
+where
+    B: Backend + BackendValues,
+    RequestTimeout: FromRaised<B>,
+{
+    match client.send() {
+        Err(Error::Guest(exception)) => {
+            match RequestTimeout::caught(enter, &exception)? {
+                Some(timeout) => retry(timeout.request_id),
+                None => Err(Error::Guest(exception)),
+            }
+        }
+        result => result,
     }
 }
 ```

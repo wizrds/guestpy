@@ -7,11 +7,12 @@ use std::{
 };
 
 use crate::{
-    backend::{Backend, BackendCallables, BackendClasses, BackendValues},
+    backend::{Backend, BackendCallables, BackendClasses, BackendModules, BackendValues},
     errors::Error,
     handle::{
-        Handle, Object,
-        traits::{Annotated, HasHandle, IsType, Named, ObjectProtocol},
+        base::Handle,
+        object::Object,
+        traits::{Annotated, HasHandle, IsType, Named, ObjectProtocol, TypeProtocol},
     },
     host::class::{ClassSpec, HostClass, HostClassDefinition},
     marshal::{FromGuest, FromGuestMut, FromGuestRef, ToGuest, args::ToGuestArgs},
@@ -86,7 +87,7 @@ impl<B, R> Annotated<B> for Class<B, R> where B: Backend + BackendValues {}
 
 impl<B> Class<B>
 where
-    B: Backend + BackendValues + BackendCallables + BackendClasses,
+    B: Backend + BackendValues + BackendCallables + BackendClasses + BackendModules,
 {
     pub fn of<C>(enter: &Enter<'_, B>) -> Result<Class<B, Instance<B, C>>, Error>
     where
@@ -327,8 +328,14 @@ where
         let class = realised
             .realised_class(payload)
             .ok_or_else(|| Error::unexpected("host class was not realised"))?;
+        let class = B::attach(enter.token(), &class);
 
-        B::instantiate::<C>(enter.token(), &B::attach(enter.token(), &class), self)
+        let names = Class::<B>::from_guest(enter, class.clone())?.abstract_methods()?;
+        if !names.is_empty() {
+            return Err(ClassSpec::<B>::abstract_error(C::NAME, &names));
+        }
+
+        B::instantiate::<C>(enter.token(), &class, self)
     }
 }
 

@@ -172,6 +172,20 @@ where
         Realiser::new(self.enter).module(dotted)
     }
 
+    pub(crate) fn external(&self, dotted: &str) -> Result<B::Value<'py>, Error> {
+        self.leaf(self.delegate(dotted, None, None, None, None)?, dotted)
+    }
+
+    pub(crate) fn qualified(
+        &self,
+        module: &B::Value<'py>,
+        qualname: &str,
+    ) -> Result<B::Value<'py>, Error> {
+        qualname
+            .split('.')
+            .try_fold(module.clone(), |value, name| B::get_attr(self.enter.token(), &value, name))
+    }
+
     pub(crate) fn dispatch(&self, args: &Args<'py, B>) -> Result<B::Value<'py>, Error> {
         let name = args.required::<String>(self.enter, 0, "name")?;
         let globals = self.optional(args, 1, "globals")?;

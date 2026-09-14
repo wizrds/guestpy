@@ -117,8 +117,8 @@ pub mod fixtures {
     use std::collections::HashMap;
 
     use super::{
-        Backend, BackendCallables, BackendClasses, BackendCoroutines, BackendExceptions,
-        BackendInterrupt, BackendModules, BackendValues,
+        Backend, BackendCallables, BackendClasses, BackendCoroutines, BackendInterrupt,
+        BackendModules, BackendValues,
     };
     use crate::{
         errors::Error,
@@ -136,7 +136,6 @@ pub mod fixtures {
             BackendClasses,
             BackendModules,
             BackendCoroutines,
-            BackendExceptions,
             BackendInterrupt,
         ]
         using Runtime::<B>::builder();
@@ -163,7 +162,6 @@ def double(n):
             BackendClasses,
             BackendModules,
             BackendCoroutines,
-            BackendExceptions,
             BackendInterrupt,
         ]
         using Runtime::<B>::builder();
@@ -266,7 +264,7 @@ pub(crate) mod tests {
         BackendInterrupt, BackendLibrary, NoNativeExtensions, Step, Tok, Val, callables::RawBody,
         modules::BackendModules, values::BackendValues,
     };
-    use crate::errors::{Error, GuestException};
+    use crate::errors::Error;
 
     pub(crate) struct Stub;
 
@@ -644,26 +642,7 @@ pub(crate) mod tests {
     }
 
     impl BackendExceptions for Stub {
-        type Raw = ();
-
-        fn take_error<'py>(_: Tok<'py, Self>, _: Self::Raw) -> GuestException {
-            unimplemented!()
-        }
-        fn raise<'py>(_: Tok<'py, Self>, _: Error) -> Self::Raw {
-            unimplemented!()
-        }
-        fn exception_object<'py>(_: Tok<'py, Self>, _: Error) -> Result<Val<'py, Self>, Error> {
-            unimplemented!()
-        }
-        fn exception_class<'py>(_: Tok<'py, Self>, _: &str) -> Result<Val<'py, Self>, Error> {
-            unimplemented!()
-        }
-        fn new_exception_class<'py>(
-            _: Tok<'py, Self>,
-            _: &str,
-            _: &str,
-            _: Option<&Val<'py, Self>>,
-        ) -> Result<Val<'py, Self>, Error> {
+        fn traceback<'py>(_: Tok<'py, Self>, _: &Val<'py, Self>) -> Option<String> {
             unimplemented!()
         }
     }
@@ -745,12 +724,7 @@ pub(crate) mod tests {
         type Ref<'a, C: 'static> = &'a C;
         type RefMut<'a, C: 'static> = &'a mut C;
 
-        fn new_class<'py>(
-            _: Tok<'py, Self>,
-            _: &str,
-            _: &[Val<'py, Self>],
-            _: &Val<'py, Self>,
-        ) -> Result<Val<'py, Self>, Error> {
+        fn native_base<'py>(_: Tok<'py, Self>) -> Val<'py, Self> {
             unimplemented!()
         }
         fn alloc<'py, C: 'static>(

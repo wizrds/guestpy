@@ -3,11 +3,13 @@ use proc_macro2::TokenStream;
 mod backend;
 mod callable;
 mod class;
+mod exception;
 mod module;
 mod target;
 mod types;
 
 pub(crate) use class::HostClassMacro;
+pub(crate) use exception::HostExceptionDerive;
 pub(crate) use module::HostModuleMacro;
 
 #[derive(Debug)]

@@ -11,8 +11,12 @@ use std::{
 use crate::{
     backend::Backend,
     bundle::{Bundle, BundleId},
+    errors::GuestException,
     host::{
-        class::ClassSpec, exception::ExceptionSpec, library::HostInitializer, module::ModuleSpec,
+        class::{ClassBase, ClassSpec},
+        exception::{ExceptionKey, ExceptionSpec},
+        library::HostInitializer,
+        module::ModuleSpec,
     },
     native::{NativeInitializer, NativeModule},
 };
@@ -123,7 +127,7 @@ impl<B: Backend> Catalog<B> {
 
 pub(crate) struct RealisationCache<B: Backend> {
     classes: Interned<B, TypeId, ClassSpec<B>>,
-    exceptions: Interned<B, (String, String), ExceptionSpec>,
+    exceptions: Interned<B, ExceptionKey, ExceptionSpec>,
     code: RefCell<HashMap<(BundleId, String), B::Owned>>,
 }
 
@@ -147,7 +151,9 @@ impl<B: Backend> RealisationCache<B> {
             .intern(payload, spec.clone());
 
         for base in spec.bases() {
-            self.absorb_class(base);
+            if let ClassBase::Host(base) = base {
+                self.absorb_class(base);
+            }
         }
     }
 
@@ -158,7 +164,7 @@ impl<B: Backend> RealisationCache<B> {
 
         for spec in module.exceptions() {
             self.exceptions
-                .intern((spec.module().to_owned(), spec.name().to_owned()), spec.clone());
+                .intern(spec.key().clone(), spec.clone());
         }
     }
 
@@ -192,33 +198,55 @@ impl<B: Backend> RealisationCache<B> {
             .set_realised(&payload, owned);
     }
 
-    pub(crate) fn exception_registered(&self, module: &str, name: &str) -> bool {
-        self.exceptions
-            .contains(&(module.to_owned(), name.to_owned()))
+    pub(crate) fn realised_exception(&self, key: &ExceptionKey) -> Option<B::Owned> {
+        self.exceptions.realised(key)
     }
 
-    pub(crate) fn realised_exception(&self, module: &str, name: &str) -> Option<B::Owned> {
-        self.exceptions
-            .realised(&(module.to_owned(), name.to_owned()))
+    pub(crate) fn set_realised_exception(&self, key: &ExceptionKey, owned: B::Owned) {
+        self.exceptions.set_realised(key, owned);
     }
 
-    pub(crate) fn set_realised_exception(&self, module: &str, name: &str, owned: B::Owned) {
-        self.exceptions
-            .set_realised(&(module.to_owned(), name.to_owned()), owned);
+    pub(crate) fn exception_spec(&self, key: &ExceptionKey) -> Option<Rc<ExceptionSpec>> {
+        self.exceptions.spec(key)
     }
 
-    pub(crate) fn exception_spec(&self, module: &str, name: &str) -> Option<Rc<ExceptionSpec>> {
+    pub(crate) fn exception_types(&self, exception: &GuestException) -> Vec<TypeId> {
         self.exceptions
-            .spec(&(module.to_owned(), name.to_owned()))
+            .entries
+            .borrow()
+            .iter()
+            .filter_map(|(key, entry)| {
+                let ExceptionKey::Typed { id, .. } = key else {
+                    return None;
+                };
+
+                exception
+                    .matches(&format!("{}.{}", entry.spec.module(), entry.spec.name(),))
+                    .then_some(*id)
+            })
+            .collect()
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::rc::Rc;
+    use std::{any::TypeId, rc::Rc};
 
-    use super::Interned;
-    use crate::backend::tests::Stub;
+    use super::{Interned, RealisationCache};
+    use crate::{
+        backend::tests::Stub,
+        errors::GuestException,
+        host::{
+            exception::{ExceptionKey, HostException},
+            module::ModuleSpec,
+        },
+    };
+
+    struct Example;
+
+    impl HostException for Example {
+        const NAME: &'static str = "Example";
+    }
 
     #[test]
     fn interned_keeps_the_first_specification() {
@@ -240,5 +268,43 @@ mod tests {
 
         assert!(interned.realised(&"first").is_none());
         assert!(interned.realised(&"second").is_some());
+    }
+
+    #[test]
+    fn exceptions_keep_their_first_registration() {
+        let realisation = RealisationCache::<Stub>::new();
+        let key = ExceptionKey::Typed {
+            id: TypeId::of::<Example>(),
+            name: Example::NAME,
+        };
+
+        realisation.absorb(&ModuleSpec::new("mod_a").exception_type::<Example>());
+        realisation.set_realised_exception(&key, ());
+        realisation.absorb(&ModuleSpec::new("mod_b").exception_type::<Example>());
+
+        assert_eq!(
+            realisation
+                .exception_spec(&key)
+                .map(|spec| spec.module().to_owned())
+                .as_deref(),
+            Some("mod_a"),
+        );
+        assert!(
+            realisation
+                .realised_exception(&key)
+                .is_some()
+        );
+        assert_eq!(
+            realisation.exception_types(&GuestException::new(
+                String::from("Example"),
+                String::from("mod_a.Example"),
+                String::from("example"),
+                None,
+                vec![String::from("mod_a.Example")],
+                None,
+                None,
+            )),
+            vec![TypeId::of::<Example>()],
+        );
     }
 }

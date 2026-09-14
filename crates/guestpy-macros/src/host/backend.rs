@@ -2,17 +2,8 @@ use darling::FromMeta;
 use proc_macro2::TokenStream;
 use quote::{ToTokens, quote};
 use syn::{
-    GenericParam,
-    Generics,
-    Ident,
-    ItemImpl,
-    Meta,
-    MetaList,
-    Token,
-    Type,
-    TypeParam,
-    TypeParamBound,
-    WherePredicate,
+    GenericParam, Generics, Ident, ItemImpl, Meta, MetaList, Token, Type, TypeParam,
+    TypeParamBound, WherePredicate,
     parse::{ParseStream, Parser},
     parse_quote,
     punctuated::Punctuated,
@@ -111,12 +102,10 @@ impl BackendParameter {
             .into());
         }
 
-        Ok(Self::Synthesized(
-            match Self::declares_parameter(&item.generics, "B") {
-                true => parse_quote!(__GuestpyBackend),
-                false => parse_quote!(B),
-            },
-        ))
+        Ok(Self::Synthesized(match Self::declares_parameter(&item.generics, "B") {
+            true => parse_quote!(__GuestpyBackend),
+            false => parse_quote!(B),
+        }))
     }
 
     fn parameters(generics: &Generics) -> impl Iterator<Item = &TypeParam> {
@@ -136,14 +125,17 @@ impl BackendParameter {
     fn backend_bounded_parameter(generics: &Generics) -> Option<Ident> {
         Self::parameters(generics)
             .find(|parameter| {
-                parameter.bounds.iter().any(|bound| match bound {
-                    syn::TypeParamBound::Trait(bound) => bound
-                        .path
-                        .segments
-                        .last()
-                        .is_some_and(|segment| segment.ident == "Backend"),
-                    _ => false,
-                })
+                parameter
+                    .bounds
+                    .iter()
+                    .any(|bound| match bound {
+                        syn::TypeParamBound::Trait(bound) => bound
+                            .path
+                            .segments
+                            .last()
+                            .is_some_and(|segment| segment.ident == "Backend"),
+                        _ => false,
+                    })
             })
             .map(|parameter| parameter.ident.clone())
     }
@@ -195,7 +187,9 @@ impl BackendParameter {
         let mut definition = generics.clone();
 
         if let Self::Synthesized(ident) | Self::Introduced(ident) = self {
-            definition.params.push(parse_quote!(#ident));
+            definition
+                .params
+                .push(parse_quote!(#ident));
         }
 
         if let Some(predicate) = bounds.predicate() {
@@ -215,10 +209,7 @@ pub(crate) struct BackendBounds {
 }
 
 impl BackendBounds {
-    pub(crate) fn new(
-        backend: &BackendParameter,
-        capabilities: Vec<TypeParamBound>,
-    ) -> Self {
+    pub(crate) fn new(backend: &BackendParameter, capabilities: Vec<TypeParamBound>) -> Self {
         Self {
             parameter: backend.named().cloned(),
             bounds: capabilities,

@@ -13,11 +13,13 @@ pub use guestpy_core::{
     guest::*,
     handle::*,
     host::{class::*, dunder::*, exception::*, iter::*, library::*, module::*},
-    marshal::{args::*, collections::*, primitives::*},
+    marshal::{FromException, args::*, collections::*, primitives::*},
     native::*,
     policy::*,
     runtime::*,
     scope::*,
 };
 
-pub use guestpy_macros::{FromGuest, ToGuest, guest_class, guest_module, host_class, host_module};
+pub use guestpy_macros::{
+    FromGuest, HostException, ToGuest, guest_class, guest_module, host_class, host_module,
+};

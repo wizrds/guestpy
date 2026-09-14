@@ -5,7 +5,7 @@ use std::{
 
 use crate::{
     backend::{
-        Backend, BackendExceptions, BackendValues,
+        Backend, BackendValues,
         callables::{HostFuture, PendingResult},
     },
     errors::Error,
@@ -123,12 +123,7 @@ impl<B: Backend + BackendValues> PendingHostFutures<B> {
     pub(crate) fn poll_all_now(&self) {
         self.poll_all(&mut Context::from_waker(Waker::noop()));
     }
-}
 
-impl<B> PendingHostFutures<B>
-where
-    B: Backend + BackendValues + BackendExceptions,
-{
     pub(crate) fn publish<'py>(&self, enter: &Enter<'py, B>) -> Result<(), Error> {
         let ready = self.state.borrow_mut().drain_ready();
 
@@ -161,7 +156,10 @@ where
                     B::call(
                         enter.token(),
                         &B::get_attr(enter.token(), &future, "set_exception")?,
-                        &[B::exception_object(enter.token(), error)?],
+                        &[enter
+                            .guest()
+                            .errors()
+                            .exception(enter, error)],
                         &[],
                     )?;
                 }

@@ -330,6 +330,18 @@ where
         self.get::<Vec<Class<B>>>("__mro__")
     }
 
+    fn abstract_methods(&self) -> Result<Vec<String>, Error> {
+        if !self.has("__abstractmethods__")? {
+            return Ok(Vec::new());
+        }
+
+        let mut names = self.get::<Vec<String>>("__abstractmethods__")?;
+
+        names.sort();
+
+        Ok(names)
+    }
+
     fn is_subclass_of<R>(&self, class: &Class<B, R>) -> Result<bool, Error> {
         self.handle()
             .with_enter(|enter, subclass| {

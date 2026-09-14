@@ -130,8 +130,8 @@ pub trait BackendValues: Backend {
 pub mod fixtures {
     use crate::{
         backend::{
-            Backend, BackendCallables, BackendClasses, BackendCoroutines, BackendExceptions,
-            BackendInterrupt, BackendModules, BackendValues, guest_fixture,
+            Backend, BackendCallables, BackendClasses, BackendCoroutines, BackendInterrupt,
+            BackendModules, BackendValues, guest_fixture,
         },
         runtime::Runtime,
     };
@@ -145,7 +145,6 @@ pub mod fixtures {
             BackendClasses,
             BackendModules,
             BackendCoroutines,
-            BackendExceptions,
             BackendInterrupt,
         ]
         using Runtime::<B>::builder();
@@ -174,7 +173,6 @@ pub mod fixtures {
             BackendClasses,
             BackendModules,
             BackendCoroutines,
-            BackendExceptions,
             BackendInterrupt,
         ]
         using Runtime::<B>::builder();

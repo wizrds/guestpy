@@ -6,8 +6,8 @@ use futures::{Stream, StreamExt};
 
 use crate::{
     backend::{
-        Backend, BackendCallables, BackendClasses, BackendCoroutines, BackendExceptions,
-        BackendModules, BackendValues, callables::PendingValue,
+        Backend, BackendCallables, BackendClasses, BackendCoroutines, BackendModules,
+        BackendValues, callables::PendingValue,
     },
     errors::Error,
     handle::Value,
@@ -77,7 +77,16 @@ where
 
         B::instantiate::<Self>(
             enter.token(),
-            &B::new_class(enter.token(), "HostIter", &[], &namespace)?,
+            &B::call(
+                enter.token(),
+                &B::get_attr(enter.token(), &B::native_base(enter.token()), "__class__")?,
+                &[
+                    B::str(enter.token(), "HostIter"),
+                    B::tuple(enter.token(), vec![B::native_base(enter.token())])?,
+                    namespace,
+                ],
+                &[],
+            )?,
             self,
         )
     }
@@ -101,8 +110,7 @@ where
         + BackendCallables
         + BackendClasses
         + BackendModules
-        + BackendCoroutines
-        + BackendExceptions,
+        + BackendCoroutines,
     T: ToGuest<B> + 'static,
 {
     fn to_guest<'py>(self, enter: &Enter<'py, B>) -> Result<B::Value<'py>, Error> {
@@ -159,7 +167,16 @@ where
 
         B::instantiate::<Self>(
             enter.token(),
-            &B::new_class(enter.token(), "HostStream", &[], &namespace)?,
+            &B::call(
+                enter.token(),
+                &B::get_attr(enter.token(), &B::native_base(enter.token()), "__class__")?,
+                &[
+                    B::str(enter.token(), "HostStream"),
+                    B::tuple(enter.token(), vec![B::native_base(enter.token())])?,
+                    namespace,
+                ],
+                &[],
+            )?,
             self,
         )
     }

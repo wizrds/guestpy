@@ -7,8 +7,10 @@ use crate::{
     bundle::Bundle,
     catalog::{Catalog, RealisationCache},
     errors::Error,
+    guest::{ExceptionRaiser, GuestErrorHandler},
     guest::{GuestBuilder, GuestInner, GuestRegistry},
     host::{
+        exception::FatalExceptions,
         library::{HostInitializer, HostLibrary, HostLibraryEntry},
         module::ModuleSpec,
     },
@@ -20,6 +22,7 @@ pub(crate) struct RuntimeInner<B: Backend> {
     engine: B::Engine,
     catalog: Catalog<B>,
     realisation: RealisationCache<B>,
+    errors: Box<dyn GuestErrorHandler<B>>,
     registry: GuestRegistry<B>,
     next_id: Cell<u64>,
     policy: ExecutionPolicy,
@@ -42,6 +45,10 @@ impl<B: Backend> RuntimeInner<B> {
 
     pub(crate) fn realisation(&self) -> &RealisationCache<B> {
         &self.realisation
+    }
+
+    pub(crate) fn errors(&self) -> &dyn GuestErrorHandler<B> {
+        &*self.errors
     }
 
     pub(crate) fn registry(&self) -> &GuestRegistry<B> {
@@ -191,6 +198,8 @@ where
     B: Backend + BackendValues + BackendCallables + BackendModules,
 {
     pub fn build(self) -> Result<Runtime<B>, Error> {
+        FatalExceptions::reserve(&self.modules)?;
+
         let engine = B::engine(self.config)?;
         let real_import =
             B::enter(&engine, |token| Ok::<_, Error>(B::detach(token, B::real_import(token)?)))?;
@@ -204,6 +213,8 @@ where
         );
         let realisation = RealisationCache::new();
 
+        realisation.absorb(&FatalExceptions::spec());
+
         for module in catalog.modules() {
             realisation.absorb(module);
         }
@@ -212,6 +223,7 @@ where
             engine,
             catalog,
             realisation,
+            errors: Box::new(ExceptionRaiser::new()),
             registry: GuestRegistry::new(),
             next_id: Cell::new(1),
             policy: self.policy,
@@ -234,7 +246,12 @@ where
 #[cfg(test)]
 mod tests {
     use super::Runtime;
-    use crate::{backend::tests::Stub, bundle::Bundle, host::module::ModuleSpec};
+    use crate::{
+        backend::tests::Stub,
+        bundle::Bundle,
+        errors::Error,
+        host::{exception::FatalExceptions, module::ModuleSpec},
+    };
 
     #[allow(dead_code)]
     fn builder_chain() {
@@ -253,5 +270,15 @@ mod tests {
 
         drop(guest);
         drop(runtime);
+    }
+
+    #[test]
+    fn build_rejects_a_module_named_like_the_fatal_exceptions() {
+        assert!(matches!(
+            Runtime::<Stub>::builder()
+                .bind(ModuleSpec::new(FatalExceptions::MODULE))
+                .build(),
+            Err(Error::NameInUse { name }) if name == FatalExceptions::MODULE,
+        ));
     }
 }

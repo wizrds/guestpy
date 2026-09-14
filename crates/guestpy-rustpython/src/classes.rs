@@ -68,32 +68,10 @@ impl BackendClasses for RustPython {
     type Ref<'a, C: 'static> = Ref<'a, C>;
     type RefMut<'a, C: 'static> = RefMut<'a, C>;
 
-    fn new_class<'py>(
-        vm: Tok<'py, Self>,
-        name: &str,
-        bases: &[Val<'py, Self>],
-        namespace: &Val<'py, Self>,
-    ) -> Result<Val<'py, Self>, Error> {
-        vm.builtins
-            .get_attr("type", vm)
-            .map_err(|error| RustPython::guest(vm, error))?
-            .call(
-                (
-                    vm.ctx.new_str(name),
-                    vm.ctx.new_tuple(if bases.is_empty() {
-                        vec![
-                            HostBase::class(&vm.ctx)
-                                .to_owned()
-                                .into(),
-                        ]
-                    } else {
-                        bases.to_vec()
-                    }),
-                    namespace.clone(),
-                ),
-                vm,
-            )
-            .map_err(|error| RustPython::guest(vm, error))
+    fn native_base<'py>(vm: Tok<'py, Self>) -> Val<'py, Self> {
+        HostBase::class(&vm.ctx)
+            .to_owned()
+            .into()
     }
 
     fn alloc<'py, C: 'static>(
@@ -273,16 +251,16 @@ mod tests {
                 .class_method("kind", |_, _, _| Ok::<_, Error>("vector"))
                 .static_method("zero", |_, _| Ok::<_, Error>((0.0_f64, 0.0_f64)))
                 .constant("DIMS", 2_i64)
-                .dunder(Dunder::Len, |_, _, _| Ok::<_, Error>(2_i64))
-                .dunder(Dunder::Repr, |vector, _, _| {
+                .method(Dunder::Len, |_, _, _| Ok::<_, Error>(2_i64))
+                .method(Dunder::Repr, |vector, _, _| {
                     Ok::<_, Error>(format!("Vector2({}, {})", vector.x, vector.y))
                 })
-                .dunder(Dunder::Eq, |vector, enter, args| {
+                .method(Dunder::Eq, |vector, enter, args| {
                     let other = args.borrow::<Vector2>(enter, 0)?;
 
                     Ok::<_, Error>(other.x.eq(&vector.x) && other.y.eq(&vector.y))
                 })
-                .dunder(Dunder::GetItem, |vector, enter, args| {
+                .method(Dunder::GetItem, |vector, enter, args| {
                     match args.required::<i64>(enter, 0, "index")? {
                         0 => Ok::<_, Error>(vector.x),
                         1 => Ok::<_, Error>(vector.y),
@@ -297,7 +275,9 @@ mod tests {
 
     impl Geometry {
         fn module(name: &str) -> ModuleSpec<RustPython> {
-            ModuleSpec::new(name).class::<Vector2>()
+            ModuleSpec::new(name)
+                .class::<Vector2>()
+                .expect("Vector2 registers cleanly")
         }
 
         fn guest() -> (Runtime<RustPython>, Guest<RustPython>) {

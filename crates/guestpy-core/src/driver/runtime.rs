@@ -7,8 +7,8 @@ use std::{
 
 use crate::{
     backend::{
-        Backend, BackendCallables, BackendCoroutines, BackendExceptions, BackendModules,
-        BackendValues, Val, callables::HostFuture,
+        Backend, BackendCallables, BackendCoroutines, BackendModules, BackendValues, Val,
+        callables::HostFuture,
     },
     driver::{event_loop::EventLoop, host_futures::PendingHostFutures, progress::Progress},
     errors::Error,
@@ -105,12 +105,7 @@ where
 
 impl<B> AsyncDriver<B> for AsyncRuntime<B>
 where
-    B: Backend
-        + BackendValues
-        + BackendCallables
-        + BackendModules
-        + BackendCoroutines
-        + BackendExceptions,
+    B: Backend + BackendValues + BackendCallables + BackendModules + BackendCoroutines,
 {
     fn register_host_future<'py>(
         &self,
