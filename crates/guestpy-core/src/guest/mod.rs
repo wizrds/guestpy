@@ -134,18 +134,18 @@ where
         &self.activity
     }
 
-    pub(crate) fn enter<F, R>(self: &Rc<Self>, f: F) -> Result<R, Error>
-    where
-        F: for<'py> FnOnce(&Enter<'py, B>) -> Result<R, Error>,
-    {
-        self.enter_with(Activation::Operation, f)
-    }
-
     pub(crate) fn enter_cleanup<F, R>(self: &Rc<Self>, f: F) -> Result<R, Error>
     where
         F: for<'py> FnOnce(&Enter<'py, B>) -> Result<R, Error>,
     {
         self.enter_with(Activation::Cleanup, f)
+    }
+
+    pub(crate) fn enter<F, R>(self: &Rc<Self>, f: F) -> Result<R, Error>
+    where
+        F: for<'py> FnOnce(&Enter<'py, B>) -> Result<R, Error>,
+    {
+        self.enter_with(Activation::Operation, f)
     }
 }
 
@@ -265,13 +265,6 @@ impl<B: Backend> Clone for Guest<B> {
 }
 
 impl<B: Backend> Guest<B> {
-    pub(crate) fn enter<F, R>(&self, f: F) -> Result<R, Error>
-    where
-        F: for<'py> FnOnce(&Enter<'py, B>) -> Result<R, Error>,
-    {
-        self.inner.enter(f)
-    }
-
     pub(crate) fn enter_cleanup<F, R>(&self, f: F) -> Result<R, Error>
     where
         F: for<'py> FnOnce(&Enter<'py, B>) -> Result<R, Error>,
@@ -321,6 +314,13 @@ impl<B: Backend> Guest<B> {
 
     pub fn is_closed(&self) -> bool {
         self.inner.closed.get()
+    }
+
+    pub fn enter<F, R>(&self, f: F) -> Result<R, Error>
+    where
+        F: for<'py> FnOnce(&Enter<'py, B>) -> Result<R, Error>,
+    {
+        self.inner.enter(f)
     }
 }
 

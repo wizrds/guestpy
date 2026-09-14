@@ -611,6 +611,18 @@ let runtime = Runtime::<CPython>::builder()
 Bind one native module directly to a runtime or guest builder. Use `NativeLibrary` when that scope
 needs more than one native module or initializer.
 
+## Direct guest entry
+
+`Guest::enter` gives a synchronous `Enter<'py, B>` outside a host callback, for code that needs
+one but is not already running inside guest work, such as reconstructing a typed exception after
+a call returns:
+
+```rust
+let timeout = guest.enter(|enter| Ok(RequestTimeout::caught(enter, &exception)?))?;
+```
+
+It runs under the same timeout and cancellation policy as any other guest operation.
+
 ## Errors
 
 Every GuestPy operation returns `Result<T, guestpy::Error>`. Inspect a guest exception when Python
