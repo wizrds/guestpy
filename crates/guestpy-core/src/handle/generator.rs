@@ -10,15 +10,16 @@ use futures::Stream;
 
 use crate::{
     backend::{
-        Backend, BackendCallables, BackendCoroutines, BackendInterrupt, BackendModules,
-        BackendValues, BackendClasses, Step,
+        Backend, BackendCallables, BackendClasses, BackendCoroutines, BackendInterrupt,
+        BackendModules, BackendValues, Step,
     },
     driver::AsyncCursor,
     errors::Error,
     handle::{
         base::{Handle, Value},
-        iter::{Iter, AsyncIter},
-        traits::HasHandle},
+        iter::{AsyncIter, Iter},
+        traits::HasHandle,
+    },
     marshal::{FromGuest, ToGuest},
     scope::Enter,
 };
@@ -142,30 +143,21 @@ where
 
 pub struct AsyncGenerator<B, T>
 where
-    B: Backend
-        + BackendCoroutines
-        + BackendClasses
-        + BackendModules,
+    B: Backend + BackendCoroutines + BackendClasses + BackendModules,
 {
     handle: Handle<B>,
     cursor: AsyncCursor<B, T>,
     marker: PhantomData<fn() -> T>,
 }
 
-impl<B, T> Unpin for AsyncGenerator<B, T>
-where
-    B: Backend
-        + BackendCoroutines
-        + BackendClasses
-        + BackendModules,
-{}
+impl<B, T> Unpin for AsyncGenerator<B, T> where
+    B: Backend + BackendCoroutines + BackendClasses + BackendModules
+{
+}
 
 impl<B, T> AsyncGenerator<B, T>
 where
-    B: Backend
-        + BackendCoroutines
-        + BackendClasses
-        + BackendModules,
+    B: Backend + BackendCoroutines + BackendClasses + BackendModules,
 {
     fn from_handle(handle: Handle<B>) -> Self {
         Self {
@@ -178,11 +170,7 @@ where
 
 impl<B, T> AsyncGenerator<B, T>
 where
-    B: Backend
-        + BackendValues
-        + BackendCoroutines
-        + BackendClasses
-        + BackendModules,
+    B: Backend + BackendValues + BackendCoroutines + BackendClasses + BackendModules,
 {
     fn validate<'py>(enter: &Enter<'py, B>, value: &B::Value<'py>) -> Result<(), Error> {
         for method in ["__anext__", "asend", "athrow", "aclose"] {
@@ -277,10 +265,7 @@ where
 
 impl<B, T> ToGuest<B> for AsyncGenerator<B, T>
 where
-    B: Backend
-        + BackendCoroutines
-        + BackendClasses
-        + BackendModules,
+    B: Backend + BackendCoroutines + BackendClasses + BackendModules,
 {
     fn to_guest<'py>(self, enter: &Enter<'py, B>) -> Result<B::Value<'py>, Error> {
         Ok(B::attach(enter.token(), self.handle.owned()))

@@ -1,10 +1,10 @@
 use crate::{
-    backend::{Backend, BackendCoroutines, BackendClasses, BackendModules},
+    backend::{Backend, BackendClasses, BackendCoroutines, BackendModules},
+    driver::{AsyncStep, CoroutineFuture},
     errors::Error,
     guest::Guest,
-    driver::{AsyncStep, CoroutineFuture},
-    scope::{Scope, Enter},
-    marshal::{FromGuest, ToGuest}
+    marshal::{FromGuest, ToGuest},
+    scope::{Enter, Scope},
 };
 
 pub struct Handle<B: Backend> {
@@ -64,8 +64,9 @@ impl<B: Backend + BackendCoroutines + BackendClasses + BackendModules> Handle<B>
         R: FromGuest<B>,
     {
         AsyncStep::from(self.guest.enter(|enter| {
-            f(enter, &B::attach(enter.token(), &self.owned))
-                .map(|pending| CoroutineFuture::new(self.guest.clone(), B::detach(enter.token(), pending)))
+            f(enter, &B::attach(enter.token(), &self.owned)).map(|pending| {
+                CoroutineFuture::new(self.guest.clone(), B::detach(enter.token(), pending))
+            })
         }))
     }
 }

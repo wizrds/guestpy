@@ -65,11 +65,9 @@ where
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         Poll::Ready(Self::settle(match self.get_mut() {
             Self::Pending(future) => ready!(Pin::new(future).poll(cx)),
-            Self::Failed(error) => Err(
-                error
-                    .take()
-                    .expect("async step polled after completion")
-            ),
+            Self::Failed(error) => Err(error
+                .take()
+                .expect("async step polled after completion")),
         }))
     }
 }

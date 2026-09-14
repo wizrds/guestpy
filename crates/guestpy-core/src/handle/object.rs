@@ -2,11 +2,11 @@
 
 use crate::{
     backend::{
-        Backend, BackendCallables, BackendCoroutines, BackendInterrupt, BackendModules,
-        BackendValues, BackendClasses,
+        Backend, BackendCallables, BackendClasses, BackendCoroutines, BackendInterrupt,
+        BackendModules, BackendValues,
     },
     errors::Error,
-    handle::{base::Handle, traits::HasHandle, iter::AsyncIter},
+    handle::{base::Handle, iter::AsyncIter, traits::HasHandle},
     marshal::{FromGuest, ToGuest},
     scope::Enter,
 };

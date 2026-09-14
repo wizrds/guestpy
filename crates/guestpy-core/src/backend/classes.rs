@@ -76,8 +76,8 @@ pub mod fixtures {
             Named, Object, ObjectProtocol, TypeProtocol,
         },
         host::{
-            dunder::Dunder,
             class::{ClassBuilder, HostClass, HostClassDefinition},
+            dunder::Dunder,
             module::ModuleSpec,
         },
         marshal::args::Args,
@@ -1371,8 +1371,7 @@ def twice(value):
             + BackendExceptions,
     {
         assert!(matches!(
-            ModuleSpec::<B>::new("host_lib")
-                .class::<RejectsAsyncLen>(),
+            ModuleSpec::<B>::new("host_lib").class::<RejectsAsyncLen>(),
             Err(Error::Unsupported { .. })
         ));
     }

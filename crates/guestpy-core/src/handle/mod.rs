@@ -22,8 +22,6 @@ pub use self::{
     traits::{Annotated, GenericAlias, Named, ObjectProtocol, TypeProtocol},
 };
 
-
-
 #[cfg(test)]
 mod tests {
     use super::{

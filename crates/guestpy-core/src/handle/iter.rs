@@ -10,12 +10,15 @@ use futures::Stream;
 
 use crate::{
     backend::{
-        Backend, BackendCallables, BackendCoroutines, BackendInterrupt, BackendModules,
-        BackendValues, BackendClasses,
+        Backend, BackendCallables, BackendClasses, BackendCoroutines, BackendInterrupt,
+        BackendModules, BackendValues,
     },
     driver::AsyncCursor,
     errors::Error,
-    handle::{base::{Handle, Value}, traits::HasHandle},
+    handle::{
+        base::{Handle, Value},
+        traits::HasHandle,
+    },
     marshal::{FromGuest, ToGuest},
     scope::Enter,
 };
@@ -94,10 +97,7 @@ where
 
 pub struct AsyncIter<B, T>
 where
-    B: Backend
-        + BackendCoroutines
-        + BackendClasses
-        + BackendModules,
+    B: Backend + BackendCoroutines + BackendClasses + BackendModules,
 {
     handle: Handle<B>,
     cursor: AsyncCursor<B, T>,
@@ -115,10 +115,7 @@ where
 
 impl<B, T> AsyncIter<B, T>
 where
-    B: Backend
-        + BackendCoroutines
-        + BackendClasses
-        + BackendModules,
+    B: Backend + BackendCoroutines + BackendClasses + BackendModules,
 {
     pub(crate) fn from_handle(handle: Handle<B>) -> Self {
         Self {
@@ -129,13 +126,10 @@ where
     }
 }
 
-impl<B, T> Unpin for AsyncIter<B, T>
-where
-    B: Backend
-        + BackendCoroutines
-        + BackendClasses
-        + BackendModules,
-{}
+impl<B, T> Unpin for AsyncIter<B, T> where
+    B: Backend + BackendCoroutines + BackendClasses + BackendModules
+{
+}
 
 impl<B, T> AsyncIter<B, T>
 where
@@ -167,11 +161,7 @@ where
 
 impl<B, T> AsyncIter<B, T>
 where
-    B: Backend
-        + BackendValues
-        + BackendCoroutines
-        + BackendClasses
-        + BackendModules,
+    B: Backend + BackendValues + BackendCoroutines + BackendClasses + BackendModules,
 {
     pub(crate) fn validate<'py>(enter: &Enter<'py, B>, value: &B::Value<'py>) -> Result<(), Error> {
         match B::get_attr(enter.token(), value, "__anext__") {
@@ -183,11 +173,7 @@ where
 
 impl<B, T> FromGuest<B> for AsyncIter<B, T>
 where
-    B: Backend
-        + BackendValues
-        + BackendCoroutines
-        + BackendClasses
-        + BackendModules,
+    B: Backend + BackendValues + BackendCoroutines + BackendClasses + BackendModules,
     T: 'static,
 {
     type Owned = Self;
@@ -200,11 +186,7 @@ where
 
 impl<B, T> ToGuest<B> for AsyncIter<B, T>
 where
-    B: Backend
-        + BackendValues
-        + BackendCoroutines
-        + BackendClasses
-        + BackendModules,
+    B: Backend + BackendValues + BackendCoroutines + BackendClasses + BackendModules,
 {
     fn to_guest<'py>(self, enter: &Enter<'py, B>) -> Result<B::Value<'py>, Error> {
         Ok(B::attach(enter.token(), self.handle.owned()))
