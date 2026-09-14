@@ -405,6 +405,16 @@ where
 
 pub struct Iterable<T>(pub T);
 
+impl<T> Iterable<T> {
+    pub fn as_inner(&self) -> &T {
+        &self.0
+    }
+
+    pub fn into_inner(self) -> T {
+        self.0
+    }
+}
+
 impl<B, T> FromGuest<B> for Iterable<Vec<T>>
 where
     B: Backend + BackendValues,

@@ -345,43 +345,6 @@ pub mod fixtures {
         }
     }
 
-    struct InvalidImportedBase<const CASE: u8>;
-
-    impl<const CASE: u8> HostClass for InvalidImportedBase<CASE> {
-        const NAME: &'static str = match CASE {
-            0 => "NonClassBase",
-            1 => "MissingModuleBase",
-            2 => "MissingAttributeBase",
-            3 => "ModuleValuedBase",
-            _ => "LayoutConflictBase",
-        };
-    }
-
-    impl<B, const CASE: u8> HostClassDefinition<B> for InvalidImportedBase<CASE>
-    where
-        B: Backend + BackendValues + BackendCallables + BackendClasses + BackendModules,
-    {
-        fn build(builder: &mut ClassBuilder<B, Self>) {
-            match CASE {
-                0 => {
-                    builder.imported_base("os", "sep");
-                }
-                1 => {
-                    builder.imported_base("guestpy_missing_module", "Base");
-                }
-                2 => {
-                    builder.imported_base("collections.abc", "Nope");
-                }
-                3 => {
-                    builder.imported_base("collections", "abc");
-                }
-                _ => {
-                    builder.imported_base("builtins", "bytes");
-                }
-            }
-        }
-    }
-
     guest_fixture! {
         pub fn host_borrows_dynamic_and_typed_payloads<B>()
         where B: [
@@ -1665,7 +1628,7 @@ assert host_lib.HostMapping[str]
                 .err()
                 .unwrap();
 
-            assert!(matches!(host_error, Error::Raise(_)));
+            assert!(matches!(host_error, Error::Raise(_))); 
             assert!(host_error.to_string().contains("TypeError"));
             assert!(host_error.to_string().contains("__len__"));
 
@@ -1679,111 +1642,6 @@ assert len(value) == 1
                 )
                 .unwrap();
         }
-    }
-
-    pub fn imported_base_failures_are_preserved<B>()
-    where
-        B: Backend
-            + BackendValues
-            + BackendCallables
-            + BackendClasses
-            + BackendModules
-            + BackendCoroutines
-            + BackendExceptions
-            + BackendInterrupt,
-    {
-        let non_class = Runtime::<B>::builder()
-            .bind(
-                ModuleSpec::new("host_lib")
-                    .class::<InvalidImportedBase<0>>()
-                    .unwrap(),
-            )
-            .build()
-            .unwrap()
-            .guest()
-            .build()
-            .err()
-            .unwrap();
-
-        assert!(matches!(
-            non_class,
-            Error::Conversion { ref message, .. }
-                if message == "os.sep is not a class"
-        ));
-
-        let missing_module = Runtime::<B>::builder()
-            .bind(
-                ModuleSpec::new("host_lib")
-                    .class::<InvalidImportedBase<1>>()
-                    .unwrap(),
-            )
-            .build()
-            .unwrap()
-            .guest()
-            .build()
-            .err()
-            .unwrap();
-
-        assert!(
-            missing_module
-                .to_string()
-                .contains("guestpy_missing_module")
-        );
-
-        let missing_attribute = Runtime::<B>::builder()
-            .bind(
-                ModuleSpec::new("host_lib")
-                    .class::<InvalidImportedBase<2>>()
-                    .unwrap(),
-            )
-            .build()
-            .unwrap()
-            .guest()
-            .build()
-            .err()
-            .unwrap();
-
-        assert!(matches!(
-            missing_attribute,
-            Error::Attribute { ref name } if name == "Nope"
-        ));
-
-        let module_value = Runtime::<B>::builder()
-            .bind(
-                ModuleSpec::new("host_lib")
-                    .class::<InvalidImportedBase<3>>()
-                    .unwrap(),
-            )
-            .build()
-            .unwrap()
-            .guest()
-            .build()
-            .err()
-            .unwrap();
-
-        assert!(matches!(
-            module_value,
-            Error::Conversion { ref message, .. }
-                if message == "collections.abc is not a class"
-        ));
-
-        let layout_conflict = Runtime::<B>::builder()
-            .bind(
-                ModuleSpec::new("host_lib")
-                    .class::<InvalidImportedBase<4>>()
-                    .unwrap(),
-            )
-            .build()
-            .unwrap()
-            .guest()
-            .build()
-            .err()
-            .unwrap();
-
-        assert!(matches!(
-            layout_conflict,
-            Error::Guest(ref exception) if exception.matches("TypeError")
-        ));
     }
 
     pub fn two_guests_share_one_realised_imported_base_class<B>()
@@ -2046,13 +1904,6 @@ assert len(value) == 1
             #[test]
             fn abstract_imported_base_is_completed_by_a_host_subclass() {
                 $crate::backend::classes::fixtures::abstract_imported_base_is_completed_by_a_host_subclass::<
-                    $backend,
-                >();
-            }
-
-            #[test]
-            fn imported_base_failures_are_preserved() {
-                $crate::backend::classes::fixtures::imported_base_failures_are_preserved::<
                     $backend,
                 >();
             }

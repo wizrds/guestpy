@@ -7,6 +7,7 @@ use crate::{
     marshal::{
         FromGuest, ToGuest,
         args::{ToGuestArgs, ToGuestKwargs},
+        collections::Iterable,
     },
 };
 
@@ -335,7 +336,9 @@ where
             return Ok(Vec::new());
         }
 
-        let mut names = self.get::<Vec<String>>("__abstractmethods__")?;
+        let mut names = self
+            .get::<Iterable<Vec<String>>>("__abstractmethods__")?
+            .into_inner();
 
         names.sort();
 
