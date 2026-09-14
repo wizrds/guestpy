@@ -724,12 +724,7 @@ pub(crate) mod tests {
         type Ref<'a, C: 'static> = &'a C;
         type RefMut<'a, C: 'static> = &'a mut C;
 
-        fn new_class<'py>(
-            _: Tok<'py, Self>,
-            _: &str,
-            _: &[Val<'py, Self>],
-            _: &Val<'py, Self>,
-        ) -> Result<Val<'py, Self>, Error> {
+        fn native_base<'py>(_: Tok<'py, Self>) -> Val<'py, Self> {
             unimplemented!()
         }
         fn alloc<'py, C: 'static>(

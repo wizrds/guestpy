@@ -9,8 +9,9 @@ use guestpy_core::{
     errors::{BorrowKind, Error},
 };
 use pyo3::{
-    Bound, PyRef, PyRefMut, pyclass, pymethods,
-    types::{PyAnyMethods, PyGenericAlias, PyTuple, PyType, PyTypeMethods},
+    pyclass, pymethods,
+    types::{PyAnyMethods, PyGenericAlias, PyTuple, PyTypeMethods},
+    Bound, PyRef, PyRefMut,
 };
 
 use crate::{engine::CPython, errors::NativeErrors, marker::GilSerialized};
@@ -98,27 +99,8 @@ impl BackendClasses for CPython {
     type Ref<'a, C: 'static> = PayloadRef<'a, C>;
     type RefMut<'a, C: 'static> = PayloadRefMut<'a, C>;
 
-    fn new_class<'py>(
-        py: Tok<'py, Self>,
-        name: &str,
-        bases: &[Val<'py, Self>],
-        namespace: &Val<'py, Self>,
-    ) -> Result<Val<'py, Self>, Error> {
-        py.get_type::<PyType>()
-            .call1((
-                name,
-                PyTuple::new(
-                    py,
-                    if bases.is_empty() {
-                        vec![py.get_type::<HostObject>().into_any()]
-                    } else {
-                        bases.to_vec()
-                    },
-                )
-                .map_err(|error| CPython::guest(py, error))?,
-                namespace,
-            ))
-            .map_err(|error| CPython::guest(py, error))
+    fn native_base<'py>(py: Tok<'py, Self>) -> Val<'py, Self> {
+        py.get_type::<HostObject>().into_any()
     }
 
     fn alloc<'py, C: 'static>(

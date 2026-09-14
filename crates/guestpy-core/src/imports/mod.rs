@@ -172,6 +172,10 @@ where
         Realiser::new(self.enter).module(dotted)
     }
 
+    pub(crate) fn external(&self, dotted: &str) -> Result<B::Value<'py>, Error> {
+        self.leaf(self.delegate(dotted, None, None, None, None)?, dotted)
+    }
+
     pub(crate) fn qualified(
         &self,
         module: &B::Value<'py>,

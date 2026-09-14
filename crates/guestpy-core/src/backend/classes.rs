@@ -12,12 +12,7 @@ pub trait BackendClasses: Backend + BackendValues + BackendCallables {
     where
         Self: 'a;
 
-    fn new_class<'py>(
-        token: Tok<'py, Self>,
-        name: &str,
-        bases: &[Val<'py, Self>],
-        namespace: &Val<'py, Self>,
-    ) -> Result<Val<'py, Self>, Error>;
+    fn native_base<'py>(token: Tok<'py, Self>) -> Val<'py, Self>;
 
     fn alloc<'py, C: 'static>(
         token: Tok<'py, Self>,
@@ -78,9 +73,11 @@ pub mod fixtures {
         host::{
             class::{ClassBuilder, HostClass, HostClassDefinition},
             dunder::Dunder,
+            exception::{ExceptionClass, Raise},
+            iter::HostIter,
             module::ModuleSpec,
         },
-        marshal::args::Args,
+        marshal::{ToGuest, args::Args},
         runtime::Runtime,
         scope::Enter,
     };
@@ -200,6 +197,210 @@ pub mod fixtures {
                     Ok(format!("{}/{}", prefix, this.call_method::<_, String>("label", ())?,))
                 })
             });
+        }
+    }
+
+    struct HostMapping {
+        entries: HashMap<String, i64>,
+    }
+
+    impl HostClass for HostMapping {
+        const NAME: &'static str = "HostMapping";
+    }
+
+    impl<B> HostClassDefinition<B> for HostMapping
+    where
+        B: Backend
+            + BackendValues
+            + BackendCallables
+            + BackendClasses
+            + BackendModules,
+    {
+        fn construct<'py>(_: &Enter<'py, B>, args: Args<'py, B>) -> Result<Self, Error> {
+            args.finish()?;
+
+            Ok(Self {
+                entries: [(String::from("answer"), 42)].into_iter().collect(),
+            })
+        }
+
+        fn build(builder: &mut ClassBuilder<B, Self>) {
+            builder
+                .imported_base("collections.abc", "Mapping")
+                .method(Dunder::GetItem, |mapping, enter, args| {
+                    let key = args.required::<String>(enter, 0, "key")?;
+
+                    args.finish()?;
+
+                    mapping.entries.get(&key).copied().ok_or_else(|| {
+                        Error::from(
+                            Raise::<B>::new(ExceptionClass::builtin("KeyError")).arg(key),
+                        )
+                    })
+                })
+                .method(Dunder::Iter, |mapping, _, args| {
+                    args.finish()?;
+
+                    Ok::<_, Error>(HostIter::new(
+                        mapping
+                            .entries
+                            .keys()
+                            .cloned()
+                            .map(Ok)
+                            .collect::<Vec<_>>()
+                            .into_iter(),
+                    ))
+                })
+                .method(Dunder::Len, |mapping, _, args| {
+                    args.finish()?;
+
+                    Ok::<_, Error>(mapping.entries.len())
+                })
+                .generic();
+        }
+    }
+
+    struct AbstractMapping;
+
+    impl HostClass for AbstractMapping {
+        const NAME: &'static str = "AbstractMapping";
+    }
+
+    impl<B> HostClassDefinition<B> for AbstractMapping
+    where
+        B: Backend
+            + BackendValues
+            + BackendCallables
+            + BackendClasses
+            + BackendModules,
+    {
+        fn construct<'py>(_: &Enter<'py, B>, args: Args<'py, B>) -> Result<Self, Error> {
+            args.finish()?;
+
+            Ok(Self)
+        }
+
+        fn build(builder: &mut ClassBuilder<B, Self>) {
+            builder
+                .imported_base("collections.abc", "Mapping")
+                .method(Dunder::GetItem, |_, _, args| {
+                    args.finish()?;
+
+                    Ok::<_, Error>(42_i64)
+                })
+                .method(Dunder::Iter, |_, _, args| {
+                    args.finish()?;
+
+                    Ok::<_, Error>(HostIter::new(
+                        vec![Ok(String::from("answer"))].into_iter(),
+                    ))
+                });
+        }
+    }
+
+    struct ConcreteMapping;
+
+    impl HostClass for ConcreteMapping {
+        const NAME: &'static str = "ConcreteMapping";
+    }
+
+    impl<B> HostClassDefinition<B> for ConcreteMapping
+    where
+        B: Backend
+            + BackendValues
+            + BackendCallables
+            + BackendClasses
+            + BackendModules,
+    {
+        fn construct<'py>(_: &Enter<'py, B>, args: Args<'py, B>) -> Result<Self, Error> {
+            args.finish()?;
+
+            Ok(Self)
+        }
+
+        fn build(builder: &mut ClassBuilder<B, Self>) {
+            builder
+                .base::<AbstractMapping>()
+                .method(Dunder::Len, |_, _, args| {
+                    args.finish()?;
+
+                    Ok::<_, Error>(1_i64)
+                });
+        }
+    }
+
+    struct MappingParent;
+
+    impl HostClass for MappingParent {
+        const NAME: &'static str = "MappingParent";
+    }
+
+    impl<B> HostClassDefinition<B> for MappingParent
+    where
+        B: Backend + BackendValues + BackendCallables + BackendClasses,
+    {
+        fn build(_: &mut ClassBuilder<B, Self>) {}
+    }
+
+    struct MixedMapping;
+
+    impl HostClass for MixedMapping {
+        const NAME: &'static str = "MixedMapping";
+    }
+
+    impl<B> HostClassDefinition<B> for MixedMapping
+    where
+        B: Backend
+            + BackendValues
+            + BackendCallables
+            + BackendClasses
+            + BackendModules,
+    {
+        fn build(builder: &mut ClassBuilder<B, Self>) {
+            builder
+                .base::<MappingParent>()
+                .imported_base("collections.abc", "Mapping");
+        }
+    }
+
+    struct InvalidImportedBase<const CASE: u8>;
+
+    impl<const CASE: u8> HostClass for InvalidImportedBase<CASE> {
+        const NAME: &'static str = match CASE {
+            0 => "NonClassBase",
+            1 => "MissingModuleBase",
+            2 => "MissingAttributeBase",
+            3 => "ModuleValuedBase",
+            _ => "LayoutConflictBase",
+        };
+    }
+
+    impl<B, const CASE: u8> HostClassDefinition<B> for InvalidImportedBase<CASE>
+    where
+        B: Backend
+            + BackendValues
+            + BackendCallables
+            + BackendClasses
+            + BackendModules,
+    {
+        fn build(builder: &mut ClassBuilder<B, Self>) {
+            match CASE {
+                0 => {
+                    builder.imported_base("os", "sep");
+                }
+                1 => {
+                    builder.imported_base("guestpy_missing_module", "Base");
+                }
+                2 => {
+                    builder.imported_base("collections.abc", "Nope");
+                }
+                3 => {
+                    builder.imported_base("collections", "abc");
+                }
+                _ => {
+                    builder.imported_base("builtins", "bytes");
+                }
+            }
         }
     }
 
@@ -1360,6 +1561,294 @@ def twice(value):
             assert!(guest.eval::<bool>("result").unwrap());
         }
     }
+
+    guest_fixture! {
+        pub fn imported_mapping_uses_python_protocols<B>()
+        where B: [
+            Backend,
+            BackendValues,
+            BackendCallables,
+            BackendClasses,
+            BackendModules,
+            BackendCoroutines,
+            BackendExceptions,
+            BackendInterrupt,
+        ]
+        using Runtime::<B>::builder()
+            .bind(ModuleSpec::new("host_lib").class::<HostMapping>().unwrap());
+        |guest| {
+            guest
+                .exec(
+                    r#"
+import collections.abc
+import host_lib
+
+mapping = host_lib.HostMapping()
+assert isinstance(mapping, collections.abc.Mapping)
+assert type(type(mapping)) is collections.abc.ABCMeta
+assert dict(mapping) == {'answer': 42}
+assert list(mapping.items()) == [('answer', 42)]
+assert mapping.get('missing', 1) == 1
+assert mapping == {'answer': 42}
+assert host_lib.HostMapping[str]
+"#,
+                )
+                .unwrap();
+        }
+    }
+
+    guest_fixture! {
+        pub fn mixed_bases_preserve_mro_order<B>()
+        where B: [
+            Backend,
+            BackendValues,
+            BackendCallables,
+            BackendClasses,
+            BackendModules,
+            BackendCoroutines,
+            BackendExceptions,
+            BackendInterrupt,
+        ]
+        using Runtime::<B>::builder()
+            .bind(
+                ModuleSpec::new("host_lib")
+                    .class::<MappingParent>()
+                    .unwrap()
+                    .class::<MixedMapping>()
+                    .unwrap(),
+            );
+        |guest| {
+            guest.exec("import host_lib").unwrap();
+
+            let names = guest
+                .eval::<Class<B>>("host_lib.MixedMapping")
+                .unwrap()
+                .mro()
+                .unwrap()
+                .iter()
+                .map(Named::name)
+                .collect::<Result<Vec<_>, _>>()
+                .unwrap();
+
+            assert_eq!(names[0], "MixedMapping");
+            assert_eq!(names[1], "MappingParent");
+            assert_eq!(names[3], "Mapping");
+        }
+    }
+
+    guest_fixture! {
+        pub fn abstract_imported_base_is_completed_by_a_host_subclass<B>()
+        where B: [
+            Backend,
+            BackendValues,
+            BackendCallables,
+            BackendClasses,
+            BackendModules,
+            BackendCoroutines,
+            BackendExceptions,
+            BackendInterrupt,
+        ]
+        using Runtime::<B>::builder()
+            .bind(
+                ModuleSpec::new("host_lib")
+                    .class::<AbstractMapping>()
+                    .unwrap()
+                    .class::<ConcreteMapping>()
+                    .unwrap(),
+            );
+        |guest| {
+            guest.exec("import host_lib").unwrap();
+
+            let abstract_class = guest
+                .eval::<Class<B>>("host_lib.AbstractMapping")
+                .unwrap();
+            let concrete_class = guest
+                .eval::<Class<B>>("host_lib.ConcreteMapping")
+                .unwrap();
+
+            assert_eq!(
+                abstract_class.abstract_methods().unwrap(),
+                vec![String::from("__len__")],
+            );
+            assert!(concrete_class.abstract_methods().unwrap().is_empty());
+            assert!(
+                guest
+                    .eval::<Class<B>>("object")
+                    .unwrap()
+                    .abstract_methods()
+                    .unwrap()
+                    .is_empty(),
+            );
+
+            let guest_error = guest
+                .eval::<Instance<B>>("host_lib.AbstractMapping()")
+                .err()
+                .unwrap();
+
+            assert!(guest_error.to_string().contains("TypeError"));
+            assert!(guest_error.to_string().contains("__len__"));
+
+            let host_error = guest
+                .enter(|enter| AbstractMapping.to_guest(enter).map(|_| ()))
+                .err()
+                .unwrap();
+
+            assert!(matches!(host_error, Error::Raise(_)));
+            assert!(host_error.to_string().contains("TypeError"));
+            assert!(host_error.to_string().contains("__len__"));
+
+            guest
+                .exec(
+                    r#"
+value = host_lib.ConcreteMapping()
+assert isinstance(value, host_lib.AbstractMapping)
+assert len(value) == 1
+"#,
+                )
+                .unwrap();
+        }
+    }
+
+    pub fn imported_base_failures_are_preserved<B>()
+    where
+        B: Backend
+            + BackendValues
+            + BackendCallables
+            + BackendClasses
+            + BackendModules
+            + BackendCoroutines
+            + BackendExceptions
+            + BackendInterrupt,
+    {
+        let non_class = Runtime::<B>::builder()
+            .bind(
+                ModuleSpec::new("host_lib")
+                    .class::<InvalidImportedBase<0>>()
+                    .unwrap(),
+            )
+            .build()
+            .unwrap()
+            .guest()
+            .build()
+            .err()
+            .unwrap();
+
+        assert!(matches!(
+            non_class,
+            Error::Conversion { ref message, .. }
+                if message == "os.sep is not a class"
+        ));
+
+        let missing_module = Runtime::<B>::builder()
+            .bind(
+                ModuleSpec::new("host_lib")
+                    .class::<InvalidImportedBase<1>>()
+                    .unwrap(),
+            )
+            .build()
+            .unwrap()
+            .guest()
+            .build()
+            .err()
+            .unwrap();
+
+        assert!(missing_module.to_string().contains("guestpy_missing_module"));
+
+        let missing_attribute = Runtime::<B>::builder()
+            .bind(
+                ModuleSpec::new("host_lib")
+                    .class::<InvalidImportedBase<2>>()
+                    .unwrap(),
+            )
+            .build()
+            .unwrap()
+            .guest()
+            .build()
+            .err()
+            .unwrap();
+
+        assert!(matches!(
+            missing_attribute,
+            Error::Attribute { ref name } if name == "Nope"
+        ));
+
+        let module_value = Runtime::<B>::builder()
+            .bind(
+                ModuleSpec::new("host_lib")
+                    .class::<InvalidImportedBase<3>>()
+                    .unwrap(),
+            )
+            .build()
+            .unwrap()
+            .guest()
+            .build()
+            .err()
+            .unwrap();
+
+        assert!(matches!(
+            module_value,
+            Error::Conversion { ref message, .. }
+                if message == "collections.abc is not a class"
+        ));
+
+        let layout_conflict = Runtime::<B>::builder()
+            .bind(
+                ModuleSpec::new("host_lib")
+                    .class::<InvalidImportedBase<4>>()
+                    .unwrap(),
+            )
+            .build()
+            .unwrap()
+            .guest()
+            .build()
+            .err()
+            .unwrap();
+
+        assert!(matches!(
+            layout_conflict,
+            Error::Guest(ref exception) if exception.matches("TypeError")
+        ));
+    }
+
+    pub fn two_guests_share_one_realised_imported_base_class<B>()
+    where
+        B: Backend
+            + BackendValues
+            + BackendCallables
+            + BackendClasses
+            + BackendModules
+            + BackendCoroutines
+            + BackendExceptions
+            + BackendInterrupt,
+    {
+        let runtime = Runtime::<B>::builder()
+            .bind(
+                ModuleSpec::new("host_lib")
+                    .class::<HostMapping>()
+                    .unwrap()
+                    .function("mapping_class", |enter, args| {
+                        args.finish()?;
+                        Class::<B>::of::<HostMapping>(enter)
+                    }),
+            )
+            .build()
+            .unwrap();
+        let first = runtime.guest().build().unwrap();
+        let second = runtime.guest().build().unwrap();
+
+        first.exec("import host_lib").unwrap();
+        second.exec("import host_lib").unwrap();
+
+        let first_class = first
+            .eval::<Class<B>>("host_lib.mapping_class()")
+            .unwrap();
+        let second_class = second
+            .eval::<Class<B>>("host_lib.mapping_class()")
+            .unwrap();
+
+        assert!(first_class.value().ptr_eq(&second_class.value()));
+    }
+
     pub fn async_len_is_rejected_at_build_time<B>()
     where
         B: Backend
@@ -1556,6 +2045,41 @@ def twice(value):
             #[test]
             fn async_len_is_rejected_at_build_time() {
                 $crate::backend::classes::fixtures::async_len_is_rejected_at_build_time::<
+                    $backend,
+                >();
+            }
+
+            #[test]
+            fn imported_mapping_uses_python_protocols() {
+                $crate::backend::classes::fixtures::imported_mapping_uses_python_protocols::<
+                    $backend,
+                >();
+            }
+
+            #[test]
+            fn mixed_bases_preserve_mro_order() {
+                $crate::backend::classes::fixtures::mixed_bases_preserve_mro_order::<
+                    $backend,
+                >();
+            }
+
+            #[test]
+            fn abstract_imported_base_is_completed_by_a_host_subclass() {
+                $crate::backend::classes::fixtures::abstract_imported_base_is_completed_by_a_host_subclass::<
+                    $backend,
+                >();
+            }
+
+            #[test]
+            fn imported_base_failures_are_preserved() {
+                $crate::backend::classes::fixtures::imported_base_failures_are_preserved::<
+                    $backend,
+                >();
+            }
+
+            #[test]
+            fn two_guests_share_one_realised_imported_base_class() {
+                $crate::backend::classes::fixtures::two_guests_share_one_realised_imported_base_class::<
                     $backend,
                 >();
             }

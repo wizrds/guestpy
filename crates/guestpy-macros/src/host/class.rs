@@ -10,7 +10,7 @@ use crate::{
         backend::{BackendBounds, BackendOption, BackendParameter},
         callable::{Callable, Parameter, Receiver},
         target::HostTarget,
-        types::TypeList,
+        types::{BaseItem, BaseList},
     },
     naming::{Naming, RenameRule},
     path::CratePath,
@@ -22,7 +22,7 @@ struct ClassOptions {
     name: Option<String>,
     rename_all: Option<RenameRule>,
     backend: Option<BackendOption>,
-    extends: TypeList,
+    extends: BaseList,
     generic: Flag,
     crate_path: Option<Path>,
 }
@@ -312,7 +312,7 @@ struct HostClassDefinition {
     name: String,
     crate_path: Path,
     backend: BackendParameter,
-    extends: TypeList,
+    extends: BaseList,
     generic: bool,
     constructor: Option<Callable>,
     members: Vec<ClassMember>,
@@ -771,7 +771,12 @@ a #[guestpy(this)] parameter is only valid on a method, async_method, or class_m
             .map(|member| member.registration(&crate_path, &backend));
         let bases = extends
             .iter()
-            .map(|base| quote!(builder.base::<#base>();));
+            .map(|base| match base {
+                BaseItem::Host(base) => quote!(builder.base::<#base>();),
+                BaseItem::Imported { module, qualname } => {
+                    quote!(builder.imported_base(#module, #qualname);)
+                }
+            });
         let builder = if members.is_empty() && extends.is_empty() && !generic {
             quote!(_builder)
         } else {
@@ -1494,6 +1499,21 @@ mod tests {
             error
                 .to_string()
                 .contains("backend = B")
+        );
+    }
+
+    #[test]
+    fn renders_mixed_bases_in_source_order() {
+        let output = expand(
+            quote!(extends(Parent, "collections.abc:Mapping")),
+            parse_quote!(impl Child {}),
+        );
+
+        assert!(
+            output.find("builder . base :: < Parent > ()").unwrap()
+                < output
+                    .find("builder . imported_base (\"collections.abc\" , \"Mapping\")")
+                    .unwrap(),
         );
     }
 }

@@ -77,7 +77,23 @@ where
 
         B::instantiate::<Self>(
             enter.token(),
-            &B::new_class(enter.token(), "HostIter", &[], &namespace)?,
+            &B::call(
+                enter.token(),
+                &B::get_attr(
+                    enter.token(),
+                    &B::native_base(enter.token()),
+                    "__class__",
+                )?,
+                &[
+                    B::str(enter.token(), "HostIter"),
+                    B::tuple(
+                        enter.token(),
+                        vec![B::native_base(enter.token())],
+                    )?,
+                    namespace,
+                ],
+                &[],
+            )?,
             self,
         )
     }
@@ -158,7 +174,23 @@ where
 
         B::instantiate::<Self>(
             enter.token(),
-            &B::new_class(enter.token(), "HostStream", &[], &namespace)?,
+            &B::call(
+                enter.token(),
+                &B::get_attr(
+                    enter.token(),
+                    &B::native_base(enter.token()),
+                    "__class__",
+                )?,
+                &[
+                    B::str(enter.token(), "HostStream"),
+                    B::tuple(
+                        enter.token(),
+                        vec![B::native_base(enter.token())],
+                    )?,
+                    namespace,
+                ],
+                &[],
+            )?,
             self,
         )
     }

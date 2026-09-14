@@ -422,7 +422,7 @@ impl HostModuleDefinition {
             capabilities.push(parse_quote!(#crate_path::backend::BackendClasses));
         }
 
-        if has_async_function || !exceptions.is_empty() {
+        if has_async_function || !classes.is_empty() || !exceptions.is_empty() {
             capabilities.push(parse_quote!(#crate_path::backend::BackendModules));
         }
 
@@ -753,7 +753,7 @@ mod tests {
         assert!(output.contains(". function (\"hypot\""));
         assert!(output.contains(". getter (\"version\""));
         assert!(output.contains(". init ("));
-        assert!(output.contains(". exception (\"GeometryError\""));
+        assert!(output.contains(". exception_type :: < GeometryError > ()"));
         assert!(output.contains(". class :: < Vector2 > ()"));
         assert!(output.contains("BackendClasses"));
         assert!(output.contains("BackendModules"));
@@ -846,7 +846,7 @@ mod tests {
         );
 
         assert!(output.contains("pub fn module < B > ()"));
-        assert!(output.contains(". exception (\"GeometryError\""));
+        assert!(output.contains(". exception_type :: < GeometryError > ()"));
         assert!(output.contains("BackendModules"));
         assert!(!output.contains("BackendExceptions"));
     }

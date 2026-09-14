@@ -1,6 +1,6 @@
 use std::{
-    any::TypeId, cell::RefCell, collections::HashMap, future::Future, marker::PhantomData, rc::Rc,
-    str::FromStr,
+    any::TypeId, borrow::Cow, cell::RefCell, collections::HashMap, future::Future,
+    marker::PhantomData, rc::Rc, str::FromStr,
 };
 
 use crate::{
@@ -10,12 +10,14 @@ use crate::{
         callables::{HostBody, PendingValue, RawBody},
     },
     errors::Error,
-    handle::{Object, Value},
+    handle::{Class, Object, TypeProtocol, Value},
     host::{
         declaration::{DeclarationContext, DeclareMember, Member},
         dunder::Dunder,
+        exception::{ExceptionClass, Raise},
         namespace::{Namespace, ValueDeclaration},
     },
+    imports::Imports,
     marshal::{FromGuest, FromGuestMut, FromGuestRef, ToGuest, args::Args},
     scope::Enter,
 };
@@ -278,11 +280,19 @@ where
     }
 }
 
+pub(crate) enum ClassBase<B: Backend> {
+    Host(Rc<ClassSpec<B>>),
+    Imported {
+        module: Cow<'static, str>,
+        qualname: Cow<'static, str>,
+    },
+}
+
 pub struct ClassSpec<B: Backend> {
     name: &'static str,
     doc: Option<&'static str>,
     module: RefCell<Option<String>>,
-    bases: Vec<Rc<ClassSpec<B>>>,
+    bases: Vec<ClassBase<B>>,
     alloc: AllocBody<B>,
     init: InitBody<B>,
     members: Vec<(MemberName, Member<B>)>,
@@ -295,8 +305,17 @@ impl<B: Backend> ClassSpec<B> {
         self.members.push((name, member));
     }
 
-    fn push_base(&mut self, base: Rc<ClassSpec<B>>) {
+    fn push_base(&mut self, base: ClassBase<B>) {
         self.bases.push(base);
+    }
+
+    pub(crate) fn abstract_error(name: &str, names: &[String]) -> Error {
+        Raise::<B>::new(ExceptionClass::builtin("TypeError"))
+            .text(format!(
+                "Can't instantiate abstract class {name} with abstract methods {}",
+                names.join(", "),
+            ))
+            .into()
     }
 
     pub(crate) fn payload(&self) -> TypeId {
@@ -315,7 +334,7 @@ impl<B: Backend> ClassSpec<B> {
         self.name
     }
 
-    pub(crate) fn bases(&self) -> &[Rc<ClassSpec<B>>] {
+    pub(crate) fn bases(&self) -> &[ClassBase<B>] {
         &self.bases
     }
 
@@ -379,6 +398,7 @@ where
 
     pub(crate) fn realise_registered<'py, C>(enter: &Enter<'py, B>) -> Result<Val<'py, B>, Error>
     where
+        B: BackendModules,
         C: HostClass + HostClassDefinition<B>,
     {
         let spec = enter
@@ -399,7 +419,7 @@ struct ClassRealiser<'py, 'e, B: Backend> {
 
 impl<'py, 'e, B> ClassRealiser<'py, 'e, B>
 where
-    B: Backend + BackendValues + BackendCallables + BackendClasses,
+    B: Backend + BackendValues + BackendCallables + BackendClasses + BackendModules,
 {
     fn new(enter: &'e Enter<'py, B>) -> Self {
         Self { enter }
@@ -407,6 +427,7 @@ where
 
     fn class_new(&self, spec: &Rc<ClassSpec<B>>) -> Result<Val<'py, B>, Error> {
         let alloc = spec.alloc().clone();
+        let name = spec.name();
 
         B::function(
             self.enter.token(),
@@ -414,7 +435,16 @@ where
             None,
             self.enter
                 .guest()
-                .raw_body(Rc::new(move |enter, args| alloc(enter, args.split_receiver()?.0))),
+                .raw_body(Rc::new(move |enter, args| {
+                    let class = args.split_receiver()?.0;
+                    let names = Class::<B>::from_guest(enter, class.clone())?.abstract_methods()?;
+
+                    if !names.is_empty() {
+                        return Err(ClassSpec::<B>::abstract_error(name, &names));
+                    }
+
+                    alloc(enter, class)
+                })),
         )
     }
 
@@ -433,6 +463,56 @@ where
             })))
     }
 
+    fn bases(&self, spec: &Rc<ClassSpec<B>>) -> Result<Vec<Val<'py, B>>, Error> {
+        let imports = Imports::new(self.enter);
+        let mut bases = Vec::new();
+        let mut has_host_base = false;
+
+        for base in spec.bases() {
+            match base {
+                ClassBase::Host(base) => {
+                    has_host_base = true;
+                    bases.push(self.realise(base)?);
+                }
+                ClassBase::Imported { module, qualname } => {
+                    let base = imports.qualified(&imports.external(module)?, qualname)?;
+
+                    if !B::is_class(self.enter.token(), &base) {
+                        return Err(Error::conversion(format!(
+                            "{module}.{qualname} is not a class",
+                        )));
+                    }
+
+                    bases.push(base);
+                }
+            }
+        }
+
+        if !has_host_base {
+            bases.insert(0, B::native_base(self.enter.token()));
+        }
+
+        Ok(bases)
+    }
+
+    fn metaclass(&self, bases: &[Val<'py, B>]) -> Result<Val<'py, B>, Error> {
+        let mut winner = B::get_item(
+            self.enter.token(),
+            &B::builtins_dict(self.enter.token())?,
+            &B::str(self.enter.token(), "type"),
+        )?;
+
+        for base in bases {
+            let candidate = B::get_attr(self.enter.token(), base, "__class__")?;
+
+            if B::is_subclass(self.enter.token(), &candidate, &winner)? {
+                winner = candidate;
+            }
+        }
+
+        Ok(winner)
+    }
+
     fn realise(&self, spec: &Rc<ClassSpec<B>>) -> Result<Val<'py, B>, Error> {
         let realisation = self.enter.guest().realisation();
         let payload = spec.payload();
@@ -445,14 +525,16 @@ where
             return Ok(B::attach(self.enter.token(), &owned));
         }
 
-        let mut bases = Vec::new();
-
-        for base in spec.bases() {
-            bases.push(self.realise(base)?);
-        }
-
+        let bases = self.bases(spec)?;
+        let metaclass = self.metaclass(&bases)?;
+        let bases = B::tuple(self.enter.token(), bases)?;
         let context = DeclarationContext::new(self.enter);
-        let namespace = B::new_dict(self.enter.token())?;
+        let namespace = B::call(
+            self.enter.token(),
+            &B::get_attr(self.enter.token(), &metaclass, "__prepare__")?,
+            &[B::str(self.enter.token(), spec.name()), bases.clone()],
+            &[],
+        )?;
 
         for (member_name, member) in spec.members() {
             let attribute = member_name.as_str();
@@ -497,7 +579,12 @@ where
             B::method(self.enter.token(), "__init__", None, self.class_init(spec)?)?,
         )?;
 
-        let class = B::new_class(self.enter.token(), spec.name(), &bases, &namespace)?;
+        let class = B::call(
+            self.enter.token(),
+            &metaclass,
+            &[B::str(self.enter.token(), spec.name()), bases, namespace],
+            &[],
+        )?;
 
         for (name, member) in spec.statics().members() {
             B::set_attr(self.enter.token(), &class, name, member.realise(&context, name)?)?;
@@ -521,7 +608,7 @@ impl<B: Backend> ClassDeclaration<B> {
 
 impl<B> DeclareMember<B> for ClassDeclaration<B>
 where
-    B: Backend + BackendValues + BackendCallables + BackendClasses,
+    B: Backend + BackendValues + BackendCallables + BackendClasses + BackendModules,
 {
     fn realise<'py>(
         &self,
@@ -946,9 +1033,22 @@ where
         P: HostClass + HostClassDefinition<B>,
     {
         match ClassSpec::of::<P>() {
-            Ok(spec) => self.spec.push_base(spec),
+            Ok(spec) => self.spec.push_base(ClassBase::Host(spec)),
             Err(error) => self.reject(error),
         }
+
+        self
+    }
+
+    pub fn imported_base(
+        &mut self,
+        module: impl Into<Cow<'static, str>>,
+        qualname: impl Into<Cow<'static, str>>,
+    ) -> &mut Self {
+        self.spec.push_base(ClassBase::Imported {
+            module: module.into(),
+            qualname: qualname.into(),
+        });
 
         self
     }

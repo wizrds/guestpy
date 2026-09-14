@@ -162,7 +162,7 @@ where
 
 impl<B> ModuleSpec<B>
 where
-    B: Backend + BackendValues + BackendCallables + BackendClasses,
+    B: Backend + BackendValues + BackendCallables + BackendClasses + BackendModules,
 {
     pub fn class<C>(mut self) -> Result<Self, Error>
     where
