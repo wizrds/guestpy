@@ -1,6 +1,28 @@
 # Changelog
 
 ---
+## [0.4.0](https://github.com/wizrds/guestpy/compare/0.3.1..0.4.0) - 2026-09-14
+
+### Bug Fixes
+
+- Make Guest::enter public API - ([2126a0c](https://github.com/wizrds/guestpy/commit/2126a0c99cfd7d52fbff3dd7191ffa0a1344a56d)) - Timothy Pogue
+- Support native inheritance and class semantics for host classes - ([d0dd720](https://github.com/wizrds/guestpy/commit/d0dd7204276783bdd40671ef51241eb7c115ccc1)) - Timothy Pogue
+- Fix stop iteration handling in async iter and async generator - ([2ad684e](https://github.com/wizrds/guestpy/commit/2ad684e8da54f69d4eb6d643a2c4ea1ba6eeee50)) - Timothy Pogue
+- Improve dunder handling in class definitions and make class builder fallible - ([98aebdc](https://github.com/wizrds/guestpy/commit/98aebdccb0b35861f1ac7864948280c2e71c8f37)) - Timothy Pogue
+- Add host exception registration and macro - ([7eebeba](https://github.com/wizrds/guestpy/commit/7eebebaa8771aef1f5c12701be494d2c2dac336b)) - Timothy Pogue
+- Rework exception handling and allow raising and catching from host side - ([0c22af0](https://github.com/wizrds/guestpy/commit/0c22af09f746c1aaa84407339682b89218b73732)) - Timothy Pogue
+
+### Features
+
+- Improve handling and exposing exceptions and improve dunder handling in host classes  - ([ae1fe39](https://github.com/wizrds/guestpy/commit/ae1fe39873d5603bd0fa68fcc2a95f07f66271ef)) - Timothy Pogue
+
+### Miscellaneous
+
+- Fix formatting - ([cc36caa](https://github.com/wizrds/guestpy/commit/cc36caa0ba435d8a5b972de65260188f7f1db7a4)) - Timothy Pogue
+- Update README and lib docstring - ([d91e0a4](https://github.com/wizrds/guestpy/commit/d91e0a4b5be83e3013030b4a6aeacad05399e3f3)) - Timothy Pogue
+- Fix formatting - ([7b25126](https://github.com/wizrds/guestpy/commit/7b25126affa56360bef9c4806938cd5e807a5473)) - Timothy Pogue
+- Add backend exceptions test fixtures - ([3aabae1](https://github.com/wizrds/guestpy/commit/3aabae13b6eddafadff50d925376bc7d90852d28)) - Timothy Pogue
+---
 ## [0.3.1](https://github.com/wizrds/guestpy/compare/0.3.0..0.3.1) - 2026-09-11
 
 ### Bug Fixes
