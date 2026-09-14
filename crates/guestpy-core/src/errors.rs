@@ -68,16 +68,21 @@ impl Debug for ErasedOwned {
 
 pub struct ErasedRaise {
     class: String,
+    text: String,
     payload: Box<dyn Any>,
 }
 
 impl ErasedRaise {
-    pub(crate) fn new(class: String, payload: Box<dyn Any>) -> Self {
-        Self { class, payload }
+    pub(crate) fn new(class: String, text: String, payload: Box<dyn Any>) -> Self {
+        Self { class, text, payload }
     }
 
     pub fn class(&self) -> &str {
         &self.class
+    }
+
+    pub fn text(&self) -> &str {
+        &self.text
     }
 
     pub(crate) fn into_payload(self) -> Box<dyn Any> {
@@ -265,7 +270,7 @@ pub enum Error {
     #[error("guest exception: {0}")]
     Guest(Box<GuestException>),
 
-    #[error("raised {}", .0.class())]
+    #[error("raised {}{}", .0.class(), if .0.text().is_empty() { String::new() } else { format!(": {}", .0.text()) })]
     Raise(Box<ErasedRaise>),
 
     #[error("engine error: {message}")]
@@ -518,7 +523,7 @@ mod tests {
     #[test]
     fn raise_formats_without_its_payload() {
         let error =
-            Error::Raise(Box::new(ErasedRaise::new("ExampleError".to_owned(), Box::new(Payload))));
+            Error::Raise(Box::new(ErasedRaise::new("ExampleError".to_owned(), "".to_owned(), Box::new(Payload))));
 
         assert_eq!(error.to_string(), "raised ExampleError");
         assert_eq!(format!("{error:?}"), "Raise(ErasedRaise { class: \"ExampleError\", .. })",);
