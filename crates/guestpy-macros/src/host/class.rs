@@ -769,14 +769,12 @@ a #[guestpy(this)] parameter is only valid on a method, async_method, or class_m
         let registrations = members
             .iter()
             .map(|member| member.registration(&crate_path, &backend));
-        let bases = extends
-            .iter()
-            .map(|base| match base {
-                BaseItem::Host(base) => quote!(builder.base::<#base>();),
-                BaseItem::Imported { module, qualname } => {
-                    quote!(builder.imported_base(#module, #qualname);)
-                }
-            });
+        let bases = extends.iter().map(|base| match base {
+            BaseItem::Host(base) => quote!(builder.base::<#base>();),
+            BaseItem::Imported { module, qualname } => {
+                quote!(builder.imported_base(#module, #qualname);)
+            }
+        });
         let builder = if members.is_empty() && extends.is_empty() && !generic {
             quote!(_builder)
         } else {
@@ -1504,13 +1502,13 @@ mod tests {
 
     #[test]
     fn renders_mixed_bases_in_source_order() {
-        let output = expand(
-            quote!(extends(Parent, "collections.abc:Mapping")),
-            parse_quote!(impl Child {}),
-        );
+        let output =
+            expand(quote!(extends(Parent, "collections.abc:Mapping")), parse_quote!(impl Child {}));
 
         assert!(
-            output.find("builder . base :: < Parent > ()").unwrap()
+            output
+                .find("builder . base :: < Parent > ()")
+                .unwrap()
                 < output
                     .find("builder . imported_base (\"collections.abc\" , \"Mapping\")")
                     .unwrap(),

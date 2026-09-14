@@ -33,10 +33,7 @@ impl FromMeta for TypeList {
 
 pub(crate) enum BaseItem {
     Host(Type),
-    Imported {
-        module: LitStr,
-        qualname: LitStr,
-    },
+    Imported { module: LitStr, qualname: LitStr },
 }
 
 impl Parse for BaseItem {
@@ -106,7 +103,7 @@ impl FromMeta for BaseList {
 mod tests {
     use darling::FromMeta;
     use quote::ToTokens;
-    use syn::{parse_quote, Meta};
+    use syn::{Meta, parse_quote};
 
     use super::{BaseItem, BaseList, TypeList};
 
@@ -129,10 +126,8 @@ mod tests {
 
     #[test]
     fn parses_mixed_host_and_imported_bases() {
-        let bases = BaseList::from_meta(
-            &parse_quote!(extends(Headers, "collections.abc:Mapping")),
-        )
-        .unwrap();
+        let bases = BaseList::from_meta(&parse_quote!(extends(Headers, "collections.abc:Mapping")))
+            .unwrap();
 
         assert!(matches!(&bases[0], BaseItem::Host(_)));
         assert!(matches!(

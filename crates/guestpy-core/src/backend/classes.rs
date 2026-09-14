@@ -210,17 +210,15 @@ pub mod fixtures {
 
     impl<B> HostClassDefinition<B> for HostMapping
     where
-        B: Backend
-            + BackendValues
-            + BackendCallables
-            + BackendClasses
-            + BackendModules,
+        B: Backend + BackendValues + BackendCallables + BackendClasses + BackendModules,
     {
         fn construct<'py>(_: &Enter<'py, B>, args: Args<'py, B>) -> Result<Self, Error> {
             args.finish()?;
 
             Ok(Self {
-                entries: [(String::from("answer"), 42)].into_iter().collect(),
+                entries: [(String::from("answer"), 42)]
+                    .into_iter()
+                    .collect(),
             })
         }
 
@@ -232,11 +230,15 @@ pub mod fixtures {
 
                     args.finish()?;
 
-                    mapping.entries.get(&key).copied().ok_or_else(|| {
-                        Error::from(
-                            Raise::<B>::new(ExceptionClass::builtin("KeyError")).arg(key),
-                        )
-                    })
+                    mapping
+                        .entries
+                        .get(&key)
+                        .copied()
+                        .ok_or_else(|| {
+                            Error::from(
+                                Raise::<B>::new(ExceptionClass::builtin("KeyError")).arg(key),
+                            )
+                        })
                 })
                 .method(Dunder::Iter, |mapping, _, args| {
                     args.finish()?;
@@ -268,11 +270,7 @@ pub mod fixtures {
 
     impl<B> HostClassDefinition<B> for AbstractMapping
     where
-        B: Backend
-            + BackendValues
-            + BackendCallables
-            + BackendClasses
-            + BackendModules,
+        B: Backend + BackendValues + BackendCallables + BackendClasses + BackendModules,
     {
         fn construct<'py>(_: &Enter<'py, B>, args: Args<'py, B>) -> Result<Self, Error> {
             args.finish()?;
@@ -291,9 +289,7 @@ pub mod fixtures {
                 .method(Dunder::Iter, |_, _, args| {
                     args.finish()?;
 
-                    Ok::<_, Error>(HostIter::new(
-                        vec![Ok(String::from("answer"))].into_iter(),
-                    ))
+                    Ok::<_, Error>(HostIter::new(vec![Ok(String::from("answer"))].into_iter()))
                 });
         }
     }
@@ -306,11 +302,7 @@ pub mod fixtures {
 
     impl<B> HostClassDefinition<B> for ConcreteMapping
     where
-        B: Backend
-            + BackendValues
-            + BackendCallables
-            + BackendClasses
-            + BackendModules,
+        B: Backend + BackendValues + BackendCallables + BackendClasses + BackendModules,
     {
         fn construct<'py>(_: &Enter<'py, B>, args: Args<'py, B>) -> Result<Self, Error> {
             args.finish()?;
@@ -350,11 +342,7 @@ pub mod fixtures {
 
     impl<B> HostClassDefinition<B> for MixedMapping
     where
-        B: Backend
-            + BackendValues
-            + BackendCallables
-            + BackendClasses
-            + BackendModules,
+        B: Backend + BackendValues + BackendCallables + BackendClasses + BackendModules,
     {
         fn build(builder: &mut ClassBuilder<B, Self>) {
             builder
@@ -377,11 +365,7 @@ pub mod fixtures {
 
     impl<B, const CASE: u8> HostClassDefinition<B> for InvalidImportedBase<CASE>
     where
-        B: Backend
-            + BackendValues
-            + BackendCallables
-            + BackendClasses
-            + BackendModules,
+        B: Backend + BackendValues + BackendCallables + BackendClasses + BackendModules,
     {
         fn build(builder: &mut ClassBuilder<B, Self>) {
             match CASE {
@@ -1752,7 +1736,11 @@ assert len(value) == 1
             .err()
             .unwrap();
 
-        assert!(missing_module.to_string().contains("guestpy_missing_module"));
+        assert!(
+            missing_module
+                .to_string()
+                .contains("guestpy_missing_module")
+        );
 
         let missing_attribute = Runtime::<B>::builder()
             .bind(
@@ -1846,7 +1834,11 @@ assert len(value) == 1
             .eval::<Class<B>>("host_lib.mapping_class()")
             .unwrap();
 
-        assert!(first_class.value().ptr_eq(&second_class.value()));
+        assert!(
+            first_class
+                .value()
+                .ptr_eq(&second_class.value())
+        );
     }
 
     pub fn async_len_is_rejected_at_build_time<B>()

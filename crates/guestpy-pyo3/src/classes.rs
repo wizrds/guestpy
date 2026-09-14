@@ -9,9 +9,8 @@ use guestpy_core::{
     errors::{BorrowKind, Error},
 };
 use pyo3::{
-    pyclass, pymethods,
+    Bound, PyRef, PyRefMut, pyclass, pymethods,
     types::{PyAnyMethods, PyGenericAlias, PyTuple, PyTypeMethods},
-    Bound, PyRef, PyRefMut,
 };
 
 use crate::{engine::CPython, errors::NativeErrors, marker::GilSerialized};

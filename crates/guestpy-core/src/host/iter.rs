@@ -79,17 +79,10 @@ where
             enter.token(),
             &B::call(
                 enter.token(),
-                &B::get_attr(
-                    enter.token(),
-                    &B::native_base(enter.token()),
-                    "__class__",
-                )?,
+                &B::get_attr(enter.token(), &B::native_base(enter.token()), "__class__")?,
                 &[
                     B::str(enter.token(), "HostIter"),
-                    B::tuple(
-                        enter.token(),
-                        vec![B::native_base(enter.token())],
-                    )?,
+                    B::tuple(enter.token(), vec![B::native_base(enter.token())])?,
                     namespace,
                 ],
                 &[],
@@ -176,17 +169,10 @@ where
             enter.token(),
             &B::call(
                 enter.token(),
-                &B::get_attr(
-                    enter.token(),
-                    &B::native_base(enter.token()),
-                    "__class__",
-                )?,
+                &B::get_attr(enter.token(), &B::native_base(enter.token()), "__class__")?,
                 &[
                     B::str(enter.token(), "HostStream"),
-                    B::tuple(
-                        enter.token(),
-                        vec![B::native_base(enter.token())],
-                    )?,
+                    B::tuple(enter.token(), vec![B::native_base(enter.token())])?,
                     namespace,
                 ],
                 &[],

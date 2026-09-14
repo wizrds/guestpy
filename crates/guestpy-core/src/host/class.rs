@@ -1033,7 +1033,9 @@ where
         P: HostClass + HostClassDefinition<B>,
     {
         match ClassSpec::of::<P>() {
-            Ok(spec) => self.spec.push_base(ClassBase::Host(spec)),
+            Ok(spec) => self
+                .spec
+                .push_base(ClassBase::Host(spec)),
             Err(error) => self.reject(error),
         }
 
@@ -1045,10 +1047,11 @@ where
         module: impl Into<Cow<'static, str>>,
         qualname: impl Into<Cow<'static, str>>,
     ) -> &mut Self {
-        self.spec.push_base(ClassBase::Imported {
-            module: module.into(),
-            qualname: qualname.into(),
-        });
+        self.spec
+            .push_base(ClassBase::Imported {
+                module: module.into(),
+                qualname: qualname.into(),
+            });
 
         self
     }
