@@ -1,7 +1,6 @@
 //! Guest iterator handles.
 
 use std::{
-    future::Future,
     marker::PhantomData,
     pin::Pin,
     task::{Context, Poll},
@@ -12,12 +11,11 @@ use futures::Stream;
 use crate::{
     backend::{
         Backend, BackendCallables, BackendCoroutines, BackendInterrupt, BackendModules,
-        BackendValues,
+        BackendValues, BackendClasses,
     },
-    driver::CoroutineFuture,
+    driver::AsyncCursor,
     errors::Error,
-    guest::Guest,
-    handle::{Handle, Value, traits::HasHandle},
+    handle::{base::{Handle, Value}, traits::HasHandle},
     marshal::{FromGuest, ToGuest},
     scope::Enter,
 };
@@ -94,60 +92,66 @@ where
     }
 }
 
-pub struct AsyncIter<B: Backend, T> {
-    owned: B::Owned,
-    guest: Guest<B>,
-    current: Option<CoroutineFuture<B, T>>,
+pub struct AsyncIter<B, T>
+where
+    B: Backend
+        + BackendCoroutines
+        + BackendClasses
+        + BackendModules,
+{
+    handle: Handle<B>,
+    cursor: AsyncCursor<B, T>,
     marker: PhantomData<fn() -> T>,
 }
 
-impl<B: Backend, T> Unpin for AsyncIter<B, T> {}
+// pub struct AsyncIter<B: Backend, T> {
+//     owned: B::Owned,
+//     guest: Guest<B>,
+//     current: Option<CoroutineFuture<B, T>>,
+//     marker: PhantomData<fn() -> T>,
+// }
 
-impl<B: Backend, T> AsyncIter<B, T> {
-    pub(crate) fn from_parts(owned: B::Owned, guest: Guest<B>) -> Self {
+// impl<B: Backend, T> Unpin for AsyncIter<B, T> {}
+
+impl<B, T> AsyncIter<B, T>
+where
+    B: Backend
+        + BackendCoroutines
+        + BackendClasses
+        + BackendModules,
+{
+    pub(crate) fn from_handle(handle: Handle<B>) -> Self {
         Self {
-            owned,
-            guest,
-            current: None,
+            handle,
+            cursor: AsyncCursor::default(),
             marker: PhantomData,
         }
     }
 }
+
+impl<B, T> Unpin for AsyncIter<B, T>
+where
+    B: Backend
+        + BackendCoroutines
+        + BackendClasses
+        + BackendModules,
+{}
 
 impl<B, T> AsyncIter<B, T>
 where
     B: Backend
         + BackendValues
         + BackendCallables
+        + BackendClasses
         + BackendModules
         + BackendCoroutines
         + BackendInterrupt,
     T: FromGuest<B>,
 {
-    fn advance<'py>(&self, enter: &Enter<'py, B>) -> Result<CoroutineFuture<B, T>, Error> {
-        Ok(CoroutineFuture::new(
-            self.guest.clone(),
-            B::detach(
-                enter.token(),
-                B::anext(enter.token(), &B::attach(enter.token(), &self.owned))?,
-            ),
-        ))
-    }
-
-    async fn resolve(future: CoroutineFuture<B, T>) -> Result<Option<T::Owned>, Error> {
-        match future.await {
-            Ok(value) => Ok(Some(value)),
-            Err(Error::Guest(exception)) if exception.matches("StopAsyncIteration") => Ok(None),
-            Err(error) => Err(error),
-        }
-    }
-
     pub async fn anext(&self) -> Result<Option<T::Owned>, Error> {
-        Self::resolve(
-            self.guest
-                .enter(|enter| self.advance(enter))?,
-        )
-        .await
+        self.handle
+            .with_async_step::<T>(|enter, iterator| B::anext(enter.token(), iterator))
+            .await
     }
 
     pub async fn collect(self) -> Result<Vec<T::Owned>, Error> {
@@ -163,7 +167,11 @@ where
 
 impl<B, T> AsyncIter<B, T>
 where
-    B: Backend + BackendValues,
+    B: Backend
+        + BackendValues
+        + BackendCoroutines
+        + BackendClasses
+        + BackendModules,
 {
     pub(crate) fn validate<'py>(enter: &Enter<'py, B>, value: &B::Value<'py>) -> Result<(), Error> {
         match B::get_attr(enter.token(), value, "__anext__") {
@@ -175,24 +183,31 @@ where
 
 impl<B, T> FromGuest<B> for AsyncIter<B, T>
 where
-    B: Backend + BackendValues,
+    B: Backend
+        + BackendValues
+        + BackendCoroutines
+        + BackendClasses
+        + BackendModules,
     T: 'static,
 {
     type Owned = Self;
 
     fn from_guest<'py>(enter: &Enter<'py, B>, value: B::Value<'py>) -> Result<Self::Owned, Error> {
         Self::validate(enter, &value)?;
-
-        Ok(Self::from_parts(B::detach(enter.token(), value), enter.guest().clone()))
+        Ok(Self::from_handle(Handle::from_value(enter, value)))
     }
 }
 
 impl<B, T> ToGuest<B> for AsyncIter<B, T>
 where
-    B: Backend,
+    B: Backend
+        + BackendValues
+        + BackendCoroutines
+        + BackendClasses
+        + BackendModules,
 {
     fn to_guest<'py>(self, enter: &Enter<'py, B>) -> Result<B::Value<'py>, Error> {
-        Ok(B::attach(enter.token(), &self.owned))
+        Ok(B::attach(enter.token(), self.handle.owned()))
     }
 }
 
@@ -203,6 +218,7 @@ where
         + BackendCallables
         + BackendModules
         + BackendCoroutines
+        + BackendClasses
         + BackendInterrupt,
     T: FromGuest<B>,
 {
@@ -211,42 +227,12 @@ where
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let this = self.get_mut();
 
-        if this.current.is_none() {
-            match this
-                .guest
-                .enter(|enter| this.advance(enter))
-            {
-                Ok(future) => this.current = Some(future),
-                Err(error) => return Poll::Ready(Some(Err(error))),
-            }
-        }
-
-        match Pin::new(
-            this.current
-                .as_mut()
-                .expect("current is set above"),
-        )
-        .poll(cx)
-        {
-            Poll::Ready(Ok(value)) => {
-                this.current = None;
-
-                Poll::Ready(Some(Ok(value)))
-            }
-            Poll::Ready(Err(Error::Guest(exception)))
-                if exception.matches("StopAsyncIteration") =>
-            {
-                this.current = None;
-
-                Poll::Ready(None)
-            }
-            Poll::Ready(Err(error)) => {
-                this.current = None;
-
-                Poll::Ready(Some(Err(error)))
-            }
-            Poll::Pending => Poll::Pending,
-        }
+        this.cursor
+            .poll(cx, || {
+                this.handle
+                    .with_async_step::<T>(|enter, iterator| B::anext(enter.token(), iterator))
+            })
+            .map(Result::transpose)
     }
 }
 

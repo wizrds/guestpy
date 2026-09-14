@@ -4,7 +4,7 @@ use crate::{
     backend::{Backend, BackendValues},
     errors::Error,
     handle::{
-        Handle,
+        base::Handle,
         traits::{Annotated, HasHandle, Named},
     },
     marshal::{FromGuest, ToGuest},

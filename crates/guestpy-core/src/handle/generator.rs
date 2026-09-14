@@ -11,12 +11,14 @@ use futures::Stream;
 use crate::{
     backend::{
         Backend, BackendCallables, BackendCoroutines, BackendInterrupt, BackendModules,
-        BackendValues, Step, Tok, Val,
+        BackendValues, BackendClasses, Step,
     },
-    driver::CoroutineFuture,
+    driver::AsyncCursor,
     errors::Error,
-    guest::Guest,
-    handle::{AsyncIter, Handle, Iter, Value, traits::HasHandle},
+    handle::{
+        base::{Handle, Value},
+        iter::{Iter, AsyncIter},
+        traits::HasHandle},
     marshal::{FromGuest, ToGuest},
     scope::Enter,
 };
@@ -138,21 +140,37 @@ where
     }
 }
 
-pub struct AsyncGenerator<B: Backend, T> {
-    owned: B::Owned,
-    guest: Guest<B>,
-    current: Option<CoroutineFuture<B, T>>,
+pub struct AsyncGenerator<B, T>
+where
+    B: Backend
+        + BackendCoroutines
+        + BackendClasses
+        + BackendModules,
+{
+    handle: Handle<B>,
+    cursor: AsyncCursor<B, T>,
     marker: PhantomData<fn() -> T>,
 }
 
-impl<B: Backend, T> Unpin for AsyncGenerator<B, T> {}
+impl<B, T> Unpin for AsyncGenerator<B, T>
+where
+    B: Backend
+        + BackendCoroutines
+        + BackendClasses
+        + BackendModules,
+{}
 
-impl<B: Backend, T> AsyncGenerator<B, T> {
-    fn from_parts(owned: B::Owned, guest: Guest<B>) -> Self {
+impl<B, T> AsyncGenerator<B, T>
+where
+    B: Backend
+        + BackendCoroutines
+        + BackendClasses
+        + BackendModules,
+{
+    fn from_handle(handle: Handle<B>) -> Self {
         Self {
-            owned,
-            guest,
-            current: None,
+            handle,
+            cursor: AsyncCursor::default(),
             marker: PhantomData,
         }
     }
@@ -160,7 +178,11 @@ impl<B: Backend, T> AsyncGenerator<B, T> {
 
 impl<B, T> AsyncGenerator<B, T>
 where
-    B: Backend + BackendValues,
+    B: Backend
+        + BackendValues
+        + BackendCoroutines
+        + BackendClasses
+        + BackendModules,
 {
     fn validate<'py>(enter: &Enter<'py, B>, value: &B::Value<'py>) -> Result<(), Error> {
         for method in ["__anext__", "asend", "athrow", "aclose"] {
@@ -183,77 +205,44 @@ impl<B, T> AsyncGenerator<B, T>
 where
     B: Backend
         + BackendValues
-        + BackendCallables
-        + BackendModules
         + BackendCoroutines
+        + BackendCallables
+        + BackendClasses
+        + BackendModules
         + BackendInterrupt,
     T: FromGuest<B>,
 {
-    fn advance<'py>(
-        &self,
-        enter: &Enter<'py, B>,
-        operation: impl FnOnce(Tok<'py, B>, &Val<'py, B>) -> Result<Val<'py, B>, Error>,
-    ) -> Result<CoroutineFuture<B, T>, Error> {
-        Ok(CoroutineFuture::new(
-            self.guest.clone(),
-            B::detach(
-                enter.token(),
-                operation(enter.token(), &B::attach(enter.token(), &self.owned))?,
-            ),
-        ))
-    }
-
-    async fn resolve(future: CoroutineFuture<B, T>) -> Result<Option<T::Owned>, Error> {
-        match future.await {
-            Ok(value) => Ok(Some(value)),
-            Err(Error::Guest(exception)) if exception.matches("StopAsyncIteration") => Ok(None),
-            Err(error) => Err(error),
-        }
-    }
-
     pub fn iter(&self) -> AsyncIter<B, T> {
-        AsyncIter::from_parts(self.owned.clone(), self.guest.clone())
+        AsyncIter::from_handle(self.handle.clone())
     }
 
     pub async fn anext(&self) -> Result<Option<T::Owned>, Error> {
-        Self::resolve(
-            self.guest.enter(|enter| {
-                self.advance(enter, |token, generator| B::anext(token, generator))
-            })?,
-        )
-        .await
+        self.handle
+            .with_async_step::<T>(|enter, generator| B::anext(enter.token(), generator))
+            .await
     }
 
     pub async fn asend<A: ToGuest<B>>(&self, value: A) -> Result<Option<T::Owned>, Error> {
-        Self::resolve(self.guest.enter(|enter| {
-            self.advance(enter, |token, generator| {
-                B::asend(token, generator, value.to_guest(enter)?)
+        self.handle
+            .with_async_step::<T>(|enter, generator| {
+                B::asend(enter.token(), generator, value.to_guest(enter)?)
             })
-        })?)
-        .await
+            .await
     }
 
     pub async fn athrow<E: ToGuest<B>>(&self, exception: E) -> Result<Option<T::Owned>, Error> {
-        Self::resolve(self.guest.enter(|enter| {
-            self.advance(enter, |token, generator| {
-                B::athrow(token, generator, exception.to_guest(enter)?)
+        self.handle
+            .with_async_step::<T>(|enter, generator| {
+                B::athrow(enter.token(), generator, exception.to_guest(enter)?)
             })
-        })?)
-        .await
+            .await
     }
 
     pub async fn aclose(&self) -> Result<(), Error> {
-        self.guest
-            .enter(|enter| {
-                Ok(CoroutineFuture::<B, ()>::new(
-                    self.guest.clone(),
-                    B::detach(
-                        enter.token(),
-                        B::aclose(enter.token(), &B::attach(enter.token(), &self.owned))?,
-                    ),
-                ))
-            })?
+        self.handle
+            .with_async_step::<()>(|enter, generator| B::aclose(enter.token(), generator))
             .await
+            .map(|_| ())
     }
 
     pub async fn collect(self) -> Result<Vec<T::Owned>, Error> {
@@ -269,24 +258,32 @@ where
 
 impl<B, T> FromGuest<B> for AsyncGenerator<B, T>
 where
-    B: Backend + BackendValues,
+    B: Backend
+        + BackendValues
+        + BackendCoroutines
+        + BackendCallables
+        + BackendClasses
+        + BackendModules
+        + BackendInterrupt,
     T: 'static,
 {
     type Owned = Self;
 
     fn from_guest<'py>(enter: &Enter<'py, B>, value: B::Value<'py>) -> Result<Self::Owned, Error> {
         Self::validate(enter, &value)?;
-
-        Ok(Self::from_parts(B::detach(enter.token(), value), enter.guest().clone()))
+        Ok(Self::from_handle(Handle::from_value(enter, value)))
     }
 }
 
 impl<B, T> ToGuest<B> for AsyncGenerator<B, T>
 where
-    B: Backend,
+    B: Backend
+        + BackendCoroutines
+        + BackendClasses
+        + BackendModules,
 {
     fn to_guest<'py>(self, enter: &Enter<'py, B>) -> Result<B::Value<'py>, Error> {
-        Ok(B::attach(enter.token(), &self.owned))
+        Ok(B::attach(enter.token(), self.handle.owned()))
     }
 }
 
@@ -294,9 +291,10 @@ impl<B, T> Stream for AsyncGenerator<B, T>
 where
     B: Backend
         + BackendValues
-        + BackendCallables
-        + BackendModules
         + BackendCoroutines
+        + BackendCallables
+        + BackendClasses
+        + BackendModules
         + BackendInterrupt,
     T: FromGuest<B>,
 {
@@ -305,42 +303,12 @@ where
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let this = self.get_mut();
 
-        if this.current.is_none() {
-            match this
-                .guest
-                .enter(|enter| this.advance(enter, |token, generator| B::anext(token, generator)))
-            {
-                Ok(future) => this.current = Some(future),
-                Err(error) => return Poll::Ready(Some(Err(error))),
-            }
-        }
-
-        match Pin::new(
-            this.current
-                .as_mut()
-                .expect("current is set above"),
-        )
-        .poll(cx)
-        {
-            Poll::Ready(Ok(value)) => {
-                this.current = None;
-
-                Poll::Ready(Some(Ok(value)))
-            }
-            Poll::Ready(Err(Error::Guest(exception)))
-                if exception.matches("StopAsyncIteration") =>
-            {
-                this.current = None;
-
-                Poll::Ready(None)
-            }
-            Poll::Ready(Err(error)) => {
-                this.current = None;
-
-                Poll::Ready(Some(Err(error)))
-            }
-            Poll::Pending => Poll::Pending,
-        }
+        this.cursor
+            .poll(cx, || {
+                this.handle
+                    .with_async_step::<T>(|enter, generator| B::anext(enter.token(), generator))
+            })
+            .map(Result::transpose)
     }
 }
 

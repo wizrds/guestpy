@@ -10,7 +10,8 @@ use crate::{
     backend::{Backend, BackendCallables, BackendClasses, BackendValues},
     errors::Error,
     handle::{
-        Handle, Object,
+        base::Handle,
+        object::Object,
         traits::{Annotated, HasHandle, IsType, Named, ObjectProtocol},
     },
     host::class::{ClassSpec, HostClass, HostClassDefinition},

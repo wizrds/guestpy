@@ -1,5 +1,6 @@
 //! Guest handle types.
 
+mod base;
 mod class;
 mod coroutine;
 mod function;
@@ -8,11 +9,9 @@ mod iter;
 mod module;
 mod object;
 mod traits;
-mod value;
-
-use crate::{backend::Backend, errors::Error, guest::Guest, scope::Enter};
 
 pub use self::{
+    base::{Handle, Value},
     class::{Class, Instance, Ref, RefMut},
     coroutine::{Awaitable, Coroutine},
     function::Function,
@@ -21,56 +20,9 @@ pub use self::{
     module::Module,
     object::Object,
     traits::{Annotated, GenericAlias, Named, ObjectProtocol, TypeProtocol},
-    value::Value,
 };
 
-pub struct Handle<B: Backend> {
-    owned: B::Owned,
-    guest: Guest<B>,
-}
 
-impl<B: Backend> Clone for Handle<B> {
-    fn clone(&self) -> Self {
-        Self {
-            owned: self.owned.clone(),
-            guest: self.guest.clone(),
-        }
-    }
-}
-
-impl<B: Backend> Handle<B> {
-    pub fn new(owned: B::Owned, guest: Guest<B>) -> Self {
-        Self { owned, guest }
-    }
-
-    pub fn from_value<'py>(enter: &Enter<'py, B>, value: B::Value<'py>) -> Self {
-        Self::new(B::detach(enter.token(), value), enter.guest().clone())
-    }
-
-    pub fn owned(&self) -> &B::Owned {
-        &self.owned
-    }
-
-    pub fn guest(&self) -> &Guest<B> {
-        &self.guest
-    }
-
-    pub fn value(&self) -> Value<B> {
-        Value::new(self.owned.clone())
-    }
-
-    pub fn ptr_eq(&self, other: &Self) -> bool {
-        B::owned_ptr_eq(&self.owned, &other.owned)
-    }
-
-    pub fn with_enter<R>(
-        &self,
-        f: impl for<'py> FnOnce(&Enter<'py, B>, &B::Value<'py>) -> Result<R, Error>,
-    ) -> Result<R, Error> {
-        self.guest
-            .enter(|enter| f(enter, &B::attach(enter.token(), &self.owned)))
-    }
-}
 
 #[cfg(test)]
 mod tests {

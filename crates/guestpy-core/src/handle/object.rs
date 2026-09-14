@@ -3,10 +3,10 @@
 use crate::{
     backend::{
         Backend, BackendCallables, BackendCoroutines, BackendInterrupt, BackendModules,
-        BackendValues,
+        BackendValues, BackendClasses,
     },
     errors::Error,
-    handle::{AsyncIter, Handle, traits::HasHandle},
+    handle::{base::Handle, traits::HasHandle, iter::AsyncIter},
     marshal::{FromGuest, ToGuest},
     scope::Enter,
 };
@@ -40,6 +40,7 @@ where
     B: Backend
         + BackendValues
         + BackendCallables
+        + BackendClasses
         + BackendModules
         + BackendCoroutines
         + BackendInterrupt,
@@ -49,10 +50,10 @@ where
             let aiter_method = B::get_attr(enter.token(), object, "__aiter__")?;
             let async_iterator = B::call(enter.token(), &aiter_method, &[], &[])?;
 
-            Ok(AsyncIter::from_parts(
+            Ok(AsyncIter::from_handle(Handle::new(
                 B::detach(enter.token(), async_iterator),
                 self.0.guest().clone(),
-            ))
+            )))
         })
     }
 }
