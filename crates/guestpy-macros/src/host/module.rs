@@ -1,18 +1,18 @@
-use darling::{ast::NestedMeta, util::Flag, FromMeta};
+use darling::{FromMeta, ast::NestedMeta, util::Flag};
 use proc_macro2::{Span, TokenStream};
 use quote::{quote, quote_spanned};
 use syn::{
-    parse_quote, spanned::Spanned, FnArg, ImplItem, ImplItemFn, ItemImpl, Path, TypeParamBound,
+    FnArg, ImplItem, ImplItemFn, ItemImpl, Path, TypeParamBound, parse_quote, spanned::Spanned,
 };
 
 use crate::{
     attributes::HelperAttributes,
     host::{
+        HostMacroError,
         backend::{BackendBounds, BackendOption, BackendParameter},
         callable::{Callable, Parameter, Receiver},
         target::HostTarget,
         types::TypeList,
-        HostMacroError,
     },
     naming::{Naming, RenameRule},
     path::CratePath,
@@ -651,7 +651,7 @@ make it non-async, or make it receiverless
             .map(|exception| quote_spanned!(exception.span()=> .exception_type::<#exception>()));
         let class_registrations = classes
             .iter()
-            .map(|class| quote!(.class::<#class>()));
+            .map(|class| quote!(.class::<#class>()?));
         let receiver = if needs_state { quote!(self) } else { quote!() };
         let state = if needs_state {
             quote!(let __guestpy_state = ::std::rc::Rc::new(self);)
@@ -676,15 +676,20 @@ make it non-async, or make it receiverless
         quote! {
             impl #impl_generics #target #where_clause {
                 pub fn #method_name #method_generics (#receiver)
-                    -> #crate_path::host::module::ModuleSpec<#backend_type>
+                    -> ::core::result::Result<
+                        #crate_path::host::module::ModuleSpec<#backend_type>,
+                        #crate_path::errors::Error,
+                    >
                 #method_where_clause
                 {
                     #state
 
-                    #crate_path::host::module::ModuleSpec::<#backend_type>::new(#name)
-                        #(#registrations)*
-                        #(#exception_registrations)*
-                        #(#class_registrations)*
+                    ::core::result::Result::Ok(
+                        #crate_path::host::module::ModuleSpec::<#backend_type>::new(#name)
+                            #(#registrations)*
+                            #(#exception_registrations)*
+                            #(#class_registrations)*
+                    )
                 }
             }
         }
@@ -871,31 +876,35 @@ mod tests {
 
     #[test]
     fn rejects_mut_self_and_stateful_async() {
-        assert!(HostModuleMacro::new(
-            quote!(name = "bad", crate_path = crate),
-            parse_quote! {
-                impl Bad {
-                    #[guestpy(function)]
-                    fn tick(&mut self) -> Result<(), Error> {
-                        Ok(())
+        assert!(
+            HostModuleMacro::new(
+                quote!(name = "bad", crate_path = crate),
+                parse_quote! {
+                    impl Bad {
+                        #[guestpy(function)]
+                        fn tick(&mut self) -> Result<(), Error> {
+                            Ok(())
+                        }
                     }
-                }
-            },
-        )
-        .is_err(),);
+                },
+            )
+            .is_err(),
+        );
 
-        assert!(HostModuleMacro::new(
-            quote!(name = "bad", crate_path = crate),
-            parse_quote! {
-                impl Bad {
-                    #[guestpy(function)]
-                    async fn tick(&self) -> Result<(), Error> {
-                        Ok(())
+        assert!(
+            HostModuleMacro::new(
+                quote!(name = "bad", crate_path = crate),
+                parse_quote! {
+                    impl Bad {
+                        #[guestpy(function)]
+                        async fn tick(&self) -> Result<(), Error> {
+                            Ok(())
+                        }
                     }
-                }
-            },
-        )
-        .is_err(),);
+                },
+            )
+            .is_err(),
+        );
     }
 
     #[test]
@@ -908,8 +917,10 @@ mod tests {
         );
 
         assert!(output.contains(". class :: < Envelope < B > > ()"));
-        assert!(output
-            .contains("Envelope < B > : crate :: host :: class :: HostClassDefinition < B >",),);
+        assert!(
+            output
+                .contains("Envelope < B > : crate :: host :: class :: HostClassDefinition < B >",),
+        );
     }
 
     #[test]

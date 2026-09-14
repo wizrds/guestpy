@@ -6,7 +6,7 @@ use crate::{
         BackendValues,
     },
     errors::Error,
-    handle::{traits::HasHandle, AsyncIter, Handle},
+    handle::{AsyncIter, Handle, traits::HasHandle},
     marshal::{FromGuest, ToGuest},
     scope::Enter,
 };

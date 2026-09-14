@@ -94,6 +94,52 @@ impl Dunder {
             Self::Format => "__format__",
         }
     }
+
+    pub fn accepts_awaitable(self) -> bool {
+        match self {
+            Self::Call
+            | Self::Eq
+            | Self::Ne
+            | Self::Lt
+            | Self::Le
+            | Self::Gt
+            | Self::Ge
+            | Self::GetItem
+            | Self::Next
+            | Self::Enter
+            | Self::AEnter
+            | Self::AExit
+            | Self::Anext
+            | Self::Await
+            | Self::GetAttr
+            | Self::Add
+            | Self::Sub
+            | Self::Mul
+            | Self::TrueDiv
+            | Self::FloorDiv
+            | Self::Mod
+            | Self::Pow
+            | Self::Neg
+            | Self::Abs => true,
+            Self::Repr
+            | Self::Str
+            | Self::Bool
+            | Self::Hash
+            | Self::Len
+            | Self::SetItem
+            | Self::DelItem
+            | Self::Contains
+            | Self::Iter
+            | Self::Exit
+            | Self::Aiter
+            | Self::SetAttr
+            | Self::DelAttr
+            | Self::Index
+            | Self::Int
+            | Self::Float
+            | Self::Format => false,
+        }
+    }
 }
 
 impl Display for Dunder {
@@ -208,6 +254,57 @@ mod tests {
         for dunder in all {
             assert_eq!(Dunder::from_str(dunder.name()), Ok(dunder));
             assert_eq!(dunder.to_string(), dunder.name());
+        }
+    }
+
+    #[test]
+    fn classifies_every_awaitable_result_contract() {
+        let cases = [
+            (Dunder::Repr, false),
+            (Dunder::Str, false),
+            (Dunder::Bool, false),
+            (Dunder::Hash, false),
+            (Dunder::Eq, true),
+            (Dunder::Ne, true),
+            (Dunder::Lt, true),
+            (Dunder::Le, true),
+            (Dunder::Gt, true),
+            (Dunder::Ge, true),
+            (Dunder::Len, false),
+            (Dunder::GetItem, true),
+            (Dunder::SetItem, false),
+            (Dunder::DelItem, false),
+            (Dunder::Contains, false),
+            (Dunder::Iter, false),
+            (Dunder::Next, true),
+            (Dunder::Call, true),
+            (Dunder::Enter, true),
+            (Dunder::Exit, false),
+            (Dunder::AEnter, true),
+            (Dunder::AExit, true),
+            (Dunder::Aiter, false),
+            (Dunder::Anext, true),
+            (Dunder::Await, true),
+            (Dunder::GetAttr, true),
+            (Dunder::SetAttr, false),
+            (Dunder::DelAttr, false),
+            (Dunder::Add, true),
+            (Dunder::Sub, true),
+            (Dunder::Mul, true),
+            (Dunder::TrueDiv, true),
+            (Dunder::FloorDiv, true),
+            (Dunder::Mod, true),
+            (Dunder::Pow, true),
+            (Dunder::Neg, true),
+            (Dunder::Abs, true),
+            (Dunder::Index, false),
+            (Dunder::Int, false),
+            (Dunder::Float, false),
+            (Dunder::Format, false),
+        ];
+
+        for (dunder, accepts_awaitable) in cases {
+            assert_eq!(dunder.accepts_awaitable(), accepts_awaitable);
         }
     }
 

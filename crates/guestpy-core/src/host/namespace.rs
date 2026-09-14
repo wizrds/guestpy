@@ -4,8 +4,8 @@ use std::{future::Future, marker::PhantomData, rc::Rc};
 
 use crate::{
     backend::{
-        callables::PendingValue, Backend, BackendCallables, BackendCoroutines, BackendModules,
-        BackendValues, Val,
+        Backend, BackendCallables, BackendCoroutines, BackendModules, BackendValues, Val,
+        callables::PendingValue,
     },
     errors::Error,
     handle::Value,
@@ -13,7 +13,7 @@ use crate::{
         declaration::{DeclarationContext, DeclareMember, Member, ModuleGetter},
         function::{AsyncFunctionDeclaration, FunctionDeclaration},
     },
-    marshal::{args::Args, FromGuest, ToGuest},
+    marshal::{FromGuest, ToGuest, args::Args},
     scope::Enter,
 };
 

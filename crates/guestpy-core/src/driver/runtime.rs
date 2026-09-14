@@ -7,8 +7,8 @@ use std::{
 
 use crate::{
     backend::{
-        callables::HostFuture, Backend, BackendCallables, BackendCoroutines, BackendModules,
-        BackendValues, Val,
+        Backend, BackendCallables, BackendCoroutines, BackendModules, BackendValues, Val,
+        callables::HostFuture,
     },
     driver::{event_loop::EventLoop, host_futures::PendingHostFutures, progress::Progress},
     errors::Error,

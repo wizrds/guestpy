@@ -273,16 +273,16 @@ mod tests {
                 .class_method("kind", |_, _, _| Ok::<_, Error>("vector"))
                 .static_method("zero", |_, _| Ok::<_, Error>((0.0_f64, 0.0_f64)))
                 .constant("DIMS", 2_i64)
-                .dunder(Dunder::Len, |_, _, _| Ok::<_, Error>(2_i64))
-                .dunder(Dunder::Repr, |vector, _, _| {
+                .method(Dunder::Len, |_, _, _| Ok::<_, Error>(2_i64))
+                .method(Dunder::Repr, |vector, _, _| {
                     Ok::<_, Error>(format!("Vector2({}, {})", vector.x, vector.y))
                 })
-                .dunder(Dunder::Eq, |vector, enter, args| {
+                .method(Dunder::Eq, |vector, enter, args| {
                     let other = args.borrow::<Vector2>(enter, 0)?;
 
                     Ok::<_, Error>(other.x.eq(&vector.x) && other.y.eq(&vector.y))
                 })
-                .dunder(Dunder::GetItem, |vector, enter, args| {
+                .method(Dunder::GetItem, |vector, enter, args| {
                     match args.required::<i64>(enter, 0, "index")? {
                         0 => Ok::<_, Error>(vector.x),
                         1 => Ok::<_, Error>(vector.y),
@@ -297,7 +297,9 @@ mod tests {
 
     impl Geometry {
         fn module(name: &str) -> ModuleSpec<RustPython> {
-            ModuleSpec::new(name).class::<Vector2>()
+            ModuleSpec::new(name)
+                .class::<Vector2>()
+                .expect("Vector2 registers cleanly")
         }
 
         fn guest() -> (Runtime<RustPython>, Guest<RustPython>) {

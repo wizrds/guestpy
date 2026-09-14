@@ -153,19 +153,22 @@ impl<B> GuestInner<B>
 where
     B: Backend + BackendValues,
 {
-    fn guest_enter_with<'py, F, R>(
-        self: &Rc<Self>,
-        token: B::Token<'py>,
-        f: F,
-    ) -> Result<R, Error>
+    fn guest_enter_with<'py, F, R>(self: &Rc<Self>, token: B::Token<'py>, f: F) -> Result<R, Error>
     where
         F: FnOnce(&Enter<'py, B>) -> Result<R, Error>,
     {
-        let _active = ActiveGuest::operation(self)
-            .map_err(|error| self.runtime.errors().raise_runtime(token, &self.runtime, error))?;
+        let _active = ActiveGuest::operation(self).map_err(|error| {
+            self.runtime
+                .errors()
+                .raise_runtime(token, &self.runtime, error)
+        })?;
         let enter = Enter::new(token, Guest { inner: self.clone() });
 
-        f(&enter).map_err(|error| self.runtime.errors().raise_guest(&enter, error))
+        f(&enter).map_err(|error| {
+            self.runtime
+                .errors()
+                .raise_guest(&enter, error)
+        })
     }
 
     pub(crate) fn raw_body(
@@ -181,11 +184,13 @@ where
             let guest = runtime
                 .registry()
                 .get(guest_id)
-                .map_err(|error| runtime.errors().raise_runtime(token, &runtime, error))?;
+                .map_err(|error| {
+                    runtime
+                        .errors()
+                        .raise_runtime(token, &runtime, error)
+                })?;
 
-            guest.guest_enter_with(token, |enter| {
-                body(enter, Args::new(positional, keyword))
-            })
+            guest.guest_enter_with(token, |enter| body(enter, Args::new(positional, keyword)))
         })
     }
 }
@@ -461,11 +466,7 @@ where
 
 impl<B> Guest<B>
 where
-    B: Backend
-        + BackendValues
-        + BackendCallables
-        + BackendModules
-        + BackendCoroutines,
+    B: Backend + BackendValues + BackendCallables + BackendModules + BackendCoroutines,
 {
     const CLOSE_DRIVE_BUDGET: usize = 1000;
 
@@ -566,11 +567,7 @@ pub struct ActiveAsyncDriver<'a, B: Backend> {
 
 impl<'a, B> ActiveAsyncDriver<'a, B>
 where
-    B: Backend
-        + BackendValues
-        + BackendCallables
-        + BackendModules
-        + BackendCoroutines,
+    B: Backend + BackendValues + BackendCallables + BackendModules + BackendCoroutines,
 {
     pub(crate) fn driver(&self) -> Ref<'_, dyn AsyncDriver<B>> {
         self.guest

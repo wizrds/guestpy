@@ -421,9 +421,7 @@ impl Callable {
             .generics
             .params
             .iter()
-            .find(|parameter| {
-                matches!(parameter, GenericParam::Type(_) | GenericParam::Const(_))
-            })
+            .find(|parameter| matches!(parameter, GenericParam::Type(_) | GenericParam::Const(_)))
         {
             return Err(syn::Error::new_spanned(
                 parameter,

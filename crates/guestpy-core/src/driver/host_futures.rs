@@ -5,8 +5,8 @@ use std::{
 
 use crate::{
     backend::{
-        callables::{HostFuture, PendingResult},
         Backend, BackendValues,
+        callables::{HostFuture, PendingResult},
     },
     errors::Error,
     scope::Enter,

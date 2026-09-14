@@ -2,7 +2,7 @@ use guestpy_core::{
     errors::{Error, GuestException},
     marshal::FromException,
 };
-use pyo3::{exceptions::PySystemError, PyErr, Python};
+use pyo3::{PyErr, Python, exceptions::PySystemError};
 
 use crate::engine::CPython;
 

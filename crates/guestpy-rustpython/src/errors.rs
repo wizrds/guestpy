@@ -4,7 +4,7 @@ use guestpy_core::{
     errors::{Error, GuestException},
     marshal::FromException,
 };
-use rustpython_vm::{builtins::PyBaseExceptionRef, VirtualMachine};
+use rustpython_vm::{VirtualMachine, builtins::PyBaseExceptionRef};
 
 use crate::engine::RustPython;
 

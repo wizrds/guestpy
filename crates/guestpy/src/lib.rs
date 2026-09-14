@@ -992,7 +992,7 @@ def identity(client):
 
         async fn host_class_and_host_module_are_visible_to_guest_code() {
             let guest = Runtime::<B>::builder()
-                .bind(Geometry::module())
+                .bind(Geometry::module().expect("Geometry registers cleanly"))
                 .build()
                 .unwrap()
                 .guest()
@@ -1018,7 +1018,7 @@ def identity(client):
 
         async fn payload_facade_uses_python_dispatch_and_inferred_borrowing() {
             let guest = Runtime::<B>::builder()
-                .bind(Geometry::module())
+                .bind(Geometry::module().expect("Geometry registers cleanly"))
                 .build()
                 .unwrap()
                 .guest()

@@ -1,12 +1,13 @@
 use std::{
     any::TypeId, cell::RefCell, collections::HashMap, future::Future, marker::PhantomData, rc::Rc,
+    str::FromStr,
 };
 
 use crate::{
     backend::{
-        callables::{HostBody, PendingValue, RawBody},
         Backend, BackendCallables, BackendClasses, BackendCoroutines, BackendModules,
         BackendValues, Val,
+        callables::{HostBody, PendingValue, RawBody},
     },
     errors::Error,
     handle::{Object, Value},
@@ -15,7 +16,7 @@ use crate::{
         dunder::Dunder,
         namespace::{Namespace, ValueDeclaration},
     },
-    marshal::{args::Args, FromGuest, FromGuestMut, FromGuestRef, ToGuest},
+    marshal::{FromGuest, FromGuestMut, FromGuestRef, ToGuest, args::Args},
     scope::Enter,
 };
 
@@ -34,9 +35,43 @@ pub(crate) type SetterBody<B> =
 pub(crate) type DeleterBody<B> =
     Rc<dyn for<'py> Fn(&Enter<'py, B>, Val<'py, B>) -> Result<(), Error>>;
 
-pub(crate) enum MemberName {
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub enum MemberName {
     Named(String),
     Dunder(Dunder),
+}
+
+impl MemberName {
+    pub fn as_str(&self) -> &str {
+        match self {
+            Self::Named(name) => name,
+            Self::Dunder(dunder) => dunder.name(),
+        }
+    }
+}
+
+impl From<Dunder> for MemberName {
+    fn from(value: Dunder) -> Self {
+        Self::Dunder(value)
+    }
+}
+
+impl From<&str> for MemberName {
+    fn from(value: &str) -> Self {
+        match Dunder::from_str(value) {
+            Ok(dunder) => Self::Dunder(dunder),
+            Err(_) => Self::Named(value.to_owned()),
+        }
+    }
+}
+
+impl From<String> for MemberName {
+    fn from(value: String) -> Self {
+        match Dunder::from_str(&value) {
+            Ok(dunder) => Self::Dunder(dunder),
+            Err(_) => Self::Named(value),
+        }
+    }
 }
 
 struct MethodDeclaration<B: Backend> {
@@ -256,6 +291,14 @@ pub struct ClassSpec<B: Backend> {
 }
 
 impl<B: Backend> ClassSpec<B> {
+    fn push_member(&mut self, name: MemberName, member: Member<B>) {
+        self.members.push((name, member));
+    }
+
+    fn push_base(&mut self, base: Rc<ClassSpec<B>>) {
+        self.bases.push(base);
+    }
+
     pub(crate) fn payload(&self) -> TypeId {
         self.payload
     }
@@ -303,7 +346,7 @@ impl<B> ClassSpec<B>
 where
     B: Backend + BackendValues + BackendCallables + BackendClasses,
 {
-    pub(crate) fn of<C>() -> Rc<ClassSpec<B>>
+    pub(crate) fn of<C>() -> Result<Rc<ClassSpec<B>>, Error>
     where
         C: HostClass + HostClassDefinition<B>,
     {
@@ -331,7 +374,7 @@ where
             building.borrow_mut().pop();
         });
 
-        Rc::new(builder.spec)
+        Ok(Rc::new(builder.finish()?))
     }
 
     pub(crate) fn realise_registered<'py, C>(enter: &Enter<'py, B>) -> Result<Val<'py, B>, Error>
@@ -412,16 +455,13 @@ where
         let namespace = B::new_dict(self.enter.token())?;
 
         for (member_name, member) in spec.members() {
-            let attribute = match member_name {
-                MemberName::Named(name) => name.clone(),
-                MemberName::Dunder(dunder) => dunder.name().to_owned(),
-            };
-            let value = member.realise(&context, &attribute)?;
+            let attribute = member_name.as_str();
+            let value = member.realise(&context, attribute)?;
 
             B::set_item(
                 self.enter.token(),
                 &namespace,
-                B::str(self.enter.token(), &attribute),
+                B::str(self.enter.token(), attribute),
                 value,
             )?;
         }
@@ -507,6 +547,7 @@ pub trait HostClassDefinition<B: Backend>: HostClass {
 
 pub struct ClassBuilder<B: Backend, C> {
     spec: ClassSpec<B>,
+    error: Option<Error>,
     properties: HashMap<String, Rc<ClassPropertyDeclaration<B>>>,
     marker: PhantomData<fn() -> C>,
 }
@@ -531,17 +572,42 @@ where
                 statics: Namespace::new(),
                 payload: TypeId::of::<C>(),
             },
+            error: None,
             properties: HashMap::new(),
             marker: PhantomData,
         }
     }
 
-    fn push(&mut self, name: &str, member: Member<B>) -> &mut Self {
-        self.spec
-            .members
-            .push((MemberName::Named(name.to_owned()), member));
+    fn finish(self) -> Result<ClassSpec<B>, Error> {
+        match self.error {
+            Some(error) => Err(error),
+            None => Ok(self.spec),
+        }
+    }
+
+    fn reject(&mut self, error: Error) {
+        if self.error.is_none() {
+            self.error = Some(error);
+        }
+    }
+
+    fn push(&mut self, name: MemberName, member: Member<B>) -> &mut Self {
+        self.spec.push_member(name, member);
 
         self
+    }
+
+    fn push_async(&mut self, name: MemberName, member: Member<B>) -> &mut Self {
+        if let MemberName::Dunder(dunder) = name
+            && !dunder.accepts_awaitable()
+        {
+            self.reject(Error::unsupported(format!(
+                "host class {} cannot declare {dunder} as async",
+                C::NAME,
+            )));
+        }
+
+        self.push(name, member)
     }
 
     fn property_slot(&mut self, name: &str) -> Rc<ClassPropertyDeclaration<B>> {
@@ -553,31 +619,31 @@ where
 
         self.properties
             .insert(name.to_owned(), property.clone());
-        self.push(name, property.clone());
+        self.push(name.into(), property.clone());
 
         property
     }
 
-    pub fn method<F, R>(&mut self, name: &str, function: F) -> &mut Self
+    pub fn method<F, R>(&mut self, name: impl Into<MemberName>, function: F) -> &mut Self
     where
         F: for<'py> Fn(&C, &Enter<'py, B>, Args<'py, B>) -> Result<R, Error> + 'static,
         R: ToGuest<B> + 'static,
     {
         self.push(
-            name,
+            name.into(),
             Rc::new(MethodDeclaration::new(move |enter, receiver, args| {
                 function(&*C::from_guest_ref(enter, &receiver)?, enter, args)?.to_guest(enter)
             })),
         )
     }
 
-    pub fn method_with_this<F, R>(&mut self, name: &str, function: F) -> &mut Self
+    pub fn method_with_this<F, R>(&mut self, name: impl Into<MemberName>, function: F) -> &mut Self
     where
         F: for<'py> Fn(&C, &Object<B>, &Enter<'py, B>, Args<'py, B>) -> Result<R, Error> + 'static,
         R: ToGuest<B> + 'static,
     {
         self.push(
-            name,
+            name.into(),
             Rc::new(MethodDeclaration::<B>::new(move |enter, receiver, args| {
                 function(
                     &*C::from_guest_ref(enter, &receiver)?,
@@ -590,27 +656,31 @@ where
         )
     }
 
-    pub fn method_mut<F, R>(&mut self, name: &str, function: F) -> &mut Self
+    pub fn method_mut<F, R>(&mut self, name: impl Into<MemberName>, function: F) -> &mut Self
     where
         F: for<'py> Fn(&mut C, &Enter<'py, B>, Args<'py, B>) -> Result<R, Error> + 'static,
         R: ToGuest<B> + 'static,
     {
         self.push(
-            name,
+            name.into(),
             Rc::new(MethodDeclaration::new(move |enter, receiver, args| {
                 function(&mut *C::from_guest_mut(enter, &receiver)?, enter, args)?.to_guest(enter)
             })),
         )
     }
 
-    pub fn method_mut_with_this<F, R>(&mut self, name: &str, function: F) -> &mut Self
+    pub fn method_mut_with_this<F, R>(
+        &mut self,
+        name: impl Into<MemberName>,
+        function: F,
+    ) -> &mut Self
     where
         F: for<'py> Fn(&mut C, &Object<B>, &Enter<'py, B>, Args<'py, B>) -> Result<R, Error>
             + 'static,
         R: ToGuest<B> + 'static,
     {
         self.push(
-            name,
+            name.into(),
             Rc::new(MethodDeclaration::<B>::new(move |enter, receiver, args| {
                 function(
                     &mut *C::from_guest_mut(enter, &receiver)?,
@@ -623,13 +693,13 @@ where
         )
     }
 
-    pub fn raw_method<F, R>(&mut self, name: &str, function: F) -> &mut Self
+    pub fn raw_method<F, R>(&mut self, name: impl Into<MemberName>, function: F) -> &mut Self
     where
         F: for<'py> Fn(&Object<B>, &Enter<'py, B>, Args<'py, B>) -> Result<R, Error> + 'static,
         R: ToGuest<B> + 'static,
     {
         self.push(
-            name,
+            name.into(),
             Rc::new(MethodDeclaration::new(move |enter, receiver, args| {
                 function(&Object::from_guest(enter, receiver)?, enter, args)?.to_guest(enter)
             })),
@@ -642,7 +712,7 @@ where
         R: ToGuest<B> + 'static,
     {
         self.push(
-            name,
+            name.into(),
             Rc::new(ClassMethodDeclaration::new(move |enter, class, args| {
                 function(enter, class, args)?.to_guest(enter)
             })),
@@ -655,7 +725,7 @@ where
         R: ToGuest<B> + 'static,
     {
         self.push(
-            name,
+            name.into(),
             Rc::new(StaticMethodDeclaration::new(move |enter, args| {
                 function(enter, args)?.to_guest(enter)
             })),
@@ -712,22 +782,7 @@ where
     where
         V: ToGuest<B> + Clone + 'static,
     {
-        self.push(name, Rc::new(ValueDeclaration::new(Namespace::constant_thunk(value))))
-    }
-
-    pub fn dunder<F, R>(&mut self, dunder: Dunder, function: F) -> &mut Self
-    where
-        F: for<'py> Fn(&C, &Enter<'py, B>, Args<'py, B>) -> Result<R, Error> + 'static,
-        R: ToGuest<B> + 'static,
-    {
-        self.spec.members.push((
-            MemberName::Dunder(dunder),
-            Rc::new(MethodDeclaration::new(move |enter, receiver, args| {
-                function(&*C::from_guest_ref(enter, &receiver)?, enter, args)?.to_guest(enter)
-            })),
-        ));
-
-        self
+        self.push(name.into(), Rc::new(ValueDeclaration::new(Namespace::constant_thunk(value))))
     }
 
     pub fn statics<F: FnOnce(&mut Namespace<B>)>(&mut self, build: F) -> &mut Self {
@@ -780,53 +835,102 @@ where
             .register_host_future(enter, PendingValue::<B, R>::into_host_future(future))
     }
 
-    pub fn async_method<F, Fut, R>(&mut self, name: &str, function: F) -> &mut Self
+    fn awaitable<'py>(
+        enter: &Enter<'py, B>,
+        name: &MemberName,
+        pending: Val<'py, B>,
+    ) -> Result<Val<'py, B>, Error> {
+        if name == &MemberName::Dunder(Dunder::Await) {
+            return B::call(
+                enter.token(),
+                &B::get_attr(enter.token(), &pending, Dunder::Await.name())?,
+                &[],
+                &[],
+            );
+        }
+
+        Ok(pending)
+    }
+
+    pub fn async_method<F, Fut, R>(&mut self, name: impl Into<MemberName>, function: F) -> &mut Self
     where
         F: for<'py> Fn(&C, &Enter<'py, B>, Args<'py, B>) -> Result<Fut, Error> + 'static,
         Fut: Future<Output = Result<R, Error>> + 'static,
         R: ToGuest<B> + 'static,
     {
-        self.push(
-            name,
-            Rc::new(MethodDeclaration::new(move |enter, receiver, args| {
-                Self::pending(enter, function(&*C::from_guest_ref(enter, &receiver)?, enter, args)?)
-            })),
-        )
-    }
+        let name = name.into();
 
-    pub fn async_method_with_this<F, Fut, R>(&mut self, name: &str, function: F) -> &mut Self
-    where
-        F: for<'py> Fn(&C, &Object<B>, &Enter<'py, B>, Args<'py, B>) -> Result<Fut, Error>
-            + 'static,
-        Fut: Future<Output = Result<R, Error>> + 'static,
-        R: ToGuest<B> + 'static,
-    {
-        self.push(
-            name,
+        self.push_async(
+            name.clone(),
             Rc::new(MethodDeclaration::new(move |enter, receiver, args| {
-                Self::pending(
+                Self::awaitable(
                     enter,
-                    function(
-                        &*C::from_guest_ref(enter, &receiver)?,
-                        &Object::from_guest(enter, receiver.clone())?,
+                    &name,
+                    Self::pending(
                         enter,
-                        args,
+                        function(&*C::from_guest_ref(enter, &receiver)?, enter, args)?,
                     )?,
                 )
             })),
         )
     }
 
-    pub fn async_raw_method<F, Fut, R>(&mut self, name: &str, function: F) -> &mut Self
+    pub fn async_method_with_this<F, Fut, R>(
+        &mut self,
+        name: impl Into<MemberName>,
+        function: F,
+    ) -> &mut Self
+    where
+        F: for<'py> Fn(&C, &Object<B>, &Enter<'py, B>, Args<'py, B>) -> Result<Fut, Error>
+            + 'static,
+        Fut: Future<Output = Result<R, Error>> + 'static,
+        R: ToGuest<B> + 'static,
+    {
+        let name = name.into();
+
+        self.push_async(
+            name.clone(),
+            Rc::new(MethodDeclaration::new(move |enter, receiver, args| {
+                Self::awaitable(
+                    enter,
+                    &name,
+                    Self::pending(
+                        enter,
+                        function(
+                            &*C::from_guest_ref(enter, &receiver)?,
+                            &Object::from_guest(enter, receiver.clone())?,
+                            enter,
+                            args,
+                        )?,
+                    )?,
+                )
+            })),
+        )
+    }
+
+    pub fn async_raw_method<F, Fut, R>(
+        &mut self,
+        name: impl Into<MemberName>,
+        function: F,
+    ) -> &mut Self
     where
         F: for<'py> Fn(&Object<B>, &Enter<'py, B>, Args<'py, B>) -> Result<Fut, Error> + 'static,
         Fut: Future<Output = Result<R, Error>> + 'static,
         R: ToGuest<B> + 'static,
     {
-        self.push(
-            name,
+        let name = name.into();
+
+        self.push_async(
+            name.clone(),
             Rc::new(MethodDeclaration::new(move |enter, receiver, args| {
-                Self::pending(enter, function(&Object::from_guest(enter, receiver)?, enter, args)?)
+                Self::awaitable(
+                    enter,
+                    &name,
+                    Self::pending(
+                        enter,
+                        function(&Object::from_guest(enter, receiver)?, enter, args)?,
+                    )?,
+                )
             })),
         )
     }
@@ -841,9 +945,10 @@ where
     where
         P: HostClass + HostClassDefinition<B>,
     {
-        self.spec
-            .bases
-            .push(ClassSpec::of::<P>());
+        match ClassSpec::of::<P>() {
+            Ok(spec) => self.spec.push_base(spec),
+            Err(error) => self.reject(error),
+        }
 
         self
     }

@@ -9,15 +9,15 @@ pub mod fixtures {
     use std::any::TypeId;
 
     use crate::{
-        backend::{guest_fixture, Backend, BackendCallables, BackendModules, BackendValues},
+        backend::{Backend, BackendCallables, BackendModules, BackendValues, guest_fixture},
         bundle::Bundle,
         errors::{Error, GuestException},
-        handle::{ObjectProtocol, Function},
+        handle::{Function, ObjectProtocol},
         host::{
             exception::{ExceptionClass, FromRaised, HostException, IntoRaise, Raise, Raised},
             module::ModuleSpec,
         },
-        marshal::{args::Args, FromGuest, ToGuest},
+        marshal::{FromGuest, ToGuest, args::Args},
         runtime::Runtime,
         scope::Enter,
     };

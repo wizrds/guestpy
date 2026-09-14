@@ -63,17 +63,20 @@ pub trait BackendClasses: Backend + BackendValues + BackendCallables {
 
 #[doc(hidden)]
 pub mod fixtures {
+    use std::{cell::Cell, collections::HashMap};
+
     use crate::{
         backend::{
-            Backend, BackendCallables, BackendClasses, BackendCoroutines, BackendInterrupt,
-            BackendModules, BackendValues, BackendExceptions, guest_fixture,
+            Backend, BackendCallables, BackendClasses, BackendCoroutines, BackendExceptions,
+            BackendInterrupt, BackendModules, BackendValues, guest_fixture,
         },
         errors::Error,
         handle::{
-            Annotated, Class, Coroutine, Function, GenericAlias, Instance, Module, Named, Object,
-            ObjectProtocol, TypeProtocol,
+            Annotated, AsyncIter, Class, Coroutine, Function, GenericAlias, Instance, Module,
+            Named, Object, ObjectProtocol, TypeProtocol,
         },
         host::{
+            dunder::Dunder,
             class::{ClassBuilder, HostClass, HostClassDefinition},
             module::ModuleSpec,
         },
@@ -130,7 +133,7 @@ pub mod fixtures {
             + BackendCallables
             + BackendClasses
             + BackendModules
-                + BackendCoroutines,
+            + BackendCoroutines,
     {
         fn construct<'py>(_: &Enter<'py, B>, args: Args<'py, B>) -> Result<Self, Error> {
             args.finish()?;
@@ -166,7 +169,7 @@ pub mod fixtures {
             + BackendCallables
             + BackendClasses
             + BackendModules
-                + BackendCoroutines,
+            + BackendCoroutines,
     {
         fn construct<'py>(enter: &Enter<'py, B>, args: Args<'py, B>) -> Result<Self, Error> {
             let prefix = args.required::<String>(enter, 0, "prefix")?;
@@ -194,11 +197,7 @@ pub mod fixtures {
                 let this = this.clone();
 
                 Ok::<_, Error>(async move {
-                    Ok(format!(
-                        "{}/{}",
-                        prefix,
-                        this.call_method::<_, String>("label", ())?,
-                    ))
+                    Ok(format!("{}/{}", prefix, this.call_method::<_, String>("label", ())?,))
                 })
             });
         }
@@ -216,7 +215,7 @@ pub mod fixtures {
             BackendInterrupt,
         ]
         using Runtime::<B>::builder()
-            .bind(ModuleSpec::new("geometry").class::<Vector2>());
+            .bind(ModuleSpec::new("geometry").class::<Vector2>().expect("Vector2 registers cleanly"));
         |guest| {
             guest.exec("import geometry").unwrap();
 
@@ -255,7 +254,7 @@ pub mod fixtures {
             BackendInterrupt,
         ]
         using Runtime::<B>::builder()
-            .bind(ModuleSpec::new("geometry").class::<Vector2>());
+            .bind(ModuleSpec::new("geometry").class::<Vector2>().expect("Vector2 registers cleanly"));
         |guest| {
             guest.exec("import geometry").unwrap();
             guest
@@ -295,7 +294,7 @@ value = GuestVector(3)
             BackendInterrupt,
         ]
         using Runtime::<B>::builder()
-            .bind(ModuleSpec::new("geometry").class::<Vector2>());
+            .bind(ModuleSpec::new("geometry").class::<Vector2>().expect("Vector2 registers cleanly"));
         |guest| {
             guest.exec("import geometry").unwrap();
             guest
@@ -331,7 +330,7 @@ def callable_value():
             BackendInterrupt,
         ]
         using Runtime::<B>::builder()
-            .bind(ModuleSpec::new("geometry").class::<Vector2>());
+            .bind(ModuleSpec::new("geometry").class::<Vector2>().expect("Vector2 registers cleanly"));
         |guest| {
             guest.exec("import geometry").unwrap();
 
@@ -375,7 +374,7 @@ def callable_value():
             BackendInterrupt,
         ]
         using Runtime::<B>::builder()
-            .bind(ModuleSpec::new("geometry").class::<Vector2>());
+            .bind(ModuleSpec::new("geometry").class::<Vector2>().expect("Vector2 registers cleanly"));
         |guest| {
             guest.exec("import geometry").unwrap();
             guest
@@ -414,7 +413,7 @@ t = Tagged(3, 4)
             BackendInterrupt,
         ]
         using Runtime::<B>::builder()
-            .bind(ModuleSpec::new("geometry").class::<Vector2>());
+            .bind(ModuleSpec::new("geometry").class::<Vector2>().expect("Vector2 registers cleanly"));
         |guest| {
             guest.exec("import geometry").unwrap();
             guest
@@ -589,7 +588,7 @@ class Derived(Base):
             BackendInterrupt,
         ]
         using Runtime::<B>::builder()
-            .bind(ModuleSpec::new("host_lib").class::<Contract>());
+            .bind(ModuleSpec::new("host_lib").class::<Contract>().expect("Contract registers cleanly"));
         |guest| {
             guest.exec("import host_lib").unwrap();
             guest
@@ -634,7 +633,7 @@ p = Plain()
             BackendInterrupt,
         ]
         using Runtime::<B>::builder()
-            .bind(ModuleSpec::new("host_lib").class::<Contract>());
+            .bind(ModuleSpec::new("host_lib").class::<Contract>().expect("Contract registers cleanly"));
         |guest| {
             guest.exec("import host_lib").unwrap();
             guest
@@ -724,7 +723,7 @@ class Impl(host_lib.Contract[Args, Result]):
             BackendInterrupt,
         ]
         using Runtime::<B>::builder()
-            .bind(ModuleSpec::new("host_lib").class::<Contract>());
+            .bind(ModuleSpec::new("host_lib").class::<Contract>().expect("Contract registers cleanly"));
         |guest| {
             guest.exec("import host_lib").unwrap();
             guest
@@ -762,7 +761,7 @@ class Impl(host_lib.Contract):
             BackendInterrupt,
         ]
         using Runtime::<B>::builder()
-            .bind(ModuleSpec::new("host_lib").class::<Ledger>());
+            .bind(ModuleSpec::new("host_lib").class::<Ledger>().expect("Ledger registers cleanly"));
         |guest| {
             guest.exec("import host_lib").unwrap();
             guest
@@ -798,7 +797,7 @@ class Detailed(host_lib.Ledger):
             BackendInterrupt,
         ]
         using Runtime::<B>::builder()
-            .bind(ModuleSpec::new("host_lib").class::<Ledger>());
+            .bind(ModuleSpec::new("host_lib").class::<Ledger>().expect("Ledger registers cleanly"));
         |guest| {
             guest.exec("import host_lib").unwrap();
             guest
@@ -878,7 +877,7 @@ class Row:
             BackendInterrupt,
         ]
         using Runtime::<B>::builder()
-            .bind(ModuleSpec::new("host_lib").class::<Contract>());
+            .bind(ModuleSpec::new("host_lib").class::<Contract>().expect("Contract registers cleanly"));
         |guest| {
             guest
                 .exec(
@@ -978,6 +977,404 @@ def twice(value):
                     .contains("denied")
             );
         }
+    }
+
+    struct AsyncBox;
+
+    impl HostClass for AsyncBox {
+        const NAME: &'static str = "AsyncBox";
+    }
+
+    impl<B> HostClassDefinition<B> for AsyncBox
+    where
+        B: Backend
+            + BackendValues
+            + BackendCallables
+            + BackendClasses
+            + BackendModules
+            + BackendCoroutines
+            + BackendExceptions,
+    {
+        fn construct<'py>(_: &Enter<'py, B>, args: Args<'py, B>) -> Result<Self, Error> {
+            args.finish()?;
+
+            Ok(Self)
+        }
+
+        fn build(builder: &mut ClassBuilder<B, Self>) {
+            builder.async_method_with_this(Dunder::AEnter, |_, this, _, args| {
+                args.finish()?;
+
+                let this = this.clone();
+
+                Ok::<_, Error>(async move { Ok::<_, Error>(this) })
+            });
+
+            builder.async_method(Dunder::AExit, |_, _, _| {
+                Ok::<_, Error>(async { Ok::<_, Error>(false) })
+            });
+        }
+    }
+
+    struct AsyncBoxByName;
+
+    impl HostClass for AsyncBoxByName {
+        const NAME: &'static str = "AsyncBoxByName";
+    }
+
+    impl<B> HostClassDefinition<B> for AsyncBoxByName
+    where
+        B: Backend
+            + BackendValues
+            + BackendCallables
+            + BackendClasses
+            + BackendModules
+            + BackendCoroutines
+            + BackendExceptions,
+    {
+        fn construct<'py>(_: &Enter<'py, B>, args: Args<'py, B>) -> Result<Self, Error> {
+            args.finish()?;
+
+            Ok(Self)
+        }
+
+        fn build(builder: &mut ClassBuilder<B, Self>) {
+            builder.async_method_with_this("__aenter__", |_, this, _, args| {
+                args.finish()?;
+
+                let this = this.clone();
+
+                Ok::<_, Error>(async move { Ok::<_, Error>(this) })
+            });
+
+            builder.async_method(Dunder::AExit, |_, _, _| {
+                Ok::<_, Error>(async { Ok::<_, Error>(false) })
+            });
+        }
+    }
+
+    struct Awaitable {
+        value: i64,
+    }
+
+    impl HostClass for Awaitable {
+        const NAME: &'static str = "Awaitable";
+    }
+
+    impl<B> HostClassDefinition<B> for Awaitable
+    where
+        B: Backend
+            + BackendValues
+            + BackendCallables
+            + BackendClasses
+            + BackendModules
+            + BackendCoroutines
+            + BackendExceptions,
+    {
+        fn construct<'py>(enter: &Enter<'py, B>, args: Args<'py, B>) -> Result<Self, Error> {
+            let value = args.required::<i64>(enter, 0, "value")?;
+
+            args.finish()?;
+
+            Ok(Self { value })
+        }
+
+        fn build(builder: &mut ClassBuilder<B, Self>) {
+            builder.async_method(Dunder::Await, |awaitable, _, args| {
+                args.finish()?;
+
+                let value = awaitable.value;
+
+                Ok::<_, Error>(async move { Ok::<_, Error>(value) })
+            });
+        }
+    }
+
+    struct Sequence {
+        value: Cell<i64>,
+    }
+
+    impl HostClass for Sequence {
+        const NAME: &'static str = "Sequence";
+    }
+
+    impl<B> HostClassDefinition<B> for Sequence
+    where
+        B: Backend
+            + BackendValues
+            + BackendCallables
+            + BackendClasses
+            + BackendModules
+            + BackendCoroutines
+            + BackendExceptions,
+    {
+        fn construct<'py>(_: &Enter<'py, B>, args: Args<'py, B>) -> Result<Self, Error> {
+            args.finish()?;
+
+            Ok(Self { value: Cell::new(0) })
+        }
+
+        fn build(builder: &mut ClassBuilder<B, Self>) {
+            builder.method_with_this(Dunder::Aiter, |_, this, _, args| {
+                args.finish()?;
+
+                Ok::<_, Error>(this.clone())
+            });
+
+            builder.async_method(Dunder::Anext, |sequence, _, args| {
+                args.finish()?;
+
+                let next = sequence.value.get() + 1;
+
+                if next > 2 {
+                    return Err(Error::StopAsyncIteration);
+                }
+
+                sequence.value.set(next);
+
+                Ok::<_, Error>(async move { Ok::<_, Error>(next) })
+            });
+        }
+    }
+
+    struct Session {
+        values: HashMap<String, i64>,
+    }
+
+    impl HostClass for Session {
+        const NAME: &'static str = "Session";
+    }
+
+    impl<B> HostClassDefinition<B> for Session
+    where
+        B: Backend
+            + BackendValues
+            + BackendCallables
+            + BackendClasses
+            + BackendModules
+            + BackendCoroutines
+            + BackendExceptions,
+    {
+        fn construct<'py>(_: &Enter<'py, B>, args: Args<'py, B>) -> Result<Self, Error> {
+            args.finish()?;
+
+            Ok(Self { values: HashMap::new() })
+        }
+
+        fn build(builder: &mut ClassBuilder<B, Self>) {
+            builder.method_mut(Dunder::SetItem, |session, enter, args| {
+                let key = args.required::<String>(enter, 0, "key")?;
+                let value = args.required::<i64>(enter, 1, "value")?;
+
+                args.finish()?;
+
+                session.values.insert(key, value);
+
+                Ok::<_, Error>(())
+            });
+
+            builder.method(Dunder::GetItem, |session, enter, args| {
+                let key = args.required::<String>(enter, 0, "key")?;
+
+                args.finish()?;
+
+                session
+                    .values
+                    .get(&key)
+                    .copied()
+                    .ok_or_else(|| Error::attribute(key))
+            });
+
+            builder.method_with_this(Dunder::Enter, |_, this, _, args| {
+                args.finish()?;
+
+                Ok::<_, Error>(this.clone())
+            });
+
+            builder.method(Dunder::Exit, |_, _, _| Ok::<_, Error>(false));
+        }
+    }
+
+    struct RejectsAsyncLen;
+
+    impl HostClass for RejectsAsyncLen {
+        const NAME: &'static str = "RejectsAsyncLen";
+    }
+
+    impl<B> HostClassDefinition<B> for RejectsAsyncLen
+    where
+        B: Backend
+            + BackendValues
+            + BackendCallables
+            + BackendClasses
+            + BackendModules
+            + BackendCoroutines
+            + BackendExceptions,
+    {
+        fn construct<'py>(_: &Enter<'py, B>, args: Args<'py, B>) -> Result<Self, Error> {
+            args.finish()?;
+
+            Ok(Self)
+        }
+
+        fn build(builder: &mut ClassBuilder<B, Self>) {
+            builder.async_method(Dunder::Len, |_, _, _| {
+                Ok::<_, Error>(async { Ok::<_, Error>(0_i64) })
+            });
+        }
+    }
+
+    guest_fixture! {
+        pub async fn async_with_over_dunder_registered_aenter_returns_this<B>()
+        where B: [
+            Backend,
+            BackendValues,
+            BackendCallables,
+            BackendClasses,
+            BackendModules,
+            BackendCoroutines,
+            BackendExceptions,
+            BackendInterrupt,
+        ]
+        using Runtime::<B>::builder()
+            .bind(ModuleSpec::new("host_lib").class::<AsyncBox>().expect("AsyncBox registers cleanly"));
+        |guest| {
+            guest.exec("import host_lib").unwrap();
+            guest.exec("async def run():\n    box = host_lib.AsyncBox()\n    async with box as opened:\n        return opened is box\n").unwrap();
+
+            assert!(guest.eval::<Coroutine<B, bool>>("run()").unwrap().await.unwrap());
+        }
+    }
+
+    guest_fixture! {
+        pub async fn async_with_over_string_registered_aenter_returns_this<B>()
+        where B: [
+            Backend,
+            BackendValues,
+            BackendCallables,
+            BackendClasses,
+            BackendModules,
+            BackendCoroutines,
+            BackendExceptions,
+            BackendInterrupt,
+        ]
+        using Runtime::<B>::builder()
+            .bind(ModuleSpec::new("host_lib").class::<AsyncBoxByName>().expect("AsyncBoxByName registers cleanly"));
+        |guest| {
+            guest.exec("import host_lib").unwrap();
+            guest.exec("async def run():\n    box = host_lib.AsyncBoxByName()\n    async with box as opened:\n        return opened is box\n").unwrap();
+
+            assert!(guest.eval::<Coroutine<B, bool>>("run()").unwrap().await.unwrap());
+        }
+    }
+
+    guest_fixture! {
+        pub async fn awaiting_a_host_object_yields_its_pending_value<B>()
+        where B: [
+            Backend,
+            BackendValues,
+            BackendCallables,
+            BackendClasses,
+            BackendModules,
+            BackendCoroutines,
+            BackendExceptions,
+            BackendInterrupt,
+        ]
+        using Runtime::<B>::builder()
+            .bind(ModuleSpec::new("host_lib").class::<Awaitable>().expect("Awaitable registers cleanly"));
+        |guest| {
+            guest.exec("import host_lib").unwrap();
+            guest.exec("async def run():\n    return await host_lib.Awaitable(7)\n").unwrap();
+
+            assert_eq!(guest.eval::<Coroutine<B, i64>>("run()").unwrap().await.unwrap(), 7);
+        }
+    }
+
+    guest_fixture! {
+        pub async fn async_iteration_ends_with_stop_async_iteration<B>()
+        where B: [
+            Backend,
+            BackendValues,
+            BackendCallables,
+            BackendClasses,
+            BackendModules,
+            BackendCoroutines,
+            BackendExceptions,
+            BackendInterrupt,
+        ]
+        using Runtime::<B>::builder()
+            .bind(ModuleSpec::new("host_lib").class::<Sequence>().expect("Sequence registers cleanly"));
+        |guest| {
+            guest.exec("import host_lib").unwrap();
+
+            assert_eq!(
+                guest
+                    .eval::<AsyncIter<B, i64>>("host_lib.Sequence()")
+                    .unwrap()
+                    .collect()
+                    .await
+                    .unwrap(),
+                vec![1, 2],
+            );
+        }
+    }
+
+    guest_fixture! {
+        pub fn setitem_mutates_then_getitem_reads_it_back<B>()
+        where B: [
+            Backend,
+            BackendValues,
+            BackendCallables,
+            BackendClasses,
+            BackendModules,
+            BackendCoroutines,
+            BackendExceptions,
+            BackendInterrupt,
+        ]
+        using Runtime::<B>::builder()
+            .bind(ModuleSpec::new("host_lib").class::<Session>().expect("Session registers cleanly"));
+        |guest| {
+            guest.exec("import host_lib\nsession = host_lib.Session()\nsession[\"count\"] = 3\n").unwrap();
+
+            assert!(guest.eval::<bool>(r#"session["count"] == 3"#).unwrap());
+        }
+    }
+
+    guest_fixture! {
+        pub fn enter_returns_the_same_object<B>()
+        where B: [
+            Backend,
+            BackendValues,
+            BackendCallables,
+            BackendClasses,
+            BackendModules,
+            BackendCoroutines,
+            BackendExceptions,
+            BackendInterrupt,
+        ]
+        using Runtime::<B>::builder()
+            .bind(ModuleSpec::new("host_lib").class::<Session>().expect("Session registers cleanly"));
+        |guest| {
+            guest.exec("import host_lib\nsession = host_lib.Session()\nwith session as opened:\n    result = opened is session\n").unwrap();
+
+            assert!(guest.eval::<bool>("result").unwrap());
+        }
+    }
+    pub fn async_len_is_rejected_at_build_time<B>()
+    where
+        B: Backend
+            + BackendValues
+            + BackendCallables
+            + BackendClasses
+            + BackendModules
+            + BackendCoroutines
+            + BackendExceptions,
+    {
+        assert!(matches!(
+            ModuleSpec::<B>::new("host_lib")
+                .class::<RejectsAsyncLen>(),
+            Err(Error::Unsupported { .. })
+        ));
     }
 
     #[doc(hidden)]
@@ -1109,6 +1506,57 @@ def twice(value):
             #[test]
             fn import_keeps_denied_standard_library_modules_denied() {
                 $crate::backend::classes::fixtures::import_keeps_denied_standard_library_modules_denied::<
+                    $backend,
+                >();
+            }
+
+            #[tokio::test]
+            async fn async_with_over_dunder_registered_aenter_returns_this() {
+                $crate::backend::classes::fixtures::async_with_over_dunder_registered_aenter_returns_this::<
+                    $backend,
+                >()
+                .await;
+            }
+
+            #[tokio::test]
+            async fn async_with_over_string_registered_aenter_returns_this() {
+                $crate::backend::classes::fixtures::async_with_over_string_registered_aenter_returns_this::<
+                    $backend,
+                >()
+                .await;
+            }
+
+            #[tokio::test]
+            async fn awaiting_a_host_object_yields_its_pending_value() {
+                $crate::backend::classes::fixtures::awaiting_a_host_object_yields_its_pending_value::<
+                    $backend,
+                >()
+                .await;
+            }
+
+            #[tokio::test]
+            async fn async_iteration_ends_with_stop_async_iteration() {
+                $crate::backend::classes::fixtures::async_iteration_ends_with_stop_async_iteration::<
+                    $backend,
+                >()
+                .await;
+            }
+
+            #[test]
+            fn setitem_mutates_then_getitem_reads_it_back() {
+                $crate::backend::classes::fixtures::setitem_mutates_then_getitem_reads_it_back::<
+                    $backend,
+                >();
+            }
+
+            #[test]
+            fn enter_returns_the_same_object() {
+                $crate::backend::classes::fixtures::enter_returns_the_same_object::<$backend>();
+            }
+
+            #[test]
+            fn async_len_is_rejected_at_build_time() {
+                $crate::backend::classes::fixtures::async_len_is_rejected_at_build_time::<
                     $backend,
                 >();
             }

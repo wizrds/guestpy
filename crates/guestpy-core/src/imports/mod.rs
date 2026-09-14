@@ -179,9 +179,7 @@ where
     ) -> Result<B::Value<'py>, Error> {
         qualname
             .split('.')
-            .try_fold(module.clone(), |value, name| {
-                B::get_attr(self.enter.token(), &value, name)
-            })
+            .try_fold(module.clone(), |value, name| B::get_attr(self.enter.token(), &value, name))
     }
 
     pub(crate) fn dispatch(&self, args: &Args<'py, B>) -> Result<B::Value<'py>, Error> {

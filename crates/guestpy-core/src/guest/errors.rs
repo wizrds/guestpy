@@ -17,22 +17,17 @@ pub(crate) trait GuestErrorHandler<B: Backend> {
         error: Error,
     ) -> Error;
 
-    fn raise_guest<'py>(
-        &self,
-        enter: &Enter<'py, B>,
-        error: Error,
-    ) -> Error;
+    fn raise_guest<'py>(&self, enter: &Enter<'py, B>, error: Error) -> Error;
 
-    fn exception<'py>(
-        &self,
-        enter: &Enter<'py, B>,
-        error: Error,
-    ) -> Val<'py, B>;
+    fn exception<'py>(&self, enter: &Enter<'py, B>, error: Error) -> Val<'py, B>;
 }
 
 enum ErrorSite<'py, 'e, B: Backend> {
     Guest(&'e Enter<'py, B>),
-    Runtime { token: Tok<'py, B>, runtime: &'e RuntimeInner<B> },
+    Runtime {
+        token: Tok<'py, B>,
+        runtime: &'e RuntimeInner<B>,
+    },
 }
 
 pub(crate) struct ExceptionRaiser<B>
@@ -234,21 +229,13 @@ where
         Error::Guest(Box::new(GuestException::describe::<B>(token, object, None)))
     }
 
-    fn raise_guest<'py>(
-        &self,
-        enter: &Enter<'py, B>,
-        error: Error,
-    ) -> Error {
+    fn raise_guest<'py>(&self, enter: &Enter<'py, B>, error: Error) -> Error {
         let object = self.convert(&ErrorSite::Guest(enter), error);
 
         Error::Guest(Box::new(GuestException::describe::<B>(enter.token(), object, None)))
     }
 
-    fn exception<'py>(
-        &self,
-        enter: &Enter<'py, B>,
-        error: Error,
-    ) -> Val<'py, B> {
+    fn exception<'py>(&self, enter: &Enter<'py, B>, error: Error) -> Val<'py, B> {
         self.convert(&ErrorSite::Guest(enter), error)
     }
 }

@@ -394,7 +394,7 @@ where
         T::from_guest(
             self.enter,
             B::get_attr(self.enter.token(), &self.exception, name)
-                .map_err(|_| Error::attribute(name))?
+                .map_err(|_| Error::attribute(name))?,
         )
     }
 }
