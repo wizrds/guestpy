@@ -26,13 +26,13 @@ struct ExceptionDeriveInput {
     crate_path: Option<Path>,
 }
 
-enum ExceptionBase {
+enum Base {
     Default,
     Typed(Path),
     Builtin(String),
 }
 
-impl ExceptionBase {
+impl Base {
     fn tokens(&self, crate_path: &Path) -> TokenStream {
         match self {
             Self::Default => quote!(
@@ -117,7 +117,7 @@ impl ExceptionField {
 pub(crate) struct HostExceptionDerive {
     ident: Ident,
     name: String,
-    base: ExceptionBase,
+    base: Base,
     crate_path: Path,
     fields: Vec<ExceptionField>,
 }
@@ -142,9 +142,9 @@ impl HostExceptionDerive {
                 )
                 .into());
             }
-            (Some(base), None) => ExceptionBase::Typed(base),
-            (None, Some(base)) => ExceptionBase::Builtin(base),
-            (None, None) => ExceptionBase::Default,
+            (Some(base), None) => Base::Typed(base),
+            (None, Some(base)) => Base::Builtin(base),
+            (None, None) => Base::Default,
         };
         let Data::Struct(fields) = input.data else {
             unreachable!("darling rejects non-struct HostException inputs")

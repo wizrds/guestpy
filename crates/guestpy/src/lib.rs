@@ -466,6 +466,111 @@
 //! [`guestpy_core::errors::GuestException::message`](guestpy_core::errors::GuestException::message),
 //! and [`guestpy_core::errors::GuestException::traceback`](guestpy_core::errors::GuestException::traceback)
 //! when reporting a guest failure.
+//!
+//! Host modules can expose typed Rust exceptions and raise them with positional arguments and named
+//! attributes:
+//!
+//! ```ignore
+//! use guestpy::prelude::*;
+//!
+//! #[derive(HostException)]
+//! #[guestpy(builtin = "TimeoutError")]
+//! struct RequestTimeout {
+//!     #[guestpy(arg)]
+//!     message: String,
+//!     request_id: String,
+//! }
+//!
+//! #[host_module(name = "http", exceptions(RequestTimeout))]
+//! impl Http {
+//!     #[guestpy(function)]
+//!     fn fetch<B>(request_id: String) -> Result<(), Error>
+//!     where
+//!         B: Backend,
+//!         String: ToGuest<B>,
+//!     {
+//!         Err(Raise::<B>::host(RequestTimeout {
+//!             message: "request timed out".to_owned(),
+//!             request_id,
+//!         })
+//!         .into())
+//!     }
+//! }
+//! ```
+//!
+//! Python receives the registered class, constructor arguments, and attributes through its ordinary
+//! exception model:
+//!
+//! ```python
+//! import http
+//!
+//! try:
+//!     http.fetch("request-1")
+//! except http.RequestTimeout as error:
+//!     assert error.args == ("request timed out",)
+//!     assert error.request_id == "request-1"
+//! ```
+//!
+//! An uncaught host raise returns to Rust as `Error::Guest`. Class matching is detached from guest
+//! entry and remains subclass-aware:
+//!
+//! ```ignore
+//! match client.call::<_, Response>((request,)) {
+//!     Err(Error::Guest(exception))
+//!         if RequestTimeout::class().matches(&exception) =>
+//!     {
+//!         retry()
+//!     }
+//!     Err(Error::Guest(exception))
+//!         if ExceptionClass::builtin("KeyError").matches(&exception) =>
+//!     {
+//!         use_default()
+//!     }
+//!     result => result,
+//! }
+//! ```
+//!
+//! Typed field reconstruction requires the retained exception object and an `Enter` for the active
+//! backend. Host callbacks can request that entry context explicitly:
+//!
+//! ```ignore
+//! #[guestpy(function)]
+//! fn forward<B>(
+//!     #[guestpy(enter)] enter: &Enter<'_, B>,
+//!     client: Client<B>,
+//! ) -> Result<Response<B>, Error>
+//! where
+//!     B: Backend + BackendValues,
+//!     RequestTimeout: FromRaised<B>,
+//! {
+//!     match client.send() {
+//!         Err(Error::Guest(exception)) => {
+//!             match RequestTimeout::caught(enter, &exception)? {
+//!                 Some(timeout) => retry(timeout.request_id),
+//!                 None => Err(Error::Guest(exception)),
+//!             }
+//!         }
+//!         result => result,
+//!     }
+//! }
+//! ```
+//!
+//! Select a raised class with `ExceptionClass::builtin` for a Python builtin,
+//! `ExceptionClass::host` for a named host class, `ExceptionClass::guest` for a class imported from
+//! guest code, or `E::class()` for a type implementing `HostException`. When a typed exception is
+//! registered by more than one module in a runtime, the first registration determines its Python
+//! class. Timeout, cancellation, interruption, and closed errors inherit directly from
+//! `BaseException`, so `except Exception` does not consume them.
+//!
+//! A host class can combine Rust and imported Python bases in declaration order:
+//!
+//! ```ignore
+//! #[host_class(backend = B, extends(Headers, "collections.abc:Mapping"))]
+//! impl CaseInsensitiveHeaders {}
+//! ```
+//!
+//! Imported bases always resolve through the runtime's real Python importer rather than guest
+//! bindings. A generic caller of `ModuleSpec::exception` requires `BackendModules`.
 
 #[allow(unused_extern_crates)]
 extern crate self as guestpy;
@@ -473,7 +578,9 @@ extern crate self as guestpy;
 pub mod prelude;
 
 pub use guestpy_core::*;
-pub use guestpy_macros::{FromGuest, ToGuest, guest_class, guest_module, host_class, host_module};
+pub use guestpy_macros::{
+    FromGuest, HostException, ToGuest, guest_class, guest_module, host_class, host_module,
+};
 
 #[cfg(feature = "embedded")]
 pub use guestpy_macros::bundle;
