@@ -1,6 +1,12 @@
 # Changelog
 
 ---
+## [0.5.1](https://github.com/wizrds/guestpy/compare/0.5.0..0.5.1) - 2026-09-15
+
+### Bug Fixes
+
+- Avoid Debug bound on Raise args for handle access - ([8534ae8](https://github.com/wizrds/guestpy/commit/8534ae857ddc4f684efa12e8e6d77b4c7098fd61)) - Timothy Pogue
+---
 ## [0.5.0](https://github.com/wizrds/guestpy/compare/0.4.0..0.5.0) - 2026-09-15
 
 ### Features
