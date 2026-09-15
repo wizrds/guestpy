@@ -173,7 +173,7 @@ impl ExceptionClass {
                 module: module.to_string(),
                 name: name.to_string(),
             }),
-            Self::Typed { id, name } => Some(ExceptionKey::Typed { id: *id, name: *name }),
+            Self::Typed { id, name } => Some(ExceptionKey::Typed { id: *id, name }),
             Self::Builtin(_) | Self::Guest { .. } => None,
         }
     }

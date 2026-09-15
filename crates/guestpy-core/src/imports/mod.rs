@@ -30,7 +30,7 @@ where
         Self { enter }
     }
 
-    fn from_list(&self, value: Option<&B::Value<'py>>) -> Result<Vec<String>, Error> {
+    fn list_names(&self, value: Option<&B::Value<'py>>) -> Result<Vec<String>, Error> {
         let Some(value) = value else {
             return Ok(Vec::new());
         };
@@ -52,7 +52,7 @@ where
                 wanted.push(name.clone());
             } else if B::has_attr(self.enter.token(), module, "__all__") {
                 wanted.extend(
-                    self.from_list(Some(&B::get_attr(self.enter.token(), module, "__all__")?))?
+                    self.list_names(Some(&B::get_attr(self.enter.token(), module, "__all__")?))?
                         .into_iter()
                         .filter(|entry| entry != "*"),
                 );
@@ -214,7 +214,7 @@ where
         }
 
         let module = Realiser::new(self.enter).module(&resolved)?;
-        let names = self.from_list(fromlist.as_ref())?;
+        let names = self.list_names(fromlist.as_ref())?;
 
         if names.is_empty() {
             return self

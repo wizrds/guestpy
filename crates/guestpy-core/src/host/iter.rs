@@ -92,7 +92,9 @@ where
     }
 }
 
-pub struct HostStream<T>(Rc<RefCell<Pin<Box<dyn Stream<Item = Result<T, Error>>>>>>);
+type HostStreamInner<T> = Pin<Box<dyn Stream<Item = Result<T, Error>>>>;
+
+pub struct HostStream<T>(Rc<RefCell<HostStreamInner<T>>>);
 
 impl<T: 'static> HostStream<T> {
     pub fn new<S>(stream: S) -> Self
