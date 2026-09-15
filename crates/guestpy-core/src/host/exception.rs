@@ -267,14 +267,14 @@ type Thunk<B> = Box<dyn for<'py> FnOnce(&Enter<'py, B>) -> Result<Val<'py, B>, E
 
 pub(crate) enum RaiseValue<B: Backend> {
     Text(Cow<'static, str>),
-    Guest { repr: String, thunk: Thunk<B> },
+    Guest(Thunk<B>),
 }
 
 impl<B: Backend> RaiseValue<B> {
-    pub(crate) fn repr(&self) -> &str {
+    pub(crate) fn text(&self) -> Option<&str> {
         match self {
-            Self::Text(text) => text,
-            Self::Guest { repr, .. } => repr,
+            Self::Text(text) => Some(text),
+            Self::Guest(_) => None,
         }
     }
 }
@@ -296,33 +296,26 @@ impl<B: Backend> Raise<B> {
         }
     }
 
-    pub fn within<'py>(_: &Enter<'py, B>, class: ExceptionClass) -> Self {
+    pub fn within(_enter: &Enter<'_, B>, class: ExceptionClass) -> Self {
         Self::new(class)
     }
 
     pub fn arg<V>(mut self, value: V) -> Self
     where
-        V: ToGuest<B> + Debug + 'static,
+        V: ToGuest<B> + 'static,
     {
-        self.args.push(RaiseValue::Guest {
-            repr: format!("{value:?}"),
-            thunk: Box::new(move |enter| value.to_guest(enter)),
-        });
+        self.args
+            .push(RaiseValue::Guest(Box::new(move |enter| value.to_guest(enter))));
 
         self
     }
 
     pub fn attr<V>(mut self, name: impl Into<String>, value: V) -> Self
     where
-        V: ToGuest<B> + Debug + 'static,
+        V: ToGuest<B> + 'static,
     {
-        self.attrs.push((
-            name.into(),
-            RaiseValue::Guest {
-                repr: format!("{value:?}"),
-                thunk: Box::new(move |enter| value.to_guest(enter)),
-            },
-        ));
+        self.attrs
+            .push((name.into(), RaiseValue::Guest(Box::new(move |enter| value.to_guest(enter)))));
 
         self
     }
@@ -360,7 +353,7 @@ impl<B: Backend> From<Raise<B>> for Error {
             raise
                 .args
                 .iter()
-                .map(RaiseValue::repr)
+                .filter_map(RaiseValue::text)
                 .collect::<Vec<_>>()
                 .join(" "),
             Box::new(raise),
