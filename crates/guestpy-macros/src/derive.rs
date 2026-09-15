@@ -1,7 +1,7 @@
-use darling::{util::Flag, FromDeriveInput};
+use darling::{FromDeriveInput, util::Flag};
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
-use syn::{parse_quote, Data, DeriveInput, Fields, Generics, Ident, Path, Type};
+use syn::{Data, DeriveInput, Fields, Generics, Ident, Path, Type, parse_quote};
 
 use crate::path::CratePath;
 
@@ -334,7 +334,7 @@ impl GuestDerive {
 
 #[cfg(test)]
 mod tests {
-    use syn::{parse_quote, ItemImpl};
+    use syn::{ItemImpl, parse_quote};
 
     use super::GuestDerive;
 
@@ -494,16 +494,20 @@ mod tests {
 
     #[test]
     fn union_rejects_non_enum_empty_and_non_newtype_shapes() {
-        assert!(rejection(parse_quote! {
-            #[guestpy(union)]
-            struct Value(i64);
-        })
-        .contains("#[guestpy(union)] is only valid on an enum"),);
-        assert!(rejection(parse_quote! {
-            #[guestpy(union)]
-            enum Value {}
-        })
-        .contains("a #[guestpy(union)] enum needs at least one variant"),);
+        assert!(
+            rejection(parse_quote! {
+                #[guestpy(union)]
+                struct Value(i64);
+            })
+            .contains("#[guestpy(union)] is only valid on an enum"),
+        );
+        assert!(
+            rejection(parse_quote! {
+                #[guestpy(union)]
+                enum Value {}
+            })
+            .contains("a #[guestpy(union)] enum needs at least one variant"),
+        );
 
         for input in [
             parse_quote! {
@@ -519,8 +523,10 @@ mod tests {
                 enum Value { Pair(i64, String) }
             },
         ] {
-            assert!(rejection(input)
-                .contains("a #[guestpy(union)] variant must hold exactly one unnamed field",));
+            assert!(
+                rejection(input)
+                    .contains("a #[guestpy(union)] variant must hold exactly one unnamed field",)
+            );
         }
     }
 }

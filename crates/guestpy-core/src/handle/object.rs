@@ -3,13 +3,10 @@
 use crate::{
     backend::Backend,
     errors::Error,
-    handle::{
-        base::Handle,
-        traits::HasHandle,
-    },
+    handle::{base::Handle, traits::HasHandle},
     marshal::{
-        describe::{Describe, Expected},
         FromGuest, ToGuest,
+        describe::{Describe, Expected},
     },
     scope::Enter,
 };

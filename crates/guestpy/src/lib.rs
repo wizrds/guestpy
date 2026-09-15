@@ -616,7 +616,7 @@ pub mod prelude;
 
 pub use guestpy_core::*;
 pub use guestpy_macros::{
-    guest_class, guest_module, host_class, host_module, FromGuest, HostException, ToGuest,
+    FromGuest, HostException, ToGuest, guest_class, guest_module, host_class, host_module,
 };
 
 #[cfg(feature = "embedded")]

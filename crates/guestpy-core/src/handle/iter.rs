@@ -251,10 +251,7 @@ where
 {
     type Owned = Self;
 
-    fn from_guest<'py>(
-        enter: &Enter<'py, B>,
-        value: B::Value<'py>,
-    ) -> Result<Self::Owned, Error> {
+    fn from_guest<'py>(enter: &Enter<'py, B>, value: B::Value<'py>) -> Result<Self::Owned, Error> {
         AsyncIter::<B, T>::from_guest(
             enter,
             B::call(
@@ -262,10 +259,7 @@ where
                 &match B::get_attr(enter.token(), &value, "__aiter__") {
                     Ok(aiter) if B::is_callable(enter.token(), &aiter) => aiter,
                     _ => {
-                        return Err(Error::mismatch::<Self>(&B::type_name(
-                            enter.token(),
-                            &value,
-                        )));
+                        return Err(Error::mismatch::<Self>(&B::type_name(enter.token(), &value)));
                     }
                 },
                 &[],

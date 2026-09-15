@@ -733,10 +733,7 @@ an exclusive borrow cannot be held while the returned future is built
             .iter()
             .flat_map(ClassMember::context_types)
         {
-            if !context_types
-                .iter()
-                .any(|ty| *ty == context_type)
-            {
+            if !context_types.contains(&context_type) {
                 context_types.push(context_type);
             }
         }

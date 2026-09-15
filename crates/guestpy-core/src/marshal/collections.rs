@@ -1,11 +1,11 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use crate::{
-    backend::{values::BackendValues, Backend},
+    backend::{Backend, values::BackendValues},
     errors::Error,
     marshal::{
-        describe::{Describe, Expected},
         FromGuest, ToGuest,
+        describe::{Describe, Expected},
     },
     scope::Enter,
 };

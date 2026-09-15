@@ -1,6 +1,12 @@
 //! Host-authored, guest-visible iterators and async iterators.
 
-use std::{cell::RefCell, future::{Future, poll_fn}, task::Poll, pin::Pin, rc::Rc};
+use std::{
+    cell::RefCell,
+    future::{Future, poll_fn},
+    pin::Pin,
+    rc::Rc,
+    task::Poll,
+};
 
 use futures::Stream;
 
@@ -111,9 +117,7 @@ impl<T: 'static> HostStream<T> {
 
         poll_fn(move |context| {
             let Ok(mut stream) = stream.try_borrow_mut() else {
-                return Poll::Ready(Err(Error::unexpected(
-                    "host stream is already being polled",
-                )));
+                return Poll::Ready(Err(Error::unexpected("host stream is already being polled")));
             };
 
             match stream.as_mut().poll_next(context) {
@@ -175,7 +179,7 @@ where
                                 PendingValue::<B, T>::into_host_future(
                                     B::borrow::<Self>(enter.token(), &args.split_receiver()?.0)?
                                         .next(),
-                                )
+                                ),
                             )
                     })),
             )?,

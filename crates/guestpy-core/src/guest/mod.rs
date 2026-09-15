@@ -28,9 +28,7 @@ use crate::{
     },
     bundle::Bundle,
     catalog::RealisationCache,
-    driver::{
-        AsyncDriver, AsyncDriverSlot, AsyncRuntime, Progress, Timer, WaitTimer,
-    },
+    driver::{AsyncDriver, AsyncDriverSlot, AsyncRuntime, Progress, Timer, WaitTimer},
     errors::Error,
     handle::{Module, Object},
     imports::{GuestBindings, Imports},

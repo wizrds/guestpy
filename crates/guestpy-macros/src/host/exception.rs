@@ -1,7 +1,7 @@
-use darling::{ast::Data, util::Flag, FromDeriveInput, FromField};
+use darling::{FromDeriveInput, FromField, ast::Data, util::Flag};
 use proc_macro2::TokenStream;
 use quote::quote;
-use syn::{parse_quote, DeriveInput, Generics, Ident, Path, Type};
+use syn::{DeriveInput, Generics, Ident, Path, Type, parse_quote};
 
 use crate::{host::HostMacroError, path::CratePath};
 
@@ -314,7 +314,7 @@ impl HostExceptionDerive {
 #[cfg(test)]
 mod tests {
     use quote::quote;
-    use syn::{parse_quote, DeriveInput, Item, ItemImpl};
+    use syn::{DeriveInput, Item, ItemImpl, parse_quote};
 
     use super::HostExceptionDerive;
 
@@ -380,8 +380,11 @@ mod tests {
         assert!(into_raise.contains("IntoRaise < Engine > for HttpStatusError < Engine >",));
         assert!(into_raise.contains("ToGuest < Engine > + 'static",));
         assert!(from_raised.contains("FromRaised < Engine > for HttpStatusError < Engine >",));
-        assert!(from_raised
-            .contains("FromGuest < Engine , Owned = guestpy :: handle :: Instance < Engine > >",));
+        assert!(
+            from_raised.contains(
+                "FromGuest < Engine , Owned = guestpy :: handle :: Instance < Engine > >",
+            )
+        );
     }
 
     #[test]
@@ -396,9 +399,11 @@ mod tests {
             Err(error) => error,
         };
 
-        assert!(error
-            .write_errors()
-            .to_string()
-            .contains("HostException supports at most one generic type parameter"));
+        assert!(
+            error
+                .write_errors()
+                .to_string()
+                .contains("HostException supports at most one generic type parameter")
+        );
     }
 }
