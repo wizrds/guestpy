@@ -593,15 +593,7 @@ impl HostModuleDefinition {
             Naming::member(&method.sig.ident, options.name.clone(), rename_all),
         )?;
 
-        if callable.uses_this() {
-            return Err(syn::Error::new(
-                callable.span(),
-                r#"
-a #[guestpy(this)] parameter is only valid on a host class method, async_method, or class_method
-"#,
-            )
-            .into());
-        }
+        callable.reject_this("a module function")?;
 
         if options.getter.is_present() {
             if callable.asynchronous() {
@@ -833,17 +825,11 @@ mod tests {
 
         assert!(output.contains("pub fn module < B >"));
         assert!(output.contains("(self)"));
-        assert!(output.contains(
-            "CallContext :: module (__guestpy_enter , \"geometry\" ,)",
-        ));
-        assert!(output.contains(
-            ". resolve :: < crate :: host :: state :: ModuleState",
-        ));
+        assert!(output.contains("CallContext :: module (__guestpy_enter , \"geometry\" ,)",));
+        assert!(output.contains(". resolve :: < crate :: host :: state :: ModuleState",));
         assert!(output.contains("ModuleState < Self"));
         assert!(output.contains(". require :: < Settings > ()"));
-        assert!(output.contains(
-            ". require :: < crate :: host :: state :: ModuleState",
-        ));
+        assert!(output.contains(". require :: < crate :: host :: state :: ModuleState",));
         assert!(output.contains("ModuleState < Self"));
         assert!(output.contains(". state (self)"));
         assert!(output.contains("ModuleSpec :: < B > :: new (\"geometry\")"));
@@ -1000,12 +986,8 @@ mod tests {
         );
 
         assert!(output.contains(". async_function (\"tick\""));
-        assert!(output.contains(
-            "CallContext :: module (__guestpy_enter , \"clock\" ,)",
-        ));
-        assert!(output.contains(
-            ". resolve :: < crate :: host :: state :: ModuleState",
-        ));
+        assert!(output.contains("CallContext :: module (__guestpy_enter , \"clock\" ,)",));
+        assert!(output.contains(". resolve :: < crate :: host :: state :: ModuleState",));
         assert!(output.contains(". state (self)"));
     }
 

@@ -104,10 +104,14 @@ pub mod fixtures {
 
                     Ok(Self { x, y })
                 })
-                .method("length", |vector, _, _| Ok::<_, Error>(vector.x.hypot(vector.y)))
-                .getter("x", |vector, _| Ok::<_, Error>(vector.x))
-                .setter("x", |vector, _, value: f64| {
-                    vector.x = value;
+                .method("length", |receiver, _, _| {
+                    let vector = receiver.payload::<Self>()?;
+
+                    Ok::<_, Error>(vector.x.hypot(vector.y))
+                })
+                .getter("x", |receiver, _| Ok::<_, Error>(receiver.payload::<Self>()?.x))
+                .setter("x", |receiver, _, value: f64| {
+                    receiver.payload_mut::<Self>()?.x = value;
 
                     Ok::<_, Error>(())
                 });
@@ -138,11 +142,12 @@ pub mod fixtures {
                     Ok(Self)
                 })
                 .generic()
-                .async_raw_method("invoke", |this, enter, args| {
-                    let this = this.clone();
+                .async_method("invoke", |receiver, enter, args| {
                     let city = args.required::<String>(enter, 0, "city")?;
 
                     args.finish()?;
+
+                    let this = receiver.resolve::<Object<B>>()?;
 
                     Ok(async move { this.call_method::<_, String>("execute", (city,)) })
                 });
@@ -175,8 +180,11 @@ pub mod fixtures {
 
                     Ok(Self { prefix })
                 })
-                .method_with_this("describe", |ledger, this, _, args| {
+                .method("describe", |receiver, _, args| {
                     args.finish()?;
+
+                    let this = receiver.resolve::<Object<B>>()?;
+                    let ledger = receiver.payload::<Self>()?;
 
                     Ok::<_, Error>(format!(
                         "{}/{}",
@@ -184,11 +192,11 @@ pub mod fixtures {
                         this.call_method::<_, String>("label", ())?,
                     ))
                 })
-                .async_method_with_this("describe_later", |ledger, this, _, args| {
+                .async_method("describe_later", |receiver, _, args| {
                     args.finish()?;
 
-                    let prefix = ledger.prefix.clone();
-                    let this = this.clone();
+                    let this = receiver.resolve::<Object<B>>()?;
+                    let prefix = receiver.payload::<Self>()?.prefix.clone();
 
                     Ok::<_, Error>(async move {
                         Ok(format!("{}/{}", prefix, this.call_method::<_, String>("label", ())?,))
@@ -221,10 +229,12 @@ pub mod fixtures {
                     })
                 })
                 .imported_base("collections.abc", "Mapping")
-                .method(Dunder::GetItem, |mapping, enter, args| {
+                .method(Dunder::GetItem, |receiver, enter, args| {
                     let key = args.required::<String>(enter, 0, "key")?;
 
                     args.finish()?;
+
+                    let mapping = receiver.payload::<Self>()?;
 
                     mapping
                         .entries
@@ -236,8 +246,10 @@ pub mod fixtures {
                             )
                         })
                 })
-                .method(Dunder::Iter, |mapping, _, args| {
+                .method(Dunder::Iter, |receiver, _, args| {
                     args.finish()?;
+
+                    let mapping = receiver.payload::<Self>()?;
 
                     Ok::<_, Error>(HostIter::new(
                         mapping
@@ -249,10 +261,10 @@ pub mod fixtures {
                             .into_iter(),
                     ))
                 })
-                .method(Dunder::Len, |mapping, _, args| {
+                .method(Dunder::Len, |receiver, _, args| {
                     args.finish()?;
 
-                    Ok::<_, Error>(mapping.entries.len())
+                    Ok::<_, Error>(receiver.payload::<Self>()?.entries.len())
                 })
                 .generic();
         }
@@ -1144,10 +1156,10 @@ def twice(value):
 
                     Ok(Self)
                 })
-                .async_method_with_this(Dunder::AEnter, |_, this, _, args| {
+                .async_method(Dunder::AEnter, |receiver, _, args| {
                     args.finish()?;
 
-                    let this = this.clone();
+                    let this = receiver.resolve::<Object<B>>()?;
 
                     Ok::<_, Error>(async move { Ok::<_, Error>(this) })
                 })
@@ -1180,10 +1192,10 @@ def twice(value):
 
                     Ok(Self)
                 })
-                .async_method_with_this("__aenter__", |_, this, _, args| {
+                .async_method("__aenter__", |receiver, _, args| {
                     args.finish()?;
 
-                    let this = this.clone();
+                    let this = receiver.resolve::<Object<B>>()?;
 
                     Ok::<_, Error>(async move { Ok::<_, Error>(this) })
                 })
@@ -1220,10 +1232,10 @@ def twice(value):
 
                     Ok(Self { value })
                 })
-                .async_method(Dunder::Await, |awaitable, _, args| {
+                .async_method(Dunder::Await, |receiver, _, args| {
                     args.finish()?;
 
-                    let value = awaitable.value;
+                    let value = receiver.payload::<Self>()?.value;
 
                     Ok::<_, Error>(async move { Ok::<_, Error>(value) })
                 });
@@ -1255,14 +1267,15 @@ def twice(value):
 
                     Ok(Self { value: Cell::new(0) })
                 })
-                .method_with_this(Dunder::Aiter, |_, this, _, args| {
+                .method(Dunder::Aiter, |receiver, _, args| {
                     args.finish()?;
 
-                    Ok::<_, Error>(this.clone())
+                    receiver.resolve::<Object<B>>()
                 })
-                .async_method(Dunder::Anext, |sequence, _, args| {
+                .async_method(Dunder::Anext, |receiver, _, args| {
                     args.finish()?;
 
+                    let sequence = receiver.payload::<Self>()?;
                     let next = sequence.value.get() + 1;
 
                     if next > 2 {
@@ -1301,31 +1314,32 @@ def twice(value):
 
                     Ok(Self { values: HashMap::new() })
                 })
-                .method_mut(Dunder::SetItem, |session, enter, args| {
+                .method(Dunder::SetItem, |receiver, enter, args| {
                     let key = args.required::<String>(enter, 0, "key")?;
                     let value = args.required::<i64>(enter, 1, "value")?;
 
                     args.finish()?;
 
-                    session.values.insert(key, value);
+                    receiver.payload_mut::<Self>()?.values.insert(key, value);
 
                     Ok::<_, Error>(())
                 })
-                .method(Dunder::GetItem, |session, enter, args| {
+                .method(Dunder::GetItem, |receiver, enter, args| {
                     let key = args.required::<String>(enter, 0, "key")?;
 
                     args.finish()?;
 
-                    session
+                    receiver
+                        .payload::<Self>()?
                         .values
                         .get(&key)
                         .copied()
                         .ok_or_else(|| Error::attribute(key))
                 })
-                .method_with_this(Dunder::Enter, |_, this, _, args| {
+                .method(Dunder::Enter, |receiver, _, args| {
                     args.finish()?;
 
-                    Ok::<_, Error>(this.clone())
+                    receiver.resolve::<Object<B>>()
                 })
                 .method(Dunder::Exit, |_, _, _| Ok::<_, Error>(false));
         }

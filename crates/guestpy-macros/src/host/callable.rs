@@ -11,6 +11,18 @@ use crate::{attributes::HelperAttributes, host::HostMacroError};
 struct TypeShape;
 
 impl TypeShape {
+    fn this_target(value_type: &Type) -> Result<(Type, bool), HostMacroError> {
+        match value_type {
+            Type::Reference(reference) if reference.mutability.is_some() => Err(syn::Error::new(
+                value_type.span(),
+                "a #[guestpy(this)] parameter must have type T or &T",
+            )
+            .into()),
+            Type::Reference(reference) => Ok((reference.elem.as_ref().clone(), true)),
+            _ => Ok((value_type.clone(), false)),
+        }
+    }
+
     fn inner(value_type: &Type, name: &str) -> Option<Type> {
         let Type::Path(path) = value_type else {
             return None;
@@ -90,7 +102,7 @@ enum ParameterRole {
     Rest { descriptor: Type },
     Borrow { value_type: Type, mutable: bool },
     Enter,
-    This,
+    This { value_type: Type, borrowed: bool },
     Context { value_type: Type },
 }
 
@@ -144,6 +156,14 @@ impl Receiver {
             },
         }
     }
+
+    pub(crate) fn call_target(self) -> TokenStream {
+        match self {
+            Self::None => quote!(Self::),
+            Self::Shared => quote!(__guestpy_receiver.payload::<Self>()?.),
+            Self::Exclusive => quote!(__guestpy_receiver.payload_mut::<Self>()?.),
+        }
+    }
 }
 
 pub(crate) struct Parameter {
@@ -174,7 +194,9 @@ impl Parameter {
 
         let value_type = argument.ty.as_ref();
         let role = if options.this.is_present() {
-            ParameterRole::This
+            let (value_type, borrowed) = TypeShape::this_target(value_type)?;
+
+            ParameterRole::This { value_type, borrowed }
         } else if options.enter.is_present() {
             ParameterRole::Enter
         } else if options.context.is_present() {
@@ -279,7 +301,7 @@ impl Parameter {
     pub(crate) fn consumes_arg(&self) -> bool {
         !matches!(
             self.role,
-            ParameterRole::Enter | ParameterRole::This | ParameterRole::Context { .. }
+            ParameterRole::Enter | ParameterRole::This { .. } | ParameterRole::Context { .. }
         )
     }
 
@@ -292,7 +314,7 @@ impl Parameter {
     }
 
     pub(crate) fn is_this(&self) -> bool {
-        matches!(self.role, ParameterRole::This)
+        matches!(self.role, ParameterRole::This { .. })
     }
 
     fn is_rest(&self) -> bool {
@@ -377,7 +399,12 @@ impl Parameter {
                 )
             }
             ParameterRole::Enter => quote!(__guestpy_enter),
-            ParameterRole::This => quote!(__guestpy_this),
+            ParameterRole::This { value_type, borrowed: false } => {
+                quote!(__guestpy_receiver.resolve::<#value_type>()?)
+            }
+            ParameterRole::This { value_type, borrowed: true } => {
+                quote!(&__guestpy_receiver.resolve::<#value_type>()?)
+            }
             ParameterRole::Context { .. } => quote!(__guestpy_context.resolve()?),
         }
     }
@@ -395,11 +422,16 @@ impl Parameter {
         match &self.role {
             ParameterRole::Value { .. } => quote!(__guestpy_value),
             ParameterRole::Enter => quote!(__guestpy_enter),
+            ParameterRole::This { value_type, borrowed: false } => {
+                quote!(__guestpy_receiver.resolve::<#value_type>()?)
+            }
+            ParameterRole::This { value_type, borrowed: true } => {
+                quote!(&__guestpy_receiver.resolve::<#value_type>()?)
+            }
             ParameterRole::Context { .. } => quote!(__guestpy_context.resolve()?),
             ParameterRole::Keyword { .. }
             | ParameterRole::Rest { .. }
-            | ParameterRole::Borrow { .. }
-            | ParameterRole::This => unreachable!(),
+            | ParameterRole::Borrow { .. } => unreachable!(),
         }
     }
 }
@@ -580,11 +612,30 @@ name the backend with `backend = <name>` on the attribute instead
             .collect()
     }
 
+    pub(crate) fn accessor_setup(&self) -> TokenStream {
+        let bindings = self.argument_bindings();
+        let expressions = self.accessor_expressions();
+
+        quote!(#(let #bindings = #expressions;)*)
+    }
+
     pub(crate) fn accessor_expressions(&self) -> Vec<TokenStream> {
         self.parameters
             .iter()
             .map(Parameter::accessor_expression)
             .collect()
+    }
+
+    pub(crate) fn reject_this(&self, subject: &str) -> Result<(), HostMacroError> {
+        if self.uses_this() {
+            return Err(syn::Error::new(
+                self.span,
+                format!("{subject} has no receiver for a #[guestpy(this)] parameter"),
+            )
+            .into());
+        }
+
+        Ok(())
     }
 }
 

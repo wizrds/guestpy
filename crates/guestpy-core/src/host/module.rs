@@ -266,24 +266,28 @@ mod tests {
         fn build(builder: &mut ClassBuilder<B, Self>) {
             builder
                 .constructor(|_, _| Ok(Self { x: 3, y: 4 }))
-                .method("length", |vector, _, _| Ok::<_, Error>(vector.x + vector.y))
-                .method_mut("translate", |vector, _, _| {
-                    vector.x += 1;
+                .method("length", |receiver, _, _| {
+                    let vector = receiver.payload::<Self>()?;
+
+                    Ok::<_, Error>(vector.x + vector.y)
+                })
+                .method("translate", |receiver, _, _| {
+                    receiver.payload_mut::<Self>()?.x += 1;
 
                     Ok::<_, Error>(())
                 })
                 .async_method("resolve", |_, _, _| Ok::<_, Error>(async { Ok::<_, Error>(()) }))
-                .getter("x", |vector, _| Ok::<_, Error>(vector.x))
-                .setter("x", |vector, _, value: i64| {
-                    vector.x = value;
+                .getter("x", |receiver, _| Ok::<_, Error>(receiver.payload::<Self>()?.x))
+                .setter("x", |receiver, _, value: i64| {
+                    receiver.payload_mut::<Self>()?.x = value;
 
                     Ok::<_, Error>(())
                 })
                 .property(
                     "y",
-                    |vector, _| Ok::<_, Error>(vector.y),
-                    |vector, _, value: i64| {
-                        vector.y = value;
+                    |receiver, _| Ok::<_, Error>(receiver.payload::<Self>()?.y),
+                    |receiver, _, value: i64| {
+                        receiver.payload_mut::<Self>()?.y = value;
 
                         Ok::<_, Error>(())
                     },
