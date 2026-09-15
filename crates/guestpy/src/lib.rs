@@ -523,6 +523,18 @@
 //! }
 //! ```
 //!
+//! A typed exception may declare one generic backend parameter when it retains a guest object. The
+//! derive reuses that parameter for raising and reconstructing the exception:
+//!
+//! ```ignore
+//! #[derive(HostException)]
+//! struct HttpStatusError<B: Backend> {
+//!     #[guestpy(arg)]
+//!     message: String,
+//!     response: Instance<B>,
+//! }
+//! ```
+//!
 //! Python receives the registered class, constructor arguments, and attributes through its ordinary
 //! exception model:
 //!

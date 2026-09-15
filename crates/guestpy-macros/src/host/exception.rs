@@ -1,7 +1,7 @@
-use darling::{FromDeriveInput, FromField, ast::Data, util::Flag};
+use darling::{ast::Data, util::Flag, FromDeriveInput, FromField};
 use proc_macro2::TokenStream;
 use quote::quote;
-use syn::{DeriveInput, Generics, Ident, Path, Type};
+use syn::{parse_quote, DeriveInput, Generics, Ident, Path, Type};
 
 use crate::{host::HostMacroError, path::CratePath};
 
@@ -116,6 +116,7 @@ impl ExceptionField {
 
 pub(crate) struct HostExceptionDerive {
     ident: Ident,
+    generics: Generics,
     name: String,
     base: Base,
     crate_path: Path,
@@ -126,10 +127,10 @@ impl HostExceptionDerive {
     pub(crate) fn new(input: &DeriveInput) -> Result<Self, HostMacroError> {
         let input = ExceptionDeriveInput::from_derive_input(input)?;
 
-        if let Some(parameter) = input.generics.params.first() {
+        if let Some(parameter) = input.generics.type_params().nth(1) {
             return Err(syn::Error::new_spanned(
                 parameter,
-                "HostException does not support generic types",
+                "HostException supports at most one generic type parameter",
             )
             .into());
         }
@@ -161,6 +162,7 @@ impl HostExceptionDerive {
                 .name
                 .unwrap_or_else(|| input.ident.to_string()),
             ident: input.ident,
+            generics: input.generics,
             base,
             crate_path: CratePath::new(input.crate_path).resolve(),
             fields,
@@ -179,14 +181,32 @@ impl HostExceptionDerive {
         types
     }
 
+    fn implementation_generics(&self) -> (Generics, Ident) {
+        let mut implementation = self.generics.clone();
+        let backend = if let Some(parameter) = implementation.type_params().next() {
+            parameter.ident.clone()
+        } else {
+            implementation
+                .params
+                .push(parse_quote!(B));
+
+            parse_quote!(B)
+        };
+
+        (implementation, backend)
+    }
+
     fn host_exception(&self) -> TokenStream {
         let ident = &self.ident;
         let name = &self.name;
         let crate_path = &self.crate_path;
         let base = self.base.tokens(crate_path);
+        let (impl_generics, ty_generics, where_clause) = self.generics.split_for_impl();
 
         quote! {
-            impl #crate_path::host::exception::HostException for #ident {
+            impl #impl_generics #crate_path::host::exception::HostException
+                for #ident #ty_generics #where_clause
+            {
                 const NAME: &'static str = #name;
 
                 fn base() -> #crate_path::host::exception::ExceptionClass {
@@ -203,21 +223,31 @@ impl HostExceptionDerive {
             .fields
             .iter()
             .map(ExceptionField::raise);
-        let predicates = self
-            .field_types()
-            .into_iter()
-            .map(|ty| quote!(#ty: #crate_path::marshal::ToGuest<B> + 'static,));
+        let (mut implementation, backend) = self.implementation_generics();
+        let predicates = &mut implementation
+            .make_where_clause()
+            .predicates;
+
+        predicates.push(parse_quote!(
+            #backend: #crate_path::backend::Backend
+        ));
+        for ty in self.field_types() {
+            predicates.push(parse_quote!(
+                #ty: #crate_path::marshal::ToGuest<#backend> + 'static
+            ));
+        }
+
+        let (impl_generics, _, where_clause) = implementation.split_for_impl();
+        let (_, ty_generics, _) = self.generics.split_for_impl();
 
         quote! {
-            impl<B> #crate_path::host::exception::IntoRaise<B> for #ident
-            where
-                B: #crate_path::backend::Backend,
-                #(#predicates)*
+            impl #impl_generics #crate_path::host::exception::IntoRaise<#backend>
+                for #ident #ty_generics #where_clause
             {
                 fn values(
                     self,
-                    raise: #crate_path::host::exception::Raise<B>,
-                ) -> #crate_path::host::exception::Raise<B> {
+                    raise: #crate_path::host::exception::Raise<#backend>,
+                ) -> #crate_path::host::exception::Raise<#backend> {
                     raise #(#values)*
                 }
             }
@@ -227,14 +257,6 @@ impl HostExceptionDerive {
     fn from_raised(&self) -> TokenStream {
         let ident = &self.ident;
         let crate_path = &self.crate_path;
-        let predicates = self
-            .field_types()
-            .into_iter()
-            .map(|ty| {
-                quote!(
-                    #ty: #crate_path::marshal::FromGuest<B, Owned = #ty>,
-                )
-            });
         let value = if self.fields.is_empty() {
             quote!(Self)
         } else {
@@ -245,16 +267,30 @@ impl HostExceptionDerive {
 
             quote!(Self { #(#fields),* })
         };
+        let (mut implementation, backend) = self.implementation_generics();
+        let predicates = &mut implementation
+            .make_where_clause()
+            .predicates;
+
+        predicates.push(parse_quote!(
+            #backend: #crate_path::backend::Backend
+                + #crate_path::backend::BackendValues
+        ));
+        for ty in self.field_types() {
+            predicates.push(parse_quote!(
+                #ty: #crate_path::marshal::FromGuest<#backend, Owned = #ty>
+            ));
+        }
+
+        let (impl_generics, _, where_clause) = implementation.split_for_impl();
+        let (_, ty_generics, _) = self.generics.split_for_impl();
 
         quote! {
-            impl<B> #crate_path::host::exception::FromRaised<B> for #ident
-            where
-                B: #crate_path::backend::Backend
-                    + #crate_path::backend::BackendValues,
-                #(#predicates)*
+            impl #impl_generics #crate_path::host::exception::FromRaised<#backend>
+                for #ident #ty_generics #where_clause
             {
                 fn from_raised<'py>(
-                    raised: &#crate_path::host::exception::Raised<'py, '_, B>,
+                    raised: &#crate_path::host::exception::Raised<'py, '_, #backend>,
                 ) -> ::core::result::Result<Self, #crate_path::errors::Error> {
                     ::core::result::Result::Ok(#value)
                 }
@@ -272,5 +308,97 @@ impl HostExceptionDerive {
             #into_raise
             #from_raised
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use quote::quote;
+    use syn::{parse_quote, DeriveInput, Item, ItemImpl};
+
+    use super::HostExceptionDerive;
+
+    struct Fixture;
+
+    impl Fixture {
+        fn expand(input: DeriveInput) -> Vec<ItemImpl> {
+            syn::parse2::<syn::File>(
+                HostExceptionDerive::new(&input)
+                    .expect("failed to create HostExceptionDerive")
+                    .expand(),
+            )
+            .expect("generated HostException code parses")
+            .items
+            .into_iter()
+            .map(|item| match item {
+                Item::Impl(implementation) => implementation,
+                _ => panic!("HostException generated a non-impl item"),
+            })
+            .collect()
+        }
+
+        fn render(implementation: &ItemImpl) -> String {
+            quote!(#implementation).to_string()
+        }
+    }
+
+    #[test]
+    fn non_generic_exception_keeps_a_synthetic_backend() {
+        let expanded = Fixture::expand(parse_quote! {
+            struct RequestTimeout {
+                #[guestpy(arg)]
+                message: String,
+            }
+        });
+
+        assert_eq!(expanded.len(), 3);
+        assert!(expanded[0].generics.params.is_empty());
+        assert_eq!(expanded[1].generics.params.len(), 1);
+        assert_eq!(expanded[2].generics.params.len(), 1);
+        assert!(Fixture::render(&expanded[1]).contains("IntoRaise < B > for RequestTimeout"));
+        assert!(Fixture::render(&expanded[2]).contains("FromRaised < B > for RequestTimeout"));
+    }
+
+    #[test]
+    fn generic_exception_reuses_its_declared_backend() {
+        let expanded = Fixture::expand(parse_quote! {
+            struct HttpStatusError<Engine: guestpy::backend::Backend> {
+                #[guestpy(arg)]
+                message: String,
+                response: guestpy::handle::Instance<Engine>,
+            }
+        });
+        let host_exception = Fixture::render(&expanded[0]);
+        let into_raise = Fixture::render(&expanded[1]);
+        let from_raised = Fixture::render(&expanded[2]);
+
+        assert_eq!(expanded.len(), 3);
+        assert_eq!(expanded[0].generics.params.len(), 1);
+        assert_eq!(expanded[1].generics.params.len(), 1);
+        assert_eq!(expanded[2].generics.params.len(), 1);
+        assert!(host_exception.contains("HostException for HttpStatusError < Engine >",));
+        assert!(into_raise.contains("IntoRaise < Engine > for HttpStatusError < Engine >",));
+        assert!(into_raise.contains("ToGuest < Engine > + 'static",));
+        assert!(from_raised.contains("FromRaised < Engine > for HttpStatusError < Engine >",));
+        assert!(from_raised
+            .contains("FromGuest < Engine , Owned = guestpy :: handle :: Instance < Engine > >",));
+    }
+
+    #[test]
+    fn rejects_more_than_one_generic_type_parameter() {
+        let error = match HostExceptionDerive::new(&parse_quote! {
+            struct Invalid<First, Second> {
+                first: First,
+                second: Second,
+            }
+        }) {
+            Ok(_) => panic!("HostException accepted two generic type parameters"),
+            Err(error) => error,
+        };
+
+        assert!(error
+            .write_errors()
+            .to_string()
+            .contains("HostException supports at most one generic type parameter"));
     }
 }
