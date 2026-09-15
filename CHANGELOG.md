@@ -1,6 +1,12 @@
 # Changelog
 
 ---
+## [0.5.0](https://github.com/wizrds/guestpy/compare/0.4.0..0.5.0) - 2026-09-15
+
+### Features
+
+-  [**breaking**]Improve receiver handling in host classes, expose module state to host classes, and support unions in data structures  - ([49d2c2f](https://github.com/wizrds/guestpy/commit/49d2c2f28a8419858317164129a6fe3817f143c8)) - Timothy Pogue
+---
 ## [0.4.0](https://github.com/wizrds/guestpy/compare/0.3.1..0.4.0) - 2026-09-14
 
 ### Bug Fixes
