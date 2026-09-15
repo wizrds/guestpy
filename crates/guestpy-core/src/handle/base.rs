@@ -3,7 +3,10 @@ use crate::{
     driver::{AsyncStep, CoroutineFuture},
     errors::Error,
     guest::Guest,
-    marshal::{FromGuest, ToGuest},
+    marshal::{
+        FromGuest, ToGuest,
+        describe::{Describe, Expected},
+    },
     scope::{Enter, Scope},
 };
 
@@ -92,6 +95,12 @@ impl<B: Backend> Value<B> {
 
     pub fn ptr_eq(&self, other: &Self) -> bool {
         B::owned_ptr_eq(&self.owned, &other.owned)
+    }
+}
+
+impl<B: Backend> Describe for Value<B> {
+    fn describe(expected: &mut Expected) {
+        expected.push("object");
     }
 }
 

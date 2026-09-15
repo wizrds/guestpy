@@ -282,9 +282,11 @@ mod tests {
                 .as_deref(),
             Some("mod_a"),
         );
-        assert!(realisation
-            .realised_exception(&key)
-            .is_some());
+        assert!(
+            realisation
+                .realised_exception(&key)
+                .is_some()
+        );
         assert_eq!(
             realisation.exception_types(&GuestException::new(
                 String::from("Example"),

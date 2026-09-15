@@ -304,11 +304,10 @@ impl<B: Backend> Raise<B> {
     where
         V: ToGuest<B> + Debug + 'static,
     {
-        self.args
-            .push(RaiseValue::Guest {
-                repr: format!("{value:?}"),
-                thunk: Box::new(move |enter| value.to_guest(enter)),
-            });
+        self.args.push(RaiseValue::Guest {
+            repr: format!("{value:?}"),
+            thunk: Box::new(move |enter| value.to_guest(enter)),
+        });
 
         self
     }
@@ -317,11 +316,13 @@ impl<B: Backend> Raise<B> {
     where
         V: ToGuest<B> + Debug + 'static,
     {
-        self.attrs
-            .push((name.into(), RaiseValue::Guest {
+        self.attrs.push((
+            name.into(),
+            RaiseValue::Guest {
                 repr: format!("{value:?}"),
                 thunk: Box::new(move |enter| value.to_guest(enter)),
-            }));
+            },
+        ));
 
         self
     }
@@ -362,7 +363,7 @@ impl<B: Backend> From<Raise<B>> for Error {
                 .map(RaiseValue::repr)
                 .collect::<Vec<_>>()
                 .join(" "),
-            Box::new(raise)
+            Box::new(raise),
         )))
     }
 }

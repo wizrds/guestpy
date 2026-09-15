@@ -16,7 +16,7 @@ pub use self::{
     coroutine::{Awaitable, Coroutine},
     function::Function,
     generator::{AsyncGenerator, Generator},
-    iter::{AsyncIter, Iter},
+    iter::{AsyncIter, AsyncIterable, Iter},
     module::Module,
     object::Object,
     traits::{Annotated, GenericAlias, Named, ObjectProtocol, TypeProtocol},
@@ -25,8 +25,8 @@ pub use self::{
 #[cfg(test)]
 mod tests {
     use super::{
-        AsyncGenerator, AsyncIter, Class, Function, Generator, Instance, Iter, Module, Object,
-        Value,
+        AsyncGenerator, AsyncIter, AsyncIterable, Class, Function, Generator, Instance, Iter,
+        Module, Object, Value,
     };
     use crate::backend::tests::Stub;
 
@@ -43,6 +43,7 @@ mod tests {
         escapes::<Iter<Stub>>();
         escapes::<Generator<Stub>>();
         escapes::<AsyncIter<Stub, Value<Stub>>>();
+        escapes::<AsyncIterable<Stub, Value<Stub>>>();
         escapes::<AsyncGenerator<Stub, Value<Stub>>>();
     }
 }

@@ -196,7 +196,10 @@ pub mod fixtures {
                     args.finish()?;
 
                     let this = receiver.resolve::<Object<B>>()?;
-                    let prefix = receiver.payload::<Self>()?.prefix.clone();
+                    let prefix = receiver
+                        .payload::<Self>()?
+                        .prefix
+                        .clone();
 
                     Ok::<_, Error>(async move {
                         Ok(format!("{}/{}", prefix, this.call_method::<_, String>("label", ())?,))
@@ -264,7 +267,12 @@ pub mod fixtures {
                 .method(Dunder::Len, |receiver, _, args| {
                     args.finish()?;
 
-                    Ok::<_, Error>(receiver.payload::<Self>()?.entries.len())
+                    Ok::<_, Error>(
+                        receiver
+                            .payload::<Self>()?
+                            .entries
+                            .len(),
+                    )
                 })
                 .generic();
         }
@@ -1320,7 +1328,10 @@ def twice(value):
 
                     args.finish()?;
 
-                    receiver.payload_mut::<Self>()?.values.insert(key, value);
+                    receiver
+                        .payload_mut::<Self>()?
+                        .values
+                        .insert(key, value);
 
                     Ok::<_, Error>(())
                 })
@@ -1642,7 +1653,7 @@ assert host_lib.HostMapping[str]
                 .err()
                 .unwrap();
 
-            assert!(matches!(host_error, Error::Raise(_))); 
+            assert!(matches!(host_error, Error::Raise(_)));
             assert!(host_error.to_string().contains("TypeError"));
             assert!(host_error.to_string().contains("__len__"));
 

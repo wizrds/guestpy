@@ -4,13 +4,22 @@ use bytes::Bytes;
 use crate::{
     backend::{Backend, BackendValues},
     errors::Error,
-    marshal::{FromGuest, ToGuest},
+    marshal::{
+        FromGuest, ToGuest,
+        describe::{Describe, Expected},
+    },
     scope::Enter,
 };
 
 macro_rules! signed_int {
     ($($type:ty),* $(,)?) => {
         $(
+            impl Describe for $type {
+                fn describe(expected: &mut Expected) {
+                    expected.push("int");
+                }
+            }
+
             impl<B> ToGuest<B> for $type
             where
                 B: Backend + BackendValues,
@@ -34,10 +43,10 @@ macro_rules! signed_int {
                     value: B::Value<'py>,
                 ) -> Result<Self::Owned, Error> {
                     if !B::is_int(enter.token(), &value) {
-                        return Err(Error::type_mismatch(
-                            "int",
-                            &B::type_name(enter.token(), &value),
-                        ));
+                        return Err(Error::mismatch::<Self>(&B::type_name(
+                            enter.token(),
+                            &value,
+                        )));
                     }
 
                     let value = B::as_i64(enter.token(), &value)?;
@@ -60,6 +69,12 @@ macro_rules! signed_int {
 macro_rules! unsigned_int {
     ($($type:ty),* $(,)?) => {
         $(
+            impl Describe for $type {
+                fn describe(expected: &mut Expected) {
+                    expected.push("int");
+                }
+            }
+
             impl<B> ToGuest<B> for $type
             where
                 B: Backend + BackendValues,
@@ -83,10 +98,10 @@ macro_rules! unsigned_int {
                     value: B::Value<'py>,
                 ) -> Result<Self::Owned, Error> {
                     if !B::is_int(enter.token(), &value) {
-                        return Err(Error::type_mismatch(
-                            "int",
-                            &B::type_name(enter.token(), &value),
-                        ));
+                        return Err(Error::mismatch::<Self>(&B::type_name(
+                            enter.token(),
+                            &value,
+                        )));
                     }
 
                     B::as_u64(enter.token(), &value)
@@ -108,6 +123,12 @@ macro_rules! unsigned_int {
     };
 }
 
+impl Describe for () {
+    fn describe(expected: &mut Expected) {
+        expected.push("None");
+    }
+}
+
 impl<B> ToGuest<B> for ()
 where
     B: Backend + BackendValues,
@@ -125,10 +146,16 @@ where
 
     fn from_guest<'py>(enter: &Enter<'py, B>, value: B::Value<'py>) -> Result<Self::Owned, Error> {
         if !B::is_none(enter.token(), &value) {
-            return Err(Error::type_mismatch("None", &B::type_name(enter.token(), &value)));
+            return Err(Error::mismatch::<Self>(&B::type_name(enter.token(), &value)));
         }
 
         Ok(())
+    }
+}
+
+impl Describe for bool {
+    fn describe(expected: &mut Expected) {
+        expected.push("bool");
     }
 }
 
@@ -149,7 +176,7 @@ where
 
     fn from_guest<'py>(enter: &Enter<'py, B>, value: B::Value<'py>) -> Result<Self::Owned, Error> {
         if !B::is_bool(enter.token(), &value) {
-            return Err(Error::type_mismatch("bool", &B::type_name(enter.token(), &value)));
+            return Err(Error::mismatch::<Self>(&B::type_name(enter.token(), &value)));
         }
 
         B::as_bool(enter.token(), &value)
@@ -158,6 +185,12 @@ where
 
 signed_int!(i8, i16, i32, i64, isize);
 unsigned_int!(u8, u16, u32, u64, usize);
+
+impl Describe for f32 {
+    fn describe(expected: &mut Expected) {
+        expected.push("float");
+    }
+}
 
 impl<B> ToGuest<B> for f32
 where
@@ -183,7 +216,13 @@ where
             return Ok(B::as_i64(enter.token(), &value)? as Self);
         }
 
-        Err(Error::type_mismatch("float", &B::type_name(enter.token(), &value)))
+        Err(Error::mismatch::<Self>(&B::type_name(enter.token(), &value)))
+    }
+}
+
+impl Describe for f64 {
+    fn describe(expected: &mut Expected) {
+        expected.push("float");
     }
 }
 
@@ -211,7 +250,13 @@ where
             return Ok(B::as_i64(enter.token(), &value)? as Self);
         }
 
-        Err(Error::type_mismatch("float", &B::type_name(enter.token(), &value)))
+        Err(Error::mismatch::<Self>(&B::type_name(enter.token(), &value)))
+    }
+}
+
+impl Describe for char {
+    fn describe(expected: &mut Expected) {
+        expected.push("str");
     }
 }
 
@@ -232,7 +277,7 @@ where
 
     fn from_guest<'py>(enter: &Enter<'py, B>, value: B::Value<'py>) -> Result<Self::Owned, Error> {
         if !B::is_str(enter.token(), &value) {
-            return Err(Error::type_mismatch("str", &B::type_name(enter.token(), &value)));
+            return Err(Error::mismatch::<Self>(&B::type_name(enter.token(), &value)));
         }
 
         let value = B::as_str(enter.token(), &value)?;
@@ -245,6 +290,12 @@ where
             .chars()
             .next()
             .expect("single-character str"))
+    }
+}
+
+impl Describe for String {
+    fn describe(expected: &mut Expected) {
+        expected.push("str");
     }
 }
 
@@ -265,7 +316,7 @@ where
 
     fn from_guest<'py>(enter: &Enter<'py, B>, value: B::Value<'py>) -> Result<Self::Owned, Error> {
         if !B::is_str(enter.token(), &value) {
-            return Err(Error::type_mismatch("str", &B::type_name(enter.token(), &value)));
+            return Err(Error::mismatch::<Self>(&B::type_name(enter.token(), &value)));
         }
 
         Ok(B::as_str(enter.token(), &value)?.to_string())
@@ -278,6 +329,13 @@ where
 {
     fn to_guest<'py>(self, enter: &Enter<'py, B>) -> Result<B::Value<'py>, Error> {
         Ok(B::str(enter.token(), self))
+    }
+}
+
+#[cfg(feature = "bytes")]
+impl Describe for Bytes {
+    fn describe(expected: &mut Expected) {
+        expected.push("bytes");
     }
 }
 
@@ -310,7 +368,7 @@ where
 
     fn from_guest<'py>(enter: &Enter<'py, B>, value: B::Value<'py>) -> Result<Self::Owned, Error> {
         if !B::is_bytes(enter.token(), &value) {
-            return Err(Error::type_mismatch("bytes", &B::type_name(enter.token(), &value)));
+            return Err(Error::mismatch::<Self>(&B::type_name(enter.token(), &value)));
         }
 
         Ok(Self::from(B::as_bytes(enter.token(), &value)?))

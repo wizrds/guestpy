@@ -19,7 +19,10 @@ use crate::{
         base::{Handle, Value},
         traits::HasHandle,
     },
-    marshal::{FromGuest, ToGuest},
+    marshal::{
+        FromGuest, ToGuest,
+        describe::{Describe, Expected},
+    },
     scope::Enter,
 };
 
@@ -60,6 +63,12 @@ where
     }
 }
 
+impl<B: Backend> Describe for Iter<B> {
+    fn describe(expected: &mut Expected) {
+        expected.push("iterable");
+    }
+}
+
 impl<B> FromGuest<B> for Iter<B>
 where
     B: Backend + BackendValues,
@@ -68,7 +77,7 @@ where
 
     fn from_guest<'py>(enter: &Enter<'py, B>, value: B::Value<'py>) -> Result<Self::Owned, Error> {
         if !B::is_iterable(enter.token(), &value) {
-            return Err(Error::type_mismatch("iterable", &B::type_name(enter.token(), &value)));
+            return Err(Error::mismatch::<Self>(&B::type_name(enter.token(), &value)));
         }
 
         Ok(Self(Handle::from_value(enter, B::iter(enter.token(), &value)?)))
@@ -103,15 +112,6 @@ where
     cursor: AsyncCursor<B, T>,
     marker: PhantomData<fn() -> T>,
 }
-
-// pub struct AsyncIter<B: Backend, T> {
-//     owned: B::Owned,
-//     guest: Guest<B>,
-//     current: Option<CoroutineFuture<B, T>>,
-//     marker: PhantomData<fn() -> T>,
-// }
-
-// impl<B: Backend, T> Unpin for AsyncIter<B, T> {}
 
 impl<B, T> AsyncIter<B, T>
 where
@@ -166,8 +166,17 @@ where
     pub(crate) fn validate<'py>(enter: &Enter<'py, B>, value: &B::Value<'py>) -> Result<(), Error> {
         match B::get_attr(enter.token(), value, "__anext__") {
             Ok(anext) if B::is_callable(enter.token(), &anext) => Ok(()),
-            _ => Err(Error::type_mismatch("async iterator", &B::type_name(enter.token(), value))),
+            _ => Err(Error::mismatch::<Self>(&B::type_name(enter.token(), value))),
         }
+    }
+}
+
+impl<B, T> Describe for AsyncIter<B, T>
+where
+    B: Backend + BackendCoroutines + BackendClasses + BackendModules,
+{
+    fn describe(expected: &mut Expected) {
+        expected.push("async iterator");
     }
 }
 
@@ -215,6 +224,64 @@ where
                     .with_async_step::<T>(|enter, iterator| B::anext(enter.token(), iterator))
             })
             .map(Result::transpose)
+    }
+}
+
+pub struct AsyncIterable<B, T>(pub AsyncIter<B, T>)
+where
+    B: Backend + BackendCoroutines + BackendClasses + BackendModules;
+
+impl<B, T> AsyncIterable<B, T>
+where
+    B: Backend + BackendCoroutines + BackendClasses + BackendModules,
+{
+    pub fn as_inner(&self) -> &AsyncIter<B, T> {
+        &self.0
+    }
+
+    pub fn into_inner(self) -> AsyncIter<B, T> {
+        self.0
+    }
+}
+
+impl<B, T> FromGuest<B> for AsyncIterable<B, T>
+where
+    B: Backend + BackendValues + BackendCoroutines + BackendClasses + BackendModules,
+    T: 'static,
+{
+    type Owned = Self;
+
+    fn from_guest<'py>(
+        enter: &Enter<'py, B>,
+        value: B::Value<'py>,
+    ) -> Result<Self::Owned, Error> {
+        AsyncIter::<B, T>::from_guest(
+            enter,
+            B::call(
+                enter.token(),
+                &match B::get_attr(enter.token(), &value, "__aiter__") {
+                    Ok(aiter) if B::is_callable(enter.token(), &aiter) => aiter,
+                    _ => {
+                        return Err(Error::mismatch::<Self>(&B::type_name(
+                            enter.token(),
+                            &value,
+                        )));
+                    }
+                },
+                &[],
+                &[],
+            )?,
+        )
+        .map(Self)
+    }
+}
+
+impl<B, T> Describe for AsyncIterable<B, T>
+where
+    B: Backend + BackendCoroutines + BackendClasses + BackendModules,
+{
+    fn describe(expected: &mut Expected) {
+        expected.push("async iterable");
     }
 }
 

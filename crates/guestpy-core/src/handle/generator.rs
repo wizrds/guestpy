@@ -20,7 +20,10 @@ use crate::{
         iter::{AsyncIter, Iter},
         traits::HasHandle,
     },
-    marshal::{FromGuest, ToGuest},
+    marshal::{
+        FromGuest, ToGuest,
+        describe::{Describe, Expected},
+    },
     scope::Enter,
 };
 
@@ -42,7 +45,7 @@ impl<B: Backend> Generator<B> {
                 B::get_attr(enter.token(), value, method),
                 Ok(member) if B::is_callable(enter.token(), &member),
             ) {
-                return Err(Error::type_mismatch("generator", &B::type_name(enter.token(), value)));
+                return Err(Error::mismatch::<Self>(&B::type_name(enter.token(), value)));
             }
         }
 
@@ -105,6 +108,12 @@ where
 
     pub fn iter(&self) -> Iter<B> {
         Iter::from_handle(self.0.clone())
+    }
+}
+
+impl<B: Backend> Describe for Generator<B> {
+    fn describe(expected: &mut Expected) {
+        expected.push("generator");
     }
 }
 
@@ -178,10 +187,7 @@ where
                 B::get_attr(enter.token(), value, method),
                 Ok(member) if B::is_callable(enter.token(), &member),
             ) {
-                return Err(Error::type_mismatch(
-                    "async generator",
-                    &B::type_name(enter.token(), value),
-                ));
+                return Err(Error::mismatch::<Self>(&B::type_name(enter.token(), value)));
             }
         }
 
@@ -241,6 +247,15 @@ where
         }
 
         Ok(items)
+    }
+}
+
+impl<B, T> Describe for AsyncGenerator<B, T>
+where
+    B: Backend + BackendCoroutines + BackendClasses + BackendModules,
+{
+    fn describe(expected: &mut Expected) {
+        expected.push("async generator");
     }
 }
 

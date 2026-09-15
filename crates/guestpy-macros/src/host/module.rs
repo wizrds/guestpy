@@ -1,19 +1,19 @@
-use darling::{ast::NestedMeta, util::Flag, FromMeta};
+use darling::{FromMeta, ast::NestedMeta, util::Flag};
 use proc_macro2::{Span, TokenStream};
 use quote::{quote, quote_spanned};
 use syn::{
-    parse_quote, spanned::Spanned, FnArg, ImplItem, ImplItemFn, ItemImpl, Path, Type,
-    TypeParamBound,
+    FnArg, ImplItem, ImplItemFn, ItemImpl, Path, Type, TypeParamBound, parse_quote,
+    spanned::Spanned,
 };
 
 use crate::{
     attributes::HelperAttributes,
     host::{
+        HostMacroError,
         backend::{BackendBounds, BackendOption, BackendParameter},
         callable::{Callable, Parameter, Receiver},
         target::HostTarget,
         types::TypeList,
-        HostMacroError,
     },
     naming::{Naming, RenameRule},
     path::CratePath,
@@ -960,18 +960,20 @@ mod tests {
 
     #[test]
     fn rejects_mut_self_and_accepts_stateful_async() {
-        assert!(HostModuleMacro::new(
-            quote!(name = "bad", crate_path = crate),
-            parse_quote! {
-                impl Bad {
-                    #[guestpy(function)]
-                    fn tick(&mut self) -> Result<(), Error> {
-                        Ok(())
+        assert!(
+            HostModuleMacro::new(
+                quote!(name = "bad", crate_path = crate),
+                parse_quote! {
+                    impl Bad {
+                        #[guestpy(function)]
+                        fn tick(&mut self) -> Result<(), Error> {
+                            Ok(())
+                        }
                     }
-                }
-            },
-        )
-        .is_err());
+                },
+            )
+            .is_err()
+        );
 
         let output = expand(
             quote!(name = "clock", crate_path = crate),
@@ -1001,8 +1003,10 @@ mod tests {
         );
 
         assert!(output.contains(". class :: < Envelope < B > > ()"));
-        assert!(output
-            .contains("Envelope < B > : crate :: host :: class :: HostClassDefinition < B >",),);
+        assert!(
+            output
+                .contains("Envelope < B > : crate :: host :: class :: HostClassDefinition < B >",),
+        );
     }
 
     #[test]

@@ -38,10 +38,11 @@ pub trait BackendCoroutines: Backend + BackendValues {
 pub mod fixtures {
     use crate::{
         backend::{
-            Backend, BackendCallables, BackendClasses, BackendCoroutines, BackendInterrupt,
-            BackendModules, BackendValues, guest_fixture,
+            guest_fixture, Backend, BackendCallables, BackendClasses, BackendCoroutines,
+            BackendInterrupt, BackendModules, BackendValues,
         },
-        handle::{AsyncGenerator, AsyncIter, Object},
+        errors::Error,
+        handle::{AsyncGenerator, AsyncIter, AsyncIterable, Object, ObjectProtocol},
         runtime::Runtime,
     };
 
@@ -86,6 +87,103 @@ class Counter:
                     .unwrap(),
                 vec![1, 2],
             );
+        }
+    }
+
+    guest_fixture! {
+        pub async fn accepts_and_delegates_async_iterables<B>()
+        where B: [
+            Backend,
+            BackendValues,
+            BackendCallables,
+            BackendClasses,
+            BackendModules,
+            BackendCoroutines,
+            BackendInterrupt,
+        ]
+        using Runtime::<B>::builder();
+        |guest| {
+            guest
+                .exec(
+                    r#"
+class Counter:
+    def __init__(self):
+        self.value = 0
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        self.value += 1
+        if self.value > 2:
+            raise StopAsyncIteration
+        return self.value
+
+class NonCallableAsyncIterable:
+    __aiter__ = 42
+
+class InvalidAsyncIterable:
+    def __aiter__(self):
+        return 42
+
+class BrokenAsyncIterable:
+    def __aiter__(self):
+        raise ValueError("broken aiter")
+"#,
+                )
+                .unwrap();
+
+            assert_eq!(
+                guest
+                    .eval::<AsyncIterable<B, i64>>("Counter()")
+                    .unwrap()
+                    .0
+                    .collect()
+                    .await
+                    .unwrap(),
+                vec![1, 2],
+            );
+            assert_eq!(
+                guest
+                    .eval::<Object<B>>("Counter()")
+                    .unwrap()
+                    .cast::<AsyncIterable<B, i64>>()
+                    .unwrap()
+                    .into_inner()
+                    .collect()
+                    .await
+                    .unwrap(),
+                vec![1, 2],
+            );
+
+            let non_callable = guest
+                .eval::<AsyncIterable<B, i64>>("NonCallableAsyncIterable()")
+                .err()
+                .unwrap();
+            let invalid = guest
+                .eval::<AsyncIterable<B, i64>>("InvalidAsyncIterable()")
+                .err()
+                .unwrap();
+
+            assert!(matches!(&non_callable, Error::Conversion { .. }));
+            assert!(
+                non_callable
+                    .to_string()
+                    .contains("expected async iterable, got NonCallableAsyncIterable"),
+            );
+            assert!(matches!(&invalid, Error::Conversion { .. }));
+            assert!(
+                invalid
+                    .to_string()
+                    .contains("expected async iterator, got int"),
+            );
+            assert!(matches!(
+                guest
+                    .eval::<AsyncIterable<B, i64>>("BrokenAsyncIterable()")
+                    .err()
+                    .unwrap(),
+                Error::Guest(_),
+            ));
         }
     }
 
@@ -143,6 +241,14 @@ async def values():
             #[tokio::test]
             async fn anext_advances_a_plain_async_iterator() {
                 $crate::backend::coroutines::fixtures::anext_advances_a_plain_async_iterator::<
+                    $backend,
+                >()
+                .await;
+            }
+
+            #[tokio::test]
+            async fn accepts_and_delegates_async_iterables() {
+                $crate::backend::coroutines::fixtures::accepts_and_delegates_async_iterables::<
                     $backend,
                 >()
                 .await;

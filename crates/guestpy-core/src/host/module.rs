@@ -51,10 +51,7 @@ impl<B: Backend> ModuleSpec<B> {
     }
 
     pub(crate) fn state_of<S: 'static>(&self) -> Option<Rc<S>> {
-        self.state
-            .clone()?
-            .downcast::<S>()
-            .ok()
+        self.state.clone()?.downcast::<S>().ok()
     }
 
     pub(crate) fn validate(&self) -> Result<(), Error> {

@@ -1,7 +1,7 @@
 use std::{
     any::TypeId,
     cell::RefCell,
-    collections::{hash_map::Entry, HashMap, HashSet},
+    collections::{HashMap, HashSet, hash_map::Entry},
     rc::Rc,
 };
 
@@ -512,9 +512,11 @@ mod tests {
             .mount((), &native_bundle("plugin", "native"), "plugin")
             .unwrap();
 
-        assert!(bindings
-            .extension("plugin.native")
-            .is_some());
+        assert!(
+            bindings
+                .extension("plugin.native")
+                .is_some()
+        );
     }
 
     #[test]
@@ -559,8 +561,10 @@ mod tests {
             bindings.mount((), &native_bundle("plugin", "native"), "plugin"),
             Err(Error::NameInUse { ref name }) if name == "plugin",
         ));
-        assert!(bindings
-            .extension("plugin.native")
-            .is_none());
+        assert!(
+            bindings
+                .extension("plugin.native")
+                .is_none()
+        );
     }
 }

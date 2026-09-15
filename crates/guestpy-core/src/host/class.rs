@@ -668,10 +668,9 @@ where
                 bases: Vec::new(),
                 alloc: Rc::new(|enter, class| B::alloc::<C>(enter.token(), &class)),
                 init: Rc::new(|_, _, _| {
-                    Err(Error::unsupported(format!(
-                        "host class {} cannot be constructed",
-                        C::NAME,
-                    )))
+                    Err(Error::unsupported(
+                        format!("host class {} cannot be constructed", C::NAME,),
+                    ))
                 }),
                 members: Vec::new(),
                 statics: Namespace::new(),
@@ -803,17 +802,12 @@ where
 
     pub fn setter<F, V>(&mut self, name: &str, set: F) -> &mut Self
     where
-        F: for<'a, 'py> Fn(Receiver<'a, 'py, B>, &Enter<'py, B>, V) -> Result<(), Error>
-            + 'static,
+        F: for<'a, 'py> Fn(Receiver<'a, 'py, B>, &Enter<'py, B>, V) -> Result<(), Error> + 'static,
         V: FromGuest<B, Owned = V> + 'static,
     {
         self.property_slot(name)
             .set_set(move |enter, receiver, value| {
-                set(
-                    Receiver::new(enter, &receiver),
-                    enter,
-                    V::from_guest(enter, value)?,
-                )
+                set(Receiver::new(enter, &receiver), enter, V::from_guest(enter, value)?)
             });
 
         self
@@ -832,8 +826,7 @@ where
     pub fn property<G, S, R, V>(&mut self, name: &str, get: G, set: S) -> &mut Self
     where
         G: for<'a, 'py> Fn(Receiver<'a, 'py, B>, &Enter<'py, B>) -> Result<R, Error> + 'static,
-        S: for<'a, 'py> Fn(Receiver<'a, 'py, B>, &Enter<'py, B>, V) -> Result<(), Error>
-            + 'static,
+        S: for<'a, 'py> Fn(Receiver<'a, 'py, B>, &Enter<'py, B>, V) -> Result<(), Error> + 'static,
         R: ToGuest<B> + 'static,
         V: FromGuest<B, Owned = V> + 'static,
     {
@@ -919,7 +912,11 @@ where
 
     pub fn async_method<F, Fut, R>(&mut self, name: impl Into<MemberName>, function: F) -> &mut Self
     where
-        F: for<'a, 'py> Fn(Receiver<'a, 'py, B>, &Enter<'py, B>, Args<'py, B>) -> Result<Fut, Error>
+        F: for<'a, 'py> Fn(
+                Receiver<'a, 'py, B>,
+                &Enter<'py, B>,
+                Args<'py, B>,
+            ) -> Result<Fut, Error>
             + 'static,
         Fut: Future<Output = Result<R, Error>> + 'static,
         R: ToGuest<B> + 'static,

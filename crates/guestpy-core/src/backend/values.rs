@@ -22,7 +22,7 @@ pub trait BackendValues: Backend {
         pairs: Vec<(Val<'py, Self>, Val<'py, Self>)>,
     ) -> Result<Val<'py, Self>, Error>;
     fn set<'py>(token: Tok<'py, Self>, items: Vec<Val<'py, Self>>)
-    -> Result<Val<'py, Self>, Error>;
+        -> Result<Val<'py, Self>, Error>;
     fn new_dict<'py>(token: Tok<'py, Self>) -> Result<Val<'py, Self>, Error>;
     fn is_bool<'py>(token: Tok<'py, Self>, value: &Val<'py, Self>) -> bool;
     fn is_int<'py>(token: Tok<'py, Self>, value: &Val<'py, Self>) -> bool;
@@ -130,9 +130,11 @@ pub trait BackendValues: Backend {
 pub mod fixtures {
     use crate::{
         backend::{
-            Backend, BackendCallables, BackendClasses, BackendCoroutines, BackendInterrupt,
-            BackendModules, BackendValues, guest_fixture,
+            guest_fixture, Backend, BackendCallables, BackendClasses, BackendCoroutines,
+            BackendInterrupt, BackendModules, BackendValues,
         },
+        errors::Error,
+        marshal::collections::{Iterable, Mapping},
         runtime::Runtime,
     };
 
@@ -161,6 +163,14 @@ pub mod fixtures {
                 .to_string();
 
             assert!(message.contains("list or tuple"));
+
+            let error = guest
+                .eval::<Iterable<Vec<i64>>>("42")
+                .err()
+                .unwrap();
+
+            assert!(matches!(&error, Error::Conversion { .. }));
+            assert!(error.to_string().contains("expected iterable, got int"));
         }
     }
 
@@ -192,6 +202,82 @@ pub mod fixtures {
         }
     }
 
+    guest_fixture! {
+        pub fn mapping_accepts_protocol<B>()
+        where B: [
+            Backend,
+            BackendValues,
+            BackendCallables,
+            BackendClasses,
+            BackendModules,
+            BackendCoroutines,
+            BackendInterrupt,
+        ]
+        using Runtime::<B>::builder();
+        |guest| {
+            guest
+                .exec(
+                    r#"
+from types import MappingProxyType
+
+proxy = MappingProxyType({"two": 2, "one": 1})
+
+class CustomMapping:
+    def keys(self):
+        return ("three", "four")
+
+    def __getitem__(self, key):
+        return {"three": 3, "four": 4}[key]
+
+class BrokenMapping:
+    def keys(self):
+        raise ValueError("broken keys")
+
+    def __getitem__(self, key):
+        return key
+"#,
+                )
+                .unwrap();
+
+            assert_eq!(
+                guest
+                    .eval::<Mapping<String, i64>>(r#"{"one": 1, "two": 2}"#)
+                    .unwrap()
+                    .0,
+                vec![(String::from("one"), 1), (String::from("two"), 2)],
+            );
+            assert_eq!(
+                guest
+                    .eval::<Mapping<String, i64>>("proxy")
+                    .unwrap()
+                    .0,
+                vec![(String::from("two"), 2), (String::from("one"), 1)],
+            );
+            assert_eq!(
+                guest
+                    .eval::<Mapping<String, i64>>("CustomMapping()")
+                    .unwrap()
+                    .0,
+                vec![(String::from("three"), 3), (String::from("four"), 4)],
+            );
+
+            let mismatch = guest
+                .eval::<Mapping<String, i64>>("42")
+                .err()
+                .unwrap();
+
+            assert!(matches!(&mismatch, Error::Conversion { .. }));
+            assert!(mismatch.to_string().contains("expected Mapping, got int"));
+            assert!(matches!(
+                guest
+                    .eval::<Mapping<String, i64>>("BrokenMapping()")
+                    .err()
+                    .unwrap(),
+                Error::Guest(_),
+            ));
+        }
+    }
+
     #[doc(hidden)]
     #[macro_export]
     macro_rules! __guestpy_backend_values_tests {
@@ -206,6 +292,11 @@ pub mod fixtures {
             #[test]
             fn rust_tuple_still_rejects_a_list() {
                 $crate::backend::values::fixtures::rust_tuple_still_rejects_a_list::<$backend>();
+            }
+
+            #[test]
+            fn mapping_accepts_protocol() {
+                $crate::backend::values::fixtures::mapping_accepts_protocol::<$backend>();
             }
         };
     }

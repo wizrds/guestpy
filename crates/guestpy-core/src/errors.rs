@@ -7,6 +7,7 @@ use std::{
 use crate::{
     backend::{Backend, BackendValues, Tok, Val},
     catalog::RealisationCache,
+    marshal::describe::{Describe, Expected},
 };
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
@@ -431,6 +432,14 @@ impl Error {
         matches!(self, Self::Timeout | Self::Cancelled | Self::Interrupted | Self::Closed)
     }
 
+    pub fn is_conversion(&self) -> bool {
+        matches!(self, Self::Conversion { .. })
+    }
+
+    pub fn mismatch<T: Describe + ?Sized>(actual: &str) -> Self {
+        Self::type_mismatch(&Expected::of::<T>().to_string(), actual)
+    }
+
     pub fn type_mismatch(expected: &str, actual: &str) -> Self {
         Self::conversion(format!("expected {expected}, got {actual}"))
     }
@@ -522,8 +531,11 @@ mod tests {
 
     #[test]
     fn raise_formats_without_its_payload() {
-        let error =
-            Error::Raise(Box::new(ErasedRaise::new("ExampleError".to_owned(), "".to_owned(), Box::new(Payload))));
+        let error = Error::Raise(Box::new(ErasedRaise::new(
+            "ExampleError".to_owned(),
+            "".to_owned(),
+            Box::new(Payload),
+        )));
 
         assert_eq!(error.to_string(), "raised ExampleError");
         assert_eq!(format!("{error:?}"), "Raise(ErasedRaise { class: \"ExampleError\", .. })",);

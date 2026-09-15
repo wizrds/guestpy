@@ -1,16 +1,16 @@
-use darling::{ast::NestedMeta, util::Flag, FromMeta};
+use darling::{FromMeta, ast::NestedMeta, util::Flag};
 use proc_macro2::TokenStream;
 use quote::quote;
-use syn::{parse_quote, ImplItem, ImplItemFn, ItemImpl, Path, Type, TypeParamBound};
+use syn::{ImplItem, ImplItemFn, ItemImpl, Path, Type, TypeParamBound, parse_quote};
 
 use crate::{
     attributes::HelperAttributes,
     host::{
+        HostMacroError,
         backend::{BackendBounds, BackendOption, BackendParameter},
         callable::{Callable, Parameter, Receiver},
         target::HostTarget,
         types::{BaseItem, BaseList},
-        HostMacroError,
     },
     naming::{Naming, RenameRule},
     path::CratePath,
@@ -1014,9 +1014,11 @@ mod tests {
             panic!("dunder combined with name returns a syntax error");
         };
 
-        assert!(error
-            .to_string()
-            .contains("dunder and name"));
+        assert!(
+            error
+                .to_string()
+                .contains("dunder and name")
+        );
     }
 
     #[test]
@@ -1035,9 +1037,11 @@ mod tests {
             panic!("dunder combined with an unrelated role returns a syntax error");
         };
 
-        assert!(error
-            .to_string()
-            .contains("dunder only combines with method or async_method"));
+        assert!(
+            error
+                .to_string()
+                .contains("dunder only combines with method or async_method")
+        );
     }
 
     #[test]
@@ -1165,9 +1169,11 @@ mod tests {
             panic!("an exclusive receiver on an async method returns a syntax error");
         };
 
-        assert!(error
-            .to_string()
-            .contains("requires &self"));
+        assert!(
+            error
+                .to_string()
+                .contains("requires &self")
+        );
     }
 
     #[test]
@@ -1186,9 +1192,11 @@ mod tests {
             panic!("a method with no way to reach its instance returns a syntax error");
         };
 
-        assert!(error
-            .to_string()
-            .contains("#[guestpy(static_method)]"));
+        assert!(
+            error
+                .to_string()
+                .contains("#[guestpy(static_method)]")
+        );
     }
 
     #[test]
@@ -1259,31 +1267,35 @@ mod tests {
 
     #[test]
     fn rejects_async_fn_and_receiverless_method() {
-        assert!(HostClassMacro::new(
-            quote!(name = "Bad", crate_path = crate),
-            parse_quote! {
-                impl Bad {
-                    #[guestpy(async_method)]
-                    async fn go(&self) -> Result<i32, Error> {
-                        Ok(1)
+        assert!(
+            HostClassMacro::new(
+                quote!(name = "Bad", crate_path = crate),
+                parse_quote! {
+                    impl Bad {
+                        #[guestpy(async_method)]
+                        async fn go(&self) -> Result<i32, Error> {
+                            Ok(1)
+                        }
                     }
-                }
-            },
-        )
-        .is_err(),);
+                },
+            )
+            .is_err(),
+        );
 
-        assert!(HostClassMacro::new(
-            quote!(name = "Bad", crate_path = crate),
-            parse_quote! {
-                impl Bad {
-                    #[guestpy(method)]
-                    fn go() -> Result<i32, Error> {
-                        Ok(1)
+        assert!(
+            HostClassMacro::new(
+                quote!(name = "Bad", crate_path = crate),
+                parse_quote! {
+                    impl Bad {
+                        #[guestpy(method)]
+                        fn go() -> Result<i32, Error> {
+                            Ok(1)
+                        }
                     }
-                }
-            },
-        )
-        .is_err(),);
+                },
+            )
+            .is_err(),
+        );
     }
 
     #[test]
@@ -1413,20 +1425,24 @@ mod tests {
             panic!("a member declaring a type parameter returns a syntax error");
         };
 
-        assert!(error
-            .to_string()
-            .contains("backend = <name>"));
+        assert!(
+            error
+                .to_string()
+                .contains("backend = <name>")
+        );
     }
 
     #[test]
     fn rejects_a_qualified_backend_name() {
-        assert!(HostClassMacro::new(
-            quote!(name = "Envelope", backend = guestpy::CPython, crate_path = crate),
-            parse_quote! {
-                impl Envelope {}
-            },
-        )
-        .is_err(),);
+        assert!(
+            HostClassMacro::new(
+                quote!(name = "Envelope", backend = guestpy::CPython, crate_path = crate),
+                parse_quote! {
+                    impl Envelope {}
+                },
+            )
+            .is_err(),
+        );
     }
 
     #[test]
@@ -1532,9 +1548,11 @@ mod tests {
             panic!("a Backend-bounded parameter without a declaration returns a syntax error",);
         };
 
-        assert!(error
-            .to_string()
-            .contains("backend = B"));
+        assert!(
+            error
+                .to_string()
+                .contains("backend = B")
+        );
     }
 
     #[test]

@@ -200,9 +200,7 @@ impl Parameter {
         } else if options.enter.is_present() {
             ParameterRole::Enter
         } else if options.context.is_present() {
-            ParameterRole::Context {
-                value_type: value_type.clone(),
-            }
+            ParameterRole::Context { value_type: value_type.clone() }
         } else if options.borrow.is_present() {
             ParameterRole::Borrow {
                 value_type: TypeShape::reference_target(value_type, false)?,
