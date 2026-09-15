@@ -11,6 +11,18 @@ use crate::{attributes::HelperAttributes, host::HostMacroError};
 struct TypeShape;
 
 impl TypeShape {
+    fn this_target(value_type: &Type) -> Result<(Type, bool), HostMacroError> {
+        match value_type {
+            Type::Reference(reference) if reference.mutability.is_some() => Err(syn::Error::new(
+                value_type.span(),
+                "a #[guestpy(this)] parameter must have type T or &T",
+            )
+            .into()),
+            Type::Reference(reference) => Ok((reference.elem.as_ref().clone(), true)),
+            _ => Ok((value_type.clone(), false)),
+        }
+    }
+
     fn inner(value_type: &Type, name: &str) -> Option<Type> {
         let Type::Path(path) = value_type else {
             return None;
@@ -64,6 +76,7 @@ struct ParameterOptions {
     borrow_mut: Flag,
     enter: Flag,
     this: Flag,
+    context: Flag,
 }
 
 impl ParameterOptions {
@@ -75,6 +88,7 @@ impl ParameterOptions {
             self.borrow_mut.is_present(),
             self.enter.is_present(),
             self.this.is_present(),
+            self.context.is_present(),
         ]
         .into_iter()
         .filter(|present| *present)
@@ -88,7 +102,8 @@ enum ParameterRole {
     Rest { descriptor: Type },
     Borrow { value_type: Type, mutable: bool },
     Enter,
-    This,
+    This { value_type: Type, borrowed: bool },
+    Context { value_type: Type },
 }
 
 struct ResultType;
@@ -141,6 +156,14 @@ impl Receiver {
             },
         }
     }
+
+    pub(crate) fn call_target(self) -> TokenStream {
+        match self {
+            Self::None => quote!(Self::),
+            Self::Shared => quote!(__guestpy_receiver.payload::<Self>()?.),
+            Self::Exclusive => quote!(__guestpy_receiver.payload_mut::<Self>()?.),
+        }
+    }
 }
 
 pub(crate) struct Parameter {
@@ -156,7 +179,7 @@ impl Parameter {
         if options.role_count() > 1 {
             return Err(syn::Error::new(
                 argument.span(),
-                "a host parameter may declare only one of kw, rest, borrow, borrow_mut, enter, this",
+                "a host parameter may declare only one of kw, rest, borrow, borrow_mut, enter, this, context",
             )
             .into());
         }
@@ -171,9 +194,13 @@ impl Parameter {
 
         let value_type = argument.ty.as_ref();
         let role = if options.this.is_present() {
-            ParameterRole::This
+            let (value_type, borrowed) = TypeShape::this_target(value_type)?;
+
+            ParameterRole::This { value_type, borrowed }
         } else if options.enter.is_present() {
             ParameterRole::Enter
+        } else if options.context.is_present() {
+            ParameterRole::Context { value_type: value_type.clone() }
         } else if options.borrow.is_present() {
             ParameterRole::Borrow {
                 value_type: TypeShape::reference_target(value_type, false)?,
@@ -270,7 +297,14 @@ impl Parameter {
     }
 
     pub(crate) fn consumes_arg(&self) -> bool {
-        !matches!(self.role, ParameterRole::Enter | ParameterRole::This)
+        !matches!(
+            self.role,
+            ParameterRole::Enter | ParameterRole::This { .. } | ParameterRole::Context { .. }
+        )
+    }
+
+    fn is_context(&self) -> bool {
+        matches!(self.role, ParameterRole::Context { .. })
     }
 
     pub(crate) fn is_enter(&self) -> bool {
@@ -278,11 +312,18 @@ impl Parameter {
     }
 
     pub(crate) fn is_this(&self) -> bool {
-        matches!(self.role, ParameterRole::This)
+        matches!(self.role, ParameterRole::This { .. })
     }
 
     fn is_rest(&self) -> bool {
         matches!(self.role, ParameterRole::Rest { .. })
+    }
+
+    fn context_type(&self) -> Option<&Type> {
+        match &self.role {
+            ParameterRole::Context { value_type } => Some(value_type),
+            _ => None,
+        }
     }
 
     fn expression(&self) -> TokenStream {
@@ -356,7 +397,13 @@ impl Parameter {
                 )
             }
             ParameterRole::Enter => quote!(__guestpy_enter),
-            ParameterRole::This => quote!(__guestpy_this),
+            ParameterRole::This { value_type, borrowed: false } => {
+                quote!(__guestpy_receiver.resolve::<#value_type>()?)
+            }
+            ParameterRole::This { value_type, borrowed: true } => {
+                quote!(&__guestpy_receiver.resolve::<#value_type>()?)
+            }
+            ParameterRole::Context { .. } => quote!(__guestpy_context.resolve()?),
         }
     }
 
@@ -373,10 +420,16 @@ impl Parameter {
         match &self.role {
             ParameterRole::Value { .. } => quote!(__guestpy_value),
             ParameterRole::Enter => quote!(__guestpy_enter),
+            ParameterRole::This { value_type, borrowed: false } => {
+                quote!(__guestpy_receiver.resolve::<#value_type>()?)
+            }
+            ParameterRole::This { value_type, borrowed: true } => {
+                quote!(&__guestpy_receiver.resolve::<#value_type>()?)
+            }
+            ParameterRole::Context { .. } => quote!(__guestpy_context.resolve()?),
             ParameterRole::Keyword { .. }
             | ParameterRole::Rest { .. }
-            | ParameterRole::Borrow { .. }
-            | ParameterRole::This => unreachable!(),
+            | ParameterRole::Borrow { .. } => unreachable!(),
         }
     }
 }
@@ -474,12 +527,34 @@ name the backend with `backend = <name>` on the attribute instead
             .any(Parameter::consumes_arg)
     }
 
+    pub(crate) fn uses_context(&self) -> bool {
+        self.parameters
+            .iter()
+            .any(Parameter::is_context)
+    }
+
     pub(crate) fn uses_enter(&self) -> bool {
         self.uses_args()
+            || self.uses_context()
             || self
                 .parameters
                 .iter()
                 .any(Parameter::is_enter)
+    }
+
+    pub(crate) fn context_setup(&self, context: TokenStream) -> TokenStream {
+        if self.uses_context() {
+            quote!(let __guestpy_context = #context;)
+        } else {
+            quote!()
+        }
+    }
+
+    pub(crate) fn context_types(&self) -> Vec<&Type> {
+        self.parameters
+            .iter()
+            .filter_map(Parameter::context_type)
+            .collect()
     }
 
     pub(crate) fn uses_this(&self) -> bool {
@@ -535,11 +610,30 @@ name the backend with `backend = <name>` on the attribute instead
             .collect()
     }
 
+    pub(crate) fn accessor_setup(&self) -> TokenStream {
+        let bindings = self.argument_bindings();
+        let expressions = self.accessor_expressions();
+
+        quote!(#(let #bindings = #expressions;)*)
+    }
+
     pub(crate) fn accessor_expressions(&self) -> Vec<TokenStream> {
         self.parameters
             .iter()
             .map(Parameter::accessor_expression)
             .collect()
+    }
+
+    pub(crate) fn reject_this(&self, subject: &str) -> Result<(), HostMacroError> {
+        if self.uses_this() {
+            return Err(syn::Error::new(
+                self.span,
+                format!("{subject} has no receiver for a #[guestpy(this)] parameter"),
+            )
+            .into());
+        }
+
+        Ok(())
     }
 }
 

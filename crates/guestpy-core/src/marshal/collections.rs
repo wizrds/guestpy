@@ -3,12 +3,21 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use crate::{
     backend::{Backend, values::BackendValues},
     errors::Error,
-    marshal::{FromGuest, ToGuest},
+    marshal::{
+        FromGuest, ToGuest,
+        describe::{Describe, Expected},
+    },
     scope::Enter,
 };
 
 macro_rules! tuple {
     ($($type:ident:$index:tt),+ $(,)?) => {
+        impl<$($type),+> Describe for ($($type,)+) {
+            fn describe(expected: &mut Expected) {
+                expected.push("tuple");
+            }
+        }
+
         impl<B, $($type),+> ToGuest<B> for ($($type,)+)
         where
             B: Backend + BackendValues,
@@ -37,10 +46,7 @@ macro_rules! tuple {
                 value: B::Value<'py>,
             ) -> Result<Self::Owned, Error> {
                 if !B::is_tuple(enter.token(), &value) {
-                    return Err(Error::type_mismatch(
-                        "tuple",
-                        &B::type_name(enter.token(), &value),
-                    ));
+                    return Err(Error::mismatch::<Self>(&B::type_name(enter.token(), &value)));
                 }
 
                 if B::len(enter.token(), &value)? != tuple!(@count $($type)+) {
@@ -71,6 +77,13 @@ macro_rules! tuple {
     };
 }
 
+impl<T> Describe for Vec<T> {
+    fn describe(expected: &mut Expected) {
+        expected.push("list");
+        expected.push("tuple");
+    }
+}
+
 impl<B, T> ToGuest<B> for Vec<T>
 where
     B: Backend + BackendValues,
@@ -95,10 +108,7 @@ where
 
     fn from_guest<'py>(enter: &Enter<'py, B>, value: B::Value<'py>) -> Result<Self::Owned, Error> {
         if !B::is_list(enter.token(), &value) && !B::is_tuple(enter.token(), &value) {
-            return Err(Error::type_mismatch(
-                "list or tuple",
-                &B::type_name(enter.token(), &value),
-            ));
+            return Err(Error::mismatch::<Self>(&B::type_name(enter.token(), &value)));
         }
 
         let iterator = B::iter(enter.token(), &value)?;
@@ -109,6 +119,12 @@ where
         }
 
         Ok(values)
+    }
+}
+
+impl<T, const N: usize> Describe for [T; N] {
+    fn describe(expected: &mut Expected) {
+        expected.push("list");
     }
 }
 
@@ -136,7 +152,7 @@ where
 
     fn from_guest<'py>(enter: &Enter<'py, B>, value: B::Value<'py>) -> Result<Self::Owned, Error> {
         if !B::is_list(enter.token(), &value) {
-            return Err(Error::type_mismatch("list", &B::type_name(enter.token(), &value)));
+            return Err(Error::mismatch::<Self>(&B::type_name(enter.token(), &value)));
         }
 
         if B::len(enter.token(), &value)? != N {
@@ -208,6 +224,12 @@ tuple!(
     A12: 11,
 );
 
+impl<K, V> Describe for HashMap<K, V> {
+    fn describe(expected: &mut Expected) {
+        expected.push("dict");
+    }
+}
+
 impl<B, K, V> ToGuest<B> for HashMap<K, V>
 where
     B: Backend + BackendValues,
@@ -235,7 +257,7 @@ where
 
     fn from_guest<'py>(enter: &Enter<'py, B>, value: B::Value<'py>) -> Result<Self::Owned, Error> {
         if !B::is_dict(enter.token(), &value) {
-            return Err(Error::type_mismatch("dict", &B::type_name(enter.token(), &value)));
+            return Err(Error::mismatch::<Self>(&B::type_name(enter.token(), &value)));
         }
 
         let iterator = B::iter(enter.token(), &value)?;
@@ -249,6 +271,12 @@ where
         }
 
         Ok(entries)
+    }
+}
+
+impl<K, V> Describe for BTreeMap<K, V> {
+    fn describe(expected: &mut Expected) {
+        expected.push("dict");
     }
 }
 
@@ -279,7 +307,7 @@ where
 
     fn from_guest<'py>(enter: &Enter<'py, B>, value: B::Value<'py>) -> Result<Self::Owned, Error> {
         if !B::is_dict(enter.token(), &value) {
-            return Err(Error::type_mismatch("dict", &B::type_name(enter.token(), &value)));
+            return Err(Error::mismatch::<Self>(&B::type_name(enter.token(), &value)));
         }
 
         let iterator = B::iter(enter.token(), &value)?;
@@ -293,6 +321,12 @@ where
         }
 
         Ok(entries)
+    }
+}
+
+impl<T> Describe for HashSet<T> {
+    fn describe(expected: &mut Expected) {
+        expected.push("set");
     }
 }
 
@@ -321,7 +355,7 @@ where
 
     fn from_guest<'py>(enter: &Enter<'py, B>, value: B::Value<'py>) -> Result<Self::Owned, Error> {
         if !B::is_set(enter.token(), &value) {
-            return Err(Error::type_mismatch("set", &B::type_name(enter.token(), &value)));
+            return Err(Error::mismatch::<Self>(&B::type_name(enter.token(), &value)));
         }
 
         let iterator = B::iter(enter.token(), &value)?;
@@ -332,6 +366,12 @@ where
         }
 
         Ok(values)
+    }
+}
+
+impl<T> Describe for BTreeSet<T> {
+    fn describe(expected: &mut Expected) {
+        expected.push("set");
     }
 }
 
@@ -360,7 +400,7 @@ where
 
     fn from_guest<'py>(enter: &Enter<'py, B>, value: B::Value<'py>) -> Result<Self::Owned, Error> {
         if !B::is_set(enter.token(), &value) {
-            return Err(Error::type_mismatch("set", &B::type_name(enter.token(), &value)));
+            return Err(Error::mismatch::<Self>(&B::type_name(enter.token(), &value)));
         }
 
         let iterator = B::iter(enter.token(), &value)?;
@@ -371,6 +411,16 @@ where
         }
 
         Ok(values)
+    }
+}
+
+impl<T> Describe for Option<T>
+where
+    T: Describe,
+{
+    fn describe(expected: &mut Expected) {
+        T::describe(expected);
+        expected.push("None");
     }
 }
 
@@ -405,6 +455,22 @@ where
 
 pub struct Iterable<T>(pub T);
 
+impl<T> Iterable<T> {
+    pub fn as_inner(&self) -> &T {
+        &self.0
+    }
+
+    pub fn into_inner(self) -> T {
+        self.0
+    }
+}
+
+impl<T> Describe for Iterable<T> {
+    fn describe(expected: &mut Expected) {
+        expected.push("iterable");
+    }
+}
+
 impl<B, T> FromGuest<B> for Iterable<Vec<T>>
 where
     B: Backend + BackendValues,
@@ -413,6 +479,10 @@ where
     type Owned = Self;
 
     fn from_guest<'py>(enter: &Enter<'py, B>, value: B::Value<'py>) -> Result<Self::Owned, Error> {
+        if !B::is_iterable(enter.token(), &value) {
+            return Err(Error::mismatch::<Self>(&B::type_name(enter.token(), &value)));
+        }
+
         let iterator = B::iter(enter.token(), &value)?;
         let mut values = Vec::new();
 
@@ -421,5 +491,53 @@ where
         }
 
         Ok(Self(values))
+    }
+}
+
+pub struct Mapping<K, V>(pub Vec<(K, V)>);
+
+impl<K, V> Mapping<K, V> {
+    fn accepts<'py, B>(enter: &Enter<'py, B>, value: &B::Value<'py>) -> bool
+    where
+        B: Backend + BackendValues,
+    {
+        B::has_attr(enter.token(), value, "keys")
+            && B::has_attr(enter.token(), value, "__getitem__")
+    }
+}
+
+impl<B, K, V> FromGuest<B> for Mapping<K, V>
+where
+    B: Backend + BackendValues,
+    K: FromGuest<B, Owned = K> + 'static,
+    V: FromGuest<B, Owned = V> + 'static,
+{
+    type Owned = Self;
+
+    fn from_guest<'py>(enter: &Enter<'py, B>, value: B::Value<'py>) -> Result<Self::Owned, Error> {
+        if !Self::accepts(enter, &value) {
+            return Err(Error::mismatch::<Self>(&B::type_name(enter.token(), &value)));
+        }
+
+        let iterator = B::iter(
+            enter.token(),
+            &B::call(enter.token(), &B::get_attr(enter.token(), &value, "keys")?, &[], &[])?,
+        )?;
+        let mut entries = Vec::new();
+
+        while let Some(key) = B::next(enter.token(), &iterator)? {
+            entries.push((
+                K::from_guest(enter, key.clone())?,
+                V::from_guest(enter, B::get_item(enter.token(), &value, &key)?)?,
+            ));
+        }
+
+        Ok(Self(entries))
+    }
+}
+
+impl<K, V> Describe for Mapping<K, V> {
+    fn describe(expected: &mut Expected) {
+        expected.push("Mapping");
     }
 }

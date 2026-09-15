@@ -1,5 +1,6 @@
 pub mod args;
 pub mod collections;
+pub mod describe;
 mod exception;
 pub mod primitives;
 

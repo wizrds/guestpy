@@ -7,7 +7,10 @@ use crate::{
         base::Handle,
         traits::{Annotated, HasHandle, Named},
     },
-    marshal::{FromGuest, ToGuest},
+    marshal::{
+        FromGuest, ToGuest,
+        describe::{Describe, Expected},
+    },
     scope::Enter,
 };
 
@@ -54,6 +57,12 @@ where
     }
 }
 
+impl<B: Backend> Describe for Function<B> {
+    fn describe(expected: &mut Expected) {
+        expected.push("callable");
+    }
+}
+
 impl<B> FromGuest<B> for Function<B>
 where
     B: Backend + BackendValues,
@@ -62,7 +71,7 @@ where
 
     fn from_guest<'py>(enter: &Enter<'py, B>, value: B::Value<'py>) -> Result<Self::Owned, Error> {
         if !B::is_callable(enter.token(), &value) {
-            return Err(Error::type_mismatch("callable", &B::type_name(enter.token(), &value)));
+            return Err(Error::mismatch::<Self>(&B::type_name(enter.token(), &value)));
         }
 
         Ok(Self::from_handle(Handle::from_value(enter, value)))

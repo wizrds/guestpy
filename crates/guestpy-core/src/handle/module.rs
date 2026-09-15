@@ -7,7 +7,10 @@ use crate::{
         base::Handle,
         traits::{Annotated, HasHandle, Named},
     },
-    marshal::{FromGuest, ToGuest},
+    marshal::{
+        FromGuest, ToGuest,
+        describe::{Describe, Expected},
+    },
     scope::Enter,
 };
 
@@ -35,6 +38,12 @@ impl<B> Named<B> for Module<B> where B: Backend + BackendValues {}
 
 impl<B> Annotated<B> for Module<B> where B: Backend + BackendValues {}
 
+impl<B: Backend> Describe for Module<B> {
+    fn describe(expected: &mut Expected) {
+        expected.push("module");
+    }
+}
+
 impl<B> FromGuest<B> for Module<B>
 where
     B: Backend + BackendValues,
@@ -43,7 +52,7 @@ where
 
     fn from_guest<'py>(enter: &Enter<'py, B>, value: B::Value<'py>) -> Result<Self::Owned, Error> {
         if B::type_name(enter.token(), &value) != "module" {
-            return Err(Error::type_mismatch("module", &B::type_name(enter.token(), &value)));
+            return Err(Error::mismatch::<Self>(&B::type_name(enter.token(), &value)));
         }
 
         Ok(Self(Handle::from_value(enter, value)))

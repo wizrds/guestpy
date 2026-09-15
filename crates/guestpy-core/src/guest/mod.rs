@@ -13,8 +13,10 @@ pub use builder::GuestBuilder;
 
 use std::{
     cell::{Cell, Ref},
+    future::poll_fn,
     num::NonZeroU64,
     rc::Rc,
+    task::Poll,
 };
 
 use activity::{Activation, GuestActivity};
@@ -26,9 +28,7 @@ use crate::{
     },
     bundle::Bundle,
     catalog::RealisationCache,
-    driver::{
-        AsyncDriver, AsyncDriverSlot, AsyncRuntime, HostFutureReady, Progress, Timer, WaitTimer,
-    },
+    driver::{AsyncDriver, AsyncDriverSlot, AsyncRuntime, Progress, Timer, WaitTimer},
     errors::Error,
     handle::{Module, Object},
     imports::{GuestBindings, Imports},
@@ -525,9 +525,19 @@ where
                     let async_driver = self
                         .async_driver()
                         .expect("async driver initialized");
-                    let driver = async_driver.driver();
 
-                    HostFutureReady::new(&*driver).await;
+                    poll_fn(|context| {
+                        let driver = async_driver.driver();
+
+                        driver.poll_all(context);
+
+                        if driver.has_ready() || !driver.has_pending() {
+                            Poll::Ready(())
+                        } else {
+                            Poll::Pending
+                        }
+                    })
+                    .await;
                 }
                 Progress::Waiting(delay) => WaitTimer::new(&mut sleep, delay).await,
             }

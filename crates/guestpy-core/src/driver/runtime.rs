@@ -1,8 +1,6 @@
 use std::{
     cell::{Ref, RefCell},
-    future::Future,
-    pin::Pin,
-    task::{Context, Poll},
+    task::Context,
 };
 
 use crate::{
@@ -180,29 +178,5 @@ where
         }
 
         Ok(())
-    }
-}
-
-pub(crate) struct HostFutureReady<'a, B: Backend> {
-    async_driver: &'a dyn AsyncDriver<B>,
-}
-
-impl<'a, B: Backend> HostFutureReady<'a, B> {
-    pub(crate) fn new(async_driver: &'a dyn AsyncDriver<B>) -> Self {
-        Self { async_driver }
-    }
-}
-
-impl<B: Backend> Future for HostFutureReady<'_, B> {
-    type Output = ();
-
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
-        self.async_driver.poll_all(cx);
-
-        if self.async_driver.has_ready() || !self.async_driver.has_pending() {
-            Poll::Ready(())
-        } else {
-            Poll::Pending
-        }
     }
 }

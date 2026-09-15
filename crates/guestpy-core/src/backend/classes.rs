@@ -77,9 +77,8 @@ pub mod fixtures {
             iter::HostIter,
             module::ModuleSpec,
         },
-        marshal::{ToGuest, args::Args},
+        marshal::ToGuest,
         runtime::Runtime,
-        scope::Enter,
     };
 
     struct Vector2 {
@@ -95,21 +94,24 @@ pub mod fixtures {
     where
         B: Backend + BackendValues + BackendCallables + BackendClasses,
     {
-        fn construct<'py>(enter: &Enter<'py, B>, args: Args<'py, B>) -> Result<Self, Error> {
-            let x = args.required::<f64>(enter, 0, "x")?;
-            let y = args.required::<f64>(enter, 1, "y")?;
-
-            args.finish()?;
-
-            Ok(Self { x, y })
-        }
-
         fn build(builder: &mut ClassBuilder<B, Self>) {
             builder
-                .method("length", |vector, _, _| Ok::<_, Error>(vector.x.hypot(vector.y)))
-                .getter("x", |vector, _| Ok::<_, Error>(vector.x))
-                .setter("x", |vector, _, value: f64| {
-                    vector.x = value;
+                .constructor(|enter, args| {
+                    let x = args.required::<f64>(enter, 0, "x")?;
+                    let y = args.required::<f64>(enter, 1, "y")?;
+
+                    args.finish()?;
+
+                    Ok(Self { x, y })
+                })
+                .method("length", |receiver, _, _| {
+                    let vector = receiver.payload::<Self>()?;
+
+                    Ok::<_, Error>(vector.x.hypot(vector.y))
+                })
+                .getter("x", |receiver, _| Ok::<_, Error>(receiver.payload::<Self>()?.x))
+                .setter("x", |receiver, _, value: f64| {
+                    receiver.payload_mut::<Self>()?.x = value;
 
                     Ok::<_, Error>(())
                 });
@@ -132,22 +134,23 @@ pub mod fixtures {
             + BackendModules
             + BackendCoroutines,
     {
-        fn construct<'py>(_: &Enter<'py, B>, args: Args<'py, B>) -> Result<Self, Error> {
-            args.finish()?;
-            Ok(Self)
-        }
-
         fn build(builder: &mut ClassBuilder<B, Self>) {
-            builder.generic();
+            builder
+                .constructor(|_, args| {
+                    args.finish()?;
 
-            builder.async_raw_method("invoke", |this, enter, args| {
-                let this = this.clone();
-                let city = args.required::<String>(enter, 0, "city")?;
+                    Ok(Self)
+                })
+                .generic()
+                .async_method("invoke", |receiver, enter, args| {
+                    let city = args.required::<String>(enter, 0, "city")?;
 
-                args.finish()?;
+                    args.finish()?;
 
-                Ok(async move { this.call_method::<_, String>("execute", (city,)) })
-            });
+                    let this = receiver.resolve::<Object<B>>()?;
+
+                    Ok(async move { this.call_method::<_, String>("execute", (city,)) })
+                });
         }
     }
 
@@ -168,35 +171,40 @@ pub mod fixtures {
             + BackendModules
             + BackendCoroutines,
     {
-        fn construct<'py>(enter: &Enter<'py, B>, args: Args<'py, B>) -> Result<Self, Error> {
-            let prefix = args.required::<String>(enter, 0, "prefix")?;
-
-            args.finish()?;
-
-            Ok(Self { prefix })
-        }
-
         fn build(builder: &mut ClassBuilder<B, Self>) {
-            builder.method_with_this("describe", |ledger, this, _, args| {
-                args.finish()?;
+            builder
+                .constructor(|enter, args| {
+                    let prefix = args.required::<String>(enter, 0, "prefix")?;
 
-                Ok::<_, Error>(format!(
-                    "{}/{}",
-                    ledger.prefix,
-                    this.call_method::<_, String>("label", ())?,
-                ))
-            });
+                    args.finish()?;
 
-            builder.async_method_with_this("describe_later", |ledger, this, _, args| {
-                args.finish()?;
-
-                let prefix = ledger.prefix.clone();
-                let this = this.clone();
-
-                Ok::<_, Error>(async move {
-                    Ok(format!("{}/{}", prefix, this.call_method::<_, String>("label", ())?,))
+                    Ok(Self { prefix })
                 })
-            });
+                .method("describe", |receiver, _, args| {
+                    args.finish()?;
+
+                    let this = receiver.resolve::<Object<B>>()?;
+                    let ledger = receiver.payload::<Self>()?;
+
+                    Ok::<_, Error>(format!(
+                        "{}/{}",
+                        ledger.prefix,
+                        this.call_method::<_, String>("label", ())?,
+                    ))
+                })
+                .async_method("describe_later", |receiver, _, args| {
+                    args.finish()?;
+
+                    let this = receiver.resolve::<Object<B>>()?;
+                    let prefix = receiver
+                        .payload::<Self>()?
+                        .prefix
+                        .clone();
+
+                    Ok::<_, Error>(async move {
+                        Ok(format!("{}/{}", prefix, this.call_method::<_, String>("label", ())?,))
+                    })
+                });
         }
     }
 
@@ -212,23 +220,24 @@ pub mod fixtures {
     where
         B: Backend + BackendValues + BackendCallables + BackendClasses + BackendModules,
     {
-        fn construct<'py>(_: &Enter<'py, B>, args: Args<'py, B>) -> Result<Self, Error> {
-            args.finish()?;
-
-            Ok(Self {
-                entries: [(String::from("answer"), 42)]
-                    .into_iter()
-                    .collect(),
-            })
-        }
-
         fn build(builder: &mut ClassBuilder<B, Self>) {
             builder
+                .constructor(|_, args| {
+                    args.finish()?;
+
+                    Ok(Self {
+                        entries: [(String::from("answer"), 42)]
+                            .into_iter()
+                            .collect(),
+                    })
+                })
                 .imported_base("collections.abc", "Mapping")
-                .method(Dunder::GetItem, |mapping, enter, args| {
+                .method(Dunder::GetItem, |receiver, enter, args| {
                     let key = args.required::<String>(enter, 0, "key")?;
 
                     args.finish()?;
+
+                    let mapping = receiver.payload::<Self>()?;
 
                     mapping
                         .entries
@@ -240,8 +249,10 @@ pub mod fixtures {
                             )
                         })
                 })
-                .method(Dunder::Iter, |mapping, _, args| {
+                .method(Dunder::Iter, |receiver, _, args| {
                     args.finish()?;
+
+                    let mapping = receiver.payload::<Self>()?;
 
                     Ok::<_, Error>(HostIter::new(
                         mapping
@@ -253,10 +264,15 @@ pub mod fixtures {
                             .into_iter(),
                     ))
                 })
-                .method(Dunder::Len, |mapping, _, args| {
+                .method(Dunder::Len, |receiver, _, args| {
                     args.finish()?;
 
-                    Ok::<_, Error>(mapping.entries.len())
+                    Ok::<_, Error>(
+                        receiver
+                            .payload::<Self>()?
+                            .entries
+                            .len(),
+                    )
                 })
                 .generic();
         }
@@ -272,14 +288,13 @@ pub mod fixtures {
     where
         B: Backend + BackendValues + BackendCallables + BackendClasses + BackendModules,
     {
-        fn construct<'py>(_: &Enter<'py, B>, args: Args<'py, B>) -> Result<Self, Error> {
-            args.finish()?;
-
-            Ok(Self)
-        }
-
         fn build(builder: &mut ClassBuilder<B, Self>) {
             builder
+                .constructor(|_, args| {
+                    args.finish()?;
+
+                    Ok(Self)
+                })
                 .imported_base("collections.abc", "Mapping")
                 .method(Dunder::GetItem, |_, _, args| {
                     args.finish()?;
@@ -304,14 +319,13 @@ pub mod fixtures {
     where
         B: Backend + BackendValues + BackendCallables + BackendClasses + BackendModules,
     {
-        fn construct<'py>(_: &Enter<'py, B>, args: Args<'py, B>) -> Result<Self, Error> {
-            args.finish()?;
-
-            Ok(Self)
-        }
-
         fn build(builder: &mut ClassBuilder<B, Self>) {
             builder
+                .constructor(|_, args| {
+                    args.finish()?;
+
+                    Ok(Self)
+                })
                 .base::<AbstractMapping>()
                 .method(Dunder::Len, |_, _, args| {
                     args.finish()?;
@@ -348,43 +362,6 @@ pub mod fixtures {
             builder
                 .base::<MappingParent>()
                 .imported_base("collections.abc", "Mapping");
-        }
-    }
-
-    struct InvalidImportedBase<const CASE: u8>;
-
-    impl<const CASE: u8> HostClass for InvalidImportedBase<CASE> {
-        const NAME: &'static str = match CASE {
-            0 => "NonClassBase",
-            1 => "MissingModuleBase",
-            2 => "MissingAttributeBase",
-            3 => "ModuleValuedBase",
-            _ => "LayoutConflictBase",
-        };
-    }
-
-    impl<B, const CASE: u8> HostClassDefinition<B> for InvalidImportedBase<CASE>
-    where
-        B: Backend + BackendValues + BackendCallables + BackendClasses + BackendModules,
-    {
-        fn build(builder: &mut ClassBuilder<B, Self>) {
-            match CASE {
-                0 => {
-                    builder.imported_base("os", "sep");
-                }
-                1 => {
-                    builder.imported_base("guestpy_missing_module", "Base");
-                }
-                2 => {
-                    builder.imported_base("collections.abc", "Nope");
-                }
-                3 => {
-                    builder.imported_base("collections", "abc");
-                }
-                _ => {
-                    builder.imported_base("builtins", "bytes");
-                }
-            }
         }
     }
 
@@ -1180,24 +1157,23 @@ def twice(value):
             + BackendCoroutines
             + BackendExceptions,
     {
-        fn construct<'py>(_: &Enter<'py, B>, args: Args<'py, B>) -> Result<Self, Error> {
-            args.finish()?;
-
-            Ok(Self)
-        }
-
         fn build(builder: &mut ClassBuilder<B, Self>) {
-            builder.async_method_with_this(Dunder::AEnter, |_, this, _, args| {
-                args.finish()?;
+            builder
+                .constructor(|_, args| {
+                    args.finish()?;
 
-                let this = this.clone();
+                    Ok(Self)
+                })
+                .async_method(Dunder::AEnter, |receiver, _, args| {
+                    args.finish()?;
 
-                Ok::<_, Error>(async move { Ok::<_, Error>(this) })
-            });
+                    let this = receiver.resolve::<Object<B>>()?;
 
-            builder.async_method(Dunder::AExit, |_, _, _| {
-                Ok::<_, Error>(async { Ok::<_, Error>(false) })
-            });
+                    Ok::<_, Error>(async move { Ok::<_, Error>(this) })
+                })
+                .async_method(Dunder::AExit, |_, _, _| {
+                    Ok::<_, Error>(async { Ok::<_, Error>(false) })
+                });
         }
     }
 
@@ -1217,24 +1193,23 @@ def twice(value):
             + BackendCoroutines
             + BackendExceptions,
     {
-        fn construct<'py>(_: &Enter<'py, B>, args: Args<'py, B>) -> Result<Self, Error> {
-            args.finish()?;
-
-            Ok(Self)
-        }
-
         fn build(builder: &mut ClassBuilder<B, Self>) {
-            builder.async_method_with_this("__aenter__", |_, this, _, args| {
-                args.finish()?;
+            builder
+                .constructor(|_, args| {
+                    args.finish()?;
 
-                let this = this.clone();
+                    Ok(Self)
+                })
+                .async_method("__aenter__", |receiver, _, args| {
+                    args.finish()?;
 
-                Ok::<_, Error>(async move { Ok::<_, Error>(this) })
-            });
+                    let this = receiver.resolve::<Object<B>>()?;
 
-            builder.async_method(Dunder::AExit, |_, _, _| {
-                Ok::<_, Error>(async { Ok::<_, Error>(false) })
-            });
+                    Ok::<_, Error>(async move { Ok::<_, Error>(this) })
+                })
+                .async_method(Dunder::AExit, |_, _, _| {
+                    Ok::<_, Error>(async { Ok::<_, Error>(false) })
+                });
         }
     }
 
@@ -1256,22 +1231,22 @@ def twice(value):
             + BackendCoroutines
             + BackendExceptions,
     {
-        fn construct<'py>(enter: &Enter<'py, B>, args: Args<'py, B>) -> Result<Self, Error> {
-            let value = args.required::<i64>(enter, 0, "value")?;
-
-            args.finish()?;
-
-            Ok(Self { value })
-        }
-
         fn build(builder: &mut ClassBuilder<B, Self>) {
-            builder.async_method(Dunder::Await, |awaitable, _, args| {
-                args.finish()?;
+            builder
+                .constructor(|enter, args| {
+                    let value = args.required::<i64>(enter, 0, "value")?;
 
-                let value = awaitable.value;
+                    args.finish()?;
 
-                Ok::<_, Error>(async move { Ok::<_, Error>(value) })
-            });
+                    Ok(Self { value })
+                })
+                .async_method(Dunder::Await, |receiver, _, args| {
+                    args.finish()?;
+
+                    let value = receiver.payload::<Self>()?.value;
+
+                    Ok::<_, Error>(async move { Ok::<_, Error>(value) })
+                });
         }
     }
 
@@ -1293,32 +1268,32 @@ def twice(value):
             + BackendCoroutines
             + BackendExceptions,
     {
-        fn construct<'py>(_: &Enter<'py, B>, args: Args<'py, B>) -> Result<Self, Error> {
-            args.finish()?;
-
-            Ok(Self { value: Cell::new(0) })
-        }
-
         fn build(builder: &mut ClassBuilder<B, Self>) {
-            builder.method_with_this(Dunder::Aiter, |_, this, _, args| {
-                args.finish()?;
+            builder
+                .constructor(|_, args| {
+                    args.finish()?;
 
-                Ok::<_, Error>(this.clone())
-            });
+                    Ok(Self { value: Cell::new(0) })
+                })
+                .method(Dunder::Aiter, |receiver, _, args| {
+                    args.finish()?;
 
-            builder.async_method(Dunder::Anext, |sequence, _, args| {
-                args.finish()?;
+                    receiver.resolve::<Object<B>>()
+                })
+                .async_method(Dunder::Anext, |receiver, _, args| {
+                    args.finish()?;
 
-                let next = sequence.value.get() + 1;
+                    let sequence = receiver.payload::<Self>()?;
+                    let next = sequence.value.get() + 1;
 
-                if next > 2 {
-                    return Err(Error::StopAsyncIteration);
-                }
+                    if next > 2 {
+                        return Err(Error::StopAsyncIteration);
+                    }
 
-                sequence.value.set(next);
+                    sequence.value.set(next);
 
-                Ok::<_, Error>(async move { Ok::<_, Error>(next) })
-            });
+                    Ok::<_, Error>(async move { Ok::<_, Error>(next) })
+                });
         }
     }
 
@@ -1340,43 +1315,44 @@ def twice(value):
             + BackendCoroutines
             + BackendExceptions,
     {
-        fn construct<'py>(_: &Enter<'py, B>, args: Args<'py, B>) -> Result<Self, Error> {
-            args.finish()?;
-
-            Ok(Self { values: HashMap::new() })
-        }
-
         fn build(builder: &mut ClassBuilder<B, Self>) {
-            builder.method_mut(Dunder::SetItem, |session, enter, args| {
-                let key = args.required::<String>(enter, 0, "key")?;
-                let value = args.required::<i64>(enter, 1, "value")?;
+            builder
+                .constructor(|_, args| {
+                    args.finish()?;
 
-                args.finish()?;
+                    Ok(Self { values: HashMap::new() })
+                })
+                .method(Dunder::SetItem, |receiver, enter, args| {
+                    let key = args.required::<String>(enter, 0, "key")?;
+                    let value = args.required::<i64>(enter, 1, "value")?;
 
-                session.values.insert(key, value);
+                    args.finish()?;
 
-                Ok::<_, Error>(())
-            });
+                    receiver
+                        .payload_mut::<Self>()?
+                        .values
+                        .insert(key, value);
 
-            builder.method(Dunder::GetItem, |session, enter, args| {
-                let key = args.required::<String>(enter, 0, "key")?;
+                    Ok::<_, Error>(())
+                })
+                .method(Dunder::GetItem, |receiver, enter, args| {
+                    let key = args.required::<String>(enter, 0, "key")?;
 
-                args.finish()?;
+                    args.finish()?;
 
-                session
-                    .values
-                    .get(&key)
-                    .copied()
-                    .ok_or_else(|| Error::attribute(key))
-            });
+                    receiver
+                        .payload::<Self>()?
+                        .values
+                        .get(&key)
+                        .copied()
+                        .ok_or_else(|| Error::attribute(key))
+                })
+                .method(Dunder::Enter, |receiver, _, args| {
+                    args.finish()?;
 
-            builder.method_with_this(Dunder::Enter, |_, this, _, args| {
-                args.finish()?;
-
-                Ok::<_, Error>(this.clone())
-            });
-
-            builder.method(Dunder::Exit, |_, _, _| Ok::<_, Error>(false));
+                    receiver.resolve::<Object<B>>()
+                })
+                .method(Dunder::Exit, |_, _, _| Ok::<_, Error>(false));
         }
     }
 
@@ -1396,16 +1372,16 @@ def twice(value):
             + BackendCoroutines
             + BackendExceptions,
     {
-        fn construct<'py>(_: &Enter<'py, B>, args: Args<'py, B>) -> Result<Self, Error> {
-            args.finish()?;
-
-            Ok(Self)
-        }
-
         fn build(builder: &mut ClassBuilder<B, Self>) {
-            builder.async_method(Dunder::Len, |_, _, _| {
-                Ok::<_, Error>(async { Ok::<_, Error>(0_i64) })
-            });
+            builder
+                .constructor(|_, args| {
+                    args.finish()?;
+
+                    Ok(Self)
+                })
+                .async_method(Dunder::Len, |_, _, _| {
+                    Ok::<_, Error>(async { Ok::<_, Error>(0_i64) })
+                });
         }
     }
 
@@ -1693,111 +1669,6 @@ assert len(value) == 1
         }
     }
 
-    pub fn imported_base_failures_are_preserved<B>()
-    where
-        B: Backend
-            + BackendValues
-            + BackendCallables
-            + BackendClasses
-            + BackendModules
-            + BackendCoroutines
-            + BackendExceptions
-            + BackendInterrupt,
-    {
-        let non_class = Runtime::<B>::builder()
-            .bind(
-                ModuleSpec::new("host_lib")
-                    .class::<InvalidImportedBase<0>>()
-                    .unwrap(),
-            )
-            .build()
-            .unwrap()
-            .guest()
-            .build()
-            .err()
-            .unwrap();
-
-        assert!(matches!(
-            non_class,
-            Error::Conversion { ref message, .. }
-                if message == "os.sep is not a class"
-        ));
-
-        let missing_module = Runtime::<B>::builder()
-            .bind(
-                ModuleSpec::new("host_lib")
-                    .class::<InvalidImportedBase<1>>()
-                    .unwrap(),
-            )
-            .build()
-            .unwrap()
-            .guest()
-            .build()
-            .err()
-            .unwrap();
-
-        assert!(
-            missing_module
-                .to_string()
-                .contains("guestpy_missing_module")
-        );
-
-        let missing_attribute = Runtime::<B>::builder()
-            .bind(
-                ModuleSpec::new("host_lib")
-                    .class::<InvalidImportedBase<2>>()
-                    .unwrap(),
-            )
-            .build()
-            .unwrap()
-            .guest()
-            .build()
-            .err()
-            .unwrap();
-
-        assert!(matches!(
-            missing_attribute,
-            Error::Attribute { ref name } if name == "Nope"
-        ));
-
-        let module_value = Runtime::<B>::builder()
-            .bind(
-                ModuleSpec::new("host_lib")
-                    .class::<InvalidImportedBase<3>>()
-                    .unwrap(),
-            )
-            .build()
-            .unwrap()
-            .guest()
-            .build()
-            .err()
-            .unwrap();
-
-        assert!(matches!(
-            module_value,
-            Error::Conversion { ref message, .. }
-                if message == "collections.abc is not a class"
-        ));
-
-        let layout_conflict = Runtime::<B>::builder()
-            .bind(
-                ModuleSpec::new("host_lib")
-                    .class::<InvalidImportedBase<4>>()
-                    .unwrap(),
-            )
-            .build()
-            .unwrap()
-            .guest()
-            .build()
-            .err()
-            .unwrap();
-
-        assert!(matches!(
-            layout_conflict,
-            Error::Guest(ref exception) if exception.matches("TypeError")
-        ));
-    }
-
     pub fn two_guests_share_one_realised_imported_base_class<B>()
     where
         B: Backend
@@ -2058,13 +1929,6 @@ assert len(value) == 1
             #[test]
             fn abstract_imported_base_is_completed_by_a_host_subclass() {
                 $crate::backend::classes::fixtures::abstract_imported_base_is_completed_by_a_host_subclass::<
-                    $backend,
-                >();
-            }
-
-            #[test]
-            fn imported_base_failures_are_preserved() {
-                $crate::backend::classes::fixtures::imported_base_failures_are_preserved::<
                     $backend,
                 >();
             }

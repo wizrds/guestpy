@@ -331,6 +331,31 @@
 //! collections, arrays, tuples, and iterable values also cross the boundary directly. Use a host
 //! class when guest code needs to retain Rust object identity.
 //!
+//! ## Union and protocol inputs
+//!
+//! Mark an enum with `#[guestpy(union)]` when a host API accepts several guest value types.
+//! Every variant must contain exactly one unnamed field:
+//!
+//! ```ignore
+//! #[derive(guestpy::FromGuest, guestpy::ToGuest)]
+//! #[guestpy(union)]
+//! enum Identifier {
+//!     Number(i64),
+//!     Text(String),
+//! }
+//! ```
+//!
+//! [`guestpy::FromGuest`](crate::FromGuest) tries variants in declaration order and selects the
+//! first conversion that succeeds. A conversion mismatch continues to the next variant, while
+//! guest exceptions and other failures return immediately. If no variant matches, guest code
+//! receives a `TypeError` naming every accepted type. Nested unions flatten and deduplicate
+//! those names. Because every attempt sees a clone of the same guest handle rather than a copy
+//! of the guest object, put variants that consume one-shot iterators after variants that only
+//! inspect the value.
+//!
+//! Use `#[guestpy(union, backend = B)]` when the enum already declares `B` as its backend type
+//! parameter. Without `backend = B`, the derives introduce their own backend parameter.
+//!
 //! # Host classes and modules
 //!
 //! [`guestpy::host_class`](crate::host_class) exposes an ordinary Rust type as a Python class. Mark
@@ -495,6 +520,18 @@
 //!         })
 //!         .into())
 //!     }
+//! }
+//! ```
+//!
+//! A typed exception may declare one generic backend parameter when it retains a guest object. The
+//! derive reuses that parameter for raising and reconstructing the exception:
+//!
+//! ```ignore
+//! #[derive(HostException)]
+//! struct HttpStatusError<B: Backend> {
+//!     #[guestpy(arg)]
+//!     message: String,
+//!     response: Instance<B>,
 //! }
 //! ```
 //!
@@ -752,6 +789,73 @@ mod tests {
         #[serde(rename = "userId")]
         user_id: u64,
         note: Option<String>,
+    }
+
+    #[derive(Debug, PartialEq, crate::FromGuest, crate::ToGuest)]
+    #[guestpy(union)]
+    enum Scalar {
+        Integer(i64),
+        Float(f64),
+        Text(String),
+    }
+
+    #[derive(Debug, PartialEq, crate::FromGuest)]
+    #[guestpy(union)]
+    enum NestedScalar {
+        Scalar(Scalar),
+        Text(String),
+    }
+
+    #[derive(crate::FromGuest)]
+    #[guestpy(union)]
+    enum Headers {
+        Mapping(Mapping<String, String>),
+        Pairs(Iterable<Vec<(String, String)>>),
+    }
+
+    #[derive(crate::FromGuest)]
+    #[guestpy(union, backend = B)]
+    enum BackendValue<B: Backend> {
+        Integer(i64),
+        Object(Object<B>),
+    }
+
+    struct UnionInputs;
+
+    #[crate::host_module(name = "union_inputs")]
+    impl UnionInputs {
+        #[guestpy(function)]
+        fn scalar_kind(value: Scalar) -> Result<String, Error> {
+            Ok(match value {
+                Scalar::Integer(_) => String::from("integer"),
+                Scalar::Float(_) => String::from("float"),
+                Scalar::Text(_) => String::from("text"),
+            })
+        }
+
+        #[guestpy(function)]
+        fn nested_kind(value: NestedScalar) -> Result<String, Error> {
+            Ok(match value {
+                NestedScalar::Scalar(Scalar::Integer(value)) => value.to_string(),
+                NestedScalar::Scalar(Scalar::Float(value)) => value.to_string(),
+                NestedScalar::Scalar(Scalar::Text(value)) | NestedScalar::Text(value) => value,
+            })
+        }
+
+        #[guestpy(function)]
+        fn headers_kind(value: Headers) -> Result<String, Error> {
+            Ok(match value {
+                Headers::Mapping(Mapping(entries)) => {
+                    format!("mapping:{}", entries.len())
+                }
+                Headers::Pairs(Iterable(pairs)) => format!("pairs:{}", pairs.len()),
+            })
+        }
+
+        #[guestpy(function)]
+        fn echo_scalar(value: Scalar) -> Result<Scalar, Error> {
+            Ok(value)
+        }
     }
 
     struct Vector2 {
@@ -1095,6 +1199,110 @@ def identity(client):
                     .unwrap(),
                 Request { user_id: 42, note: None },
             );
+        }
+
+        async fn union_derives_preserve_order_errors_and_backend_generics() {
+            let guest = Runtime::<B>::builder()
+                .bind(UnionInputs::module().expect("UnionInputs registers cleanly"))
+                .build()
+                .unwrap()
+                .guest()
+                .build()
+                .unwrap();
+
+            guest
+                .exec(
+                    r#"
+import union_inputs
+
+class BrokenMapping:
+    def keys(self):
+        raise ValueError("broken keys")
+
+    def __getitem__(self, key):
+        return key
+
+def scalar_error():
+    try:
+        union_inputs.scalar_kind([])
+    except TypeError as error:
+        return str(error)
+
+def nested_error():
+    try:
+        union_inputs.nested_kind([])
+    except TypeError as error:
+        return str(error)
+
+def headers_error_type():
+    try:
+        union_inputs.headers_kind(BrokenMapping())
+    except Exception as error:
+        return type(error).__name__
+"#,
+                )
+                .unwrap();
+
+            assert_eq!(
+                guest.eval::<String>("union_inputs.scalar_kind(7)").unwrap(),
+                "integer",
+            );
+            assert_eq!(
+                guest
+                    .eval::<String>("union_inputs.scalar_kind(7.5)")
+                    .unwrap(),
+                "float",
+            );
+            assert_eq!(
+                guest
+                    .eval::<String>("union_inputs.scalar_kind('value')")
+                    .unwrap(),
+                "text",
+            );
+            assert_eq!(
+                guest
+                    .eval::<String>("union_inputs.headers_kind([('name', 'value')])")
+                    .unwrap(),
+                "pairs:1",
+            );
+            assert_eq!(
+                guest.eval::<i64>("union_inputs.echo_scalar(42)").unwrap(),
+                42,
+            );
+            assert_eq!(
+                guest
+                    .eval::<f64>("union_inputs.echo_scalar(7.5)")
+                    .unwrap(),
+                7.5,
+            );
+            assert_eq!(
+                guest
+                    .eval::<String>("union_inputs.echo_scalar('value')")
+                    .unwrap(),
+                "value",
+            );
+            assert_eq!(
+                guest.eval::<String>("scalar_error()").unwrap(),
+                "expected int, float or str, got list",
+            );
+            assert_eq!(
+                guest.eval::<String>("nested_error()").unwrap(),
+                "expected int, float or str, got list",
+            );
+            assert_eq!(
+                guest.eval::<String>("headers_error_type()").unwrap(),
+                "ValueError",
+            );
+            match guest.eval::<BackendValue<B>>("1").unwrap() {
+                BackendValue::Integer(value) => assert_eq!(value, 1),
+                BackendValue::Object(_) => panic!("integer variant must match first"),
+            }
+            match guest.eval::<BackendValue<B>>("{}").unwrap() {
+                BackendValue::Integer(_) => panic!("dict must not match integer"),
+                BackendValue::Object(value) => {
+                    assert_eq!(value.type_name().unwrap(), "dict");
+                }
+            }
         }
 
         async fn host_class_and_host_module_are_visible_to_guest_code() {

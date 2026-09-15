@@ -200,6 +200,10 @@ where
     pub fn build(self) -> Result<Runtime<B>, Error> {
         FatalExceptions::reserve(&self.modules)?;
 
+        self.modules
+            .iter()
+            .try_for_each(|module| module.validate())?;
+
         let engine = B::engine(self.config)?;
         let real_import =
             B::enter(&engine, |token| Ok::<_, Error>(B::detach(token, B::real_import(token)?)))?;

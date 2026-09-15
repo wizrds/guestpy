@@ -422,6 +422,30 @@ The derives follow the type's serde representation. Standard Rust primitives, op
 arrays, tuples, and iterable values also cross the boundary directly. Use a host class when guest
 code needs to retain Rust object identity rather than receive copied data.
 
+### Union and protocol inputs
+
+Mark an enum with `#[guestpy(union)]` when a host API accepts several guest value types. Every
+variant must contain exactly one unnamed field:
+
+```rust
+#[derive(guestpy::FromGuest, guestpy::ToGuest)]
+#[guestpy(union)]
+enum Identifier {
+    Number(i64),
+    Text(String),
+}
+```
+
+`FromGuest` tries variants in declaration order and selects the first conversion that succeeds.
+A conversion mismatch continues to the next variant, while guest exceptions and other failures
+return immediately. If no variant matches, guest code receives a `TypeError` naming every
+accepted type. Nested unions flatten and deduplicate those names. Because every attempt sees a
+clone of the same guest handle rather than a copy of the guest object, put variants that consume
+one-shot iterators after variants that only inspect the value.
+
+Use `#[guestpy(union, backend = B)]` when the enum already declares `B` as its backend type
+parameter. Without `backend = B`, the derives introduce their own backend parameter.
+
 ## Host classes
 
 `#[guestpy::host_class]` exposes an ordinary Rust type as a Python class. Mark the constructor,

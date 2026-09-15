@@ -180,9 +180,7 @@ mod tests {
             dunder::Dunder,
             module::ModuleSpec,
         },
-        marshal::args::Args,
         runtime::Runtime,
-        scope::Enter,
     };
 
     use crate::engine::RustPython;
@@ -230,21 +228,24 @@ mod tests {
     where
         B: Backend + BackendValues + BackendCallables + BackendClasses,
     {
-        fn construct<'py>(enter: &Enter<'py, B>, args: Args<'py, B>) -> Result<Self, Error> {
-            let x = args.required::<f64>(enter, 0, "x")?;
-            let y = args.required::<f64>(enter, 1, "y")?;
-
-            args.finish()?;
-
-            Ok(Self { x, y })
-        }
-
         fn build(builder: &mut ClassBuilder<B, Self>) {
             builder
-                .method("length", |vector, _, _| Ok::<_, Error>(vector.x.hypot(vector.y)))
-                .getter("x", |vector, _| Ok::<_, Error>(vector.x))
-                .setter("x", |vector, _, value: f64| {
-                    vector.x = value;
+                .constructor(|enter, args| {
+                    let x = args.required::<f64>(enter, 0, "x")?;
+                    let y = args.required::<f64>(enter, 1, "y")?;
+
+                    args.finish()?;
+
+                    Ok(Self { x, y })
+                })
+                .method("length", |receiver, _, _| {
+                    let vector = receiver.payload::<Self>()?;
+
+                    Ok::<_, Error>(vector.x.hypot(vector.y))
+                })
+                .getter("x", |receiver, _| Ok::<_, Error>(receiver.payload::<Self>()?.x))
+                .setter("x", |receiver, _, value: f64| {
+                    receiver.payload_mut::<Self>()?.x = value;
 
                     Ok::<_, Error>(())
                 })
@@ -252,16 +253,22 @@ mod tests {
                 .static_method("zero", |_, _| Ok::<_, Error>((0.0_f64, 0.0_f64)))
                 .constant("DIMS", 2_i64)
                 .method(Dunder::Len, |_, _, _| Ok::<_, Error>(2_i64))
-                .method(Dunder::Repr, |vector, _, _| {
+                .method(Dunder::Repr, |receiver, _, _| {
+                    let vector = receiver.payload::<Self>()?;
+
                     Ok::<_, Error>(format!("Vector2({}, {})", vector.x, vector.y))
                 })
-                .method(Dunder::Eq, |vector, enter, args| {
+                .method(Dunder::Eq, |receiver, enter, args| {
                     let other = args.borrow::<Vector2>(enter, 0)?;
+                    let vector = receiver.payload::<Self>()?;
 
                     Ok::<_, Error>(other.x.eq(&vector.x) && other.y.eq(&vector.y))
                 })
-                .method(Dunder::GetItem, |vector, enter, args| {
-                    match args.required::<i64>(enter, 0, "index")? {
+                .method(Dunder::GetItem, |receiver, enter, args| {
+                    let index = args.required::<i64>(enter, 0, "index")?;
+                    let vector = receiver.payload::<Self>()?;
+
+                    match index {
                         0 => Ok::<_, Error>(vector.x),
                         1 => Ok::<_, Error>(vector.y),
                         _ => Err(Error::attribute("index")),

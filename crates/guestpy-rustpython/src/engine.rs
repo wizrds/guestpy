@@ -183,9 +183,7 @@ mod tests {
             class::{ClassBuilder, HostClass, HostClassDefinition},
             module::ModuleSpec,
         },
-        marshal::args::Args,
         runtime::Runtime,
-        scope::Enter,
     };
     use std::{cell::Cell, rc::Rc};
 
@@ -380,11 +378,9 @@ VALUE = 21
         where
             B: Backend + BackendValues + BackendCallables + BackendClasses,
         {
-            fn construct<'py>(_: &Enter<'py, B>, _: Args<'py, B>) -> Result<Self, Error> {
-                Ok(Self)
+            fn build(builder: &mut ClassBuilder<B, Self>) {
+                builder.constructor(|_, _| Ok(Self));
             }
-
-            fn build(_: &mut ClassBuilder<B, Self>) {}
         }
 
         DROPS.with(|drops| drops.set(0));

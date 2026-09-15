@@ -15,7 +15,11 @@ use crate::{
         traits::{Annotated, HasHandle, IsType, Named, ObjectProtocol, TypeProtocol},
     },
     host::class::{ClassSpec, HostClass, HostClassDefinition},
-    marshal::{FromGuest, FromGuestMut, FromGuestRef, ToGuest, args::ToGuestArgs},
+    marshal::{
+        FromGuest, FromGuestMut, FromGuestRef, ToGuest,
+        args::ToGuestArgs,
+        describe::{Describe, Expected},
+    },
     scope::Enter,
 };
 
@@ -120,6 +124,12 @@ where
     }
 }
 
+impl<B: Backend, R> Describe for Class<B, R> {
+    fn describe(expected: &mut Expected) {
+        expected.push("class");
+    }
+}
+
 impl<B, R> FromGuest<B> for Class<B, R>
 where
     B: Backend + BackendValues,
@@ -129,7 +139,7 @@ where
 
     fn from_guest<'py>(enter: &Enter<'py, B>, value: B::Value<'py>) -> Result<Self::Owned, Error> {
         if !B::is_class(enter.token(), &value) {
-            return Err(Error::type_mismatch("class", &B::type_name(enter.token(), &value)));
+            return Err(Error::mismatch::<Self>(&B::type_name(enter.token(), &value)));
         }
 
         Ok(Self::from_handle(Handle::from_value(enter, value)))
@@ -245,6 +255,22 @@ where
         F: FnOnce(&mut C) -> R,
     {
         self.borrow_as_with_mut::<C, F, R>(f)
+    }
+}
+
+impl<B: Backend> Describe for Instance<B> {
+    fn describe(expected: &mut Expected) {
+        expected.push("object");
+    }
+}
+
+impl<B, C> Describe for Instance<B, C>
+where
+    B: Backend,
+    C: HostClass,
+{
+    fn describe(expected: &mut Expected) {
+        expected.push(C::NAME);
     }
 }
 

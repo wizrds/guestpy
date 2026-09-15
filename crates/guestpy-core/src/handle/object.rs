@@ -1,13 +1,13 @@
 //! Guest object handles.
 
 use crate::{
-    backend::{
-        Backend, BackendCallables, BackendClasses, BackendCoroutines, BackendInterrupt,
-        BackendModules, BackendValues,
-    },
+    backend::Backend,
     errors::Error,
-    handle::{base::Handle, iter::AsyncIter, traits::HasHandle},
-    marshal::{FromGuest, ToGuest},
+    handle::{base::Handle, traits::HasHandle},
+    marshal::{
+        FromGuest, ToGuest,
+        describe::{Describe, Expected},
+    },
     scope::Enter,
 };
 
@@ -35,26 +35,9 @@ impl<B: Backend> HasHandle<B> for Object<B> {
     }
 }
 
-impl<B> Object<B>
-where
-    B: Backend
-        + BackendValues
-        + BackendCallables
-        + BackendClasses
-        + BackendModules
-        + BackendCoroutines
-        + BackendInterrupt,
-{
-    pub fn aiter<T: FromGuest<B>>(&self) -> Result<AsyncIter<B, T>, Error> {
-        self.0.with_enter(|enter, object| {
-            let aiter_method = B::get_attr(enter.token(), object, "__aiter__")?;
-            let async_iterator = B::call(enter.token(), &aiter_method, &[], &[])?;
-
-            Ok(AsyncIter::from_handle(Handle::new(
-                B::detach(enter.token(), async_iterator),
-                self.0.guest().clone(),
-            )))
-        })
+impl<B: Backend> Describe for Object<B> {
+    fn describe(expected: &mut Expected) {
+        expected.push("object");
     }
 }
 

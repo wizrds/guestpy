@@ -1,6 +1,7 @@
 use std::{
+    any::TypeId,
     cell::RefCell,
-    collections::{HashMap, HashSet},
+    collections::{HashMap, HashSet, hash_map::Entry},
     rc::Rc,
 };
 
@@ -11,7 +12,7 @@ use crate::{
     bundle::{Bundle, BundleId},
     catalog::Catalog,
     errors::Error,
-    host::module::ModuleSpec,
+    host::{class::ClassSpec, module::ModuleSpec},
     imports::name::DottedName,
     native::NativeModule,
 };
@@ -26,6 +27,7 @@ struct BindingState<B: Backend> {
 
 pub(crate) struct GuestBindings<B: Backend> {
     specs: HashMap<String, Rc<ModuleSpec<B>>>,
+    owners: HashMap<TypeId, Rc<ModuleSpec<B>>>,
     natives: HashMap<String, Rc<NativeModule<B>>>,
     denied: HashSet<String>,
     state: RefCell<BindingState<B>>,
@@ -41,9 +43,32 @@ impl<B: Backend> GuestBindings<B> {
         denied: &HashSet<String>,
     ) -> Result<Self, Error> {
         let mut specs = HashMap::new();
+        let mut owners = HashMap::new();
 
         for module in catalog.modules().iter().chain(modules) {
             specs.insert(module.name().to_owned(), module.clone());
+
+            for class in module
+                .classes()
+                .flat_map(ClassSpec::host_lineage)
+            {
+                match owners.entry(class.payload()) {
+                    Entry::Vacant(entry) => {
+                        entry.insert(module.clone());
+                    }
+                    Entry::Occupied(entry)
+                        if !class.requirements().is_empty() && !Rc::ptr_eq(entry.get(), module) =>
+                    {
+                        return Err(Error::unsupported(format!(
+                            "host class {} requires its module and is registered on both {} and {}",
+                            class.name(),
+                            entry.get().name(),
+                            module.name(),
+                        )));
+                    }
+                    Entry::Occupied(_) => {}
+                }
+            }
         }
 
         let mut native_specs = HashMap::new();
@@ -70,6 +95,7 @@ impl<B: Backend> GuestBindings<B> {
 
         Ok(Self {
             specs,
+            owners,
             natives: native_specs,
             denied: denied_names,
             state: RefCell::new(BindingState {
@@ -111,7 +137,11 @@ impl<B: Backend> GuestBindings<B> {
         Ok(())
     }
 
-    pub(super) fn spec(&self, dotted: &str) -> Option<Rc<ModuleSpec<B>>> {
+    pub(crate) fn class_owner(&self, payload: TypeId) -> Option<Rc<ModuleSpec<B>>> {
+        self.owners.get(&payload).cloned()
+    }
+
+    pub(crate) fn spec(&self, dotted: &str) -> Option<Rc<ModuleSpec<B>>> {
         self.specs.get(dotted).cloned()
     }
 

@@ -10,15 +10,17 @@ use crate::{
         callables::{HostBody, PendingValue, RawBody},
     },
     errors::Error,
-    handle::{Class, Object, TypeProtocol, Value},
+    handle::{Class, TypeProtocol, Value},
     host::{
+        context::{FromContext, Requirements},
         declaration::{DeclarationContext, DeclareMember, Member},
         dunder::Dunder,
         exception::{ExceptionClass, Raise},
         namespace::{Namespace, ValueDeclaration},
+        receiver::Receiver,
     },
     imports::Imports,
-    marshal::{FromGuest, FromGuestMut, FromGuestRef, ToGuest, args::Args},
+    marshal::{FromGuest, ToGuest, args::Args},
     scope::Enter,
 };
 
@@ -298,6 +300,7 @@ pub struct ClassSpec<B: Backend> {
     members: Vec<(MemberName, Member<B>)>,
     statics: Namespace<B>,
     payload: TypeId,
+    requirements: Requirements<B>,
 }
 
 impl<B: Backend> ClassSpec<B> {
@@ -320,6 +323,22 @@ impl<B: Backend> ClassSpec<B> {
 
     pub(crate) fn payload(&self) -> TypeId {
         self.payload
+    }
+
+    pub(crate) fn requirements(&self) -> &Requirements<B> {
+        &self.requirements
+    }
+
+    pub(crate) fn host_lineage(self: &Rc<Self>) -> Vec<Rc<ClassSpec<B>>> {
+        let mut lineage = vec![self.clone()];
+
+        for base in &self.bases {
+            if let ClassBase::Host(base) = base {
+                lineage.extend(base.host_lineage());
+            }
+        }
+
+        lineage
     }
 
     pub(crate) fn doc(&self) -> Option<&'static str> {
@@ -625,10 +644,6 @@ pub trait HostClass: Sized + 'static {
 }
 
 pub trait HostClassDefinition<B: Backend>: HostClass {
-    fn construct<'py>(_enter: &Enter<'py, B>, _args: Args<'py, B>) -> Result<Self, Error> {
-        Err(Error::unsupported(format!("host class {} cannot be constructed", Self::NAME)))
-    }
-
     fn build(builder: &mut ClassBuilder<B, Self>);
 }
 
@@ -652,12 +667,15 @@ where
                 module: RefCell::new(None),
                 bases: Vec::new(),
                 alloc: Rc::new(|enter, class| B::alloc::<C>(enter.token(), &class)),
-                init: Rc::new(|enter, instance, args| {
-                    B::set_payload::<C>(enter.token(), &instance, C::construct(enter, args)?)
+                init: Rc::new(|_, _, _| {
+                    Err(Error::unsupported(
+                        format!("host class {} cannot be constructed", C::NAME,),
+                    ))
                 }),
                 members: Vec::new(),
                 statics: Namespace::new(),
                 payload: TypeId::of::<C>(),
+                requirements: Requirements::new(),
             },
             error: None,
             properties: HashMap::new(),
@@ -711,97 +729,47 @@ where
         property
     }
 
+    pub fn constructor<F>(&mut self, construct: F) -> &mut Self
+    where
+        F: for<'py> Fn(&Enter<'py, B>, Args<'py, B>) -> Result<C, Error> + 'static,
+    {
+        self.spec.init = Rc::new(move |enter, instance, args| {
+            B::set_payload::<C>(enter.token(), &instance, construct(enter, args)?)
+        });
+
+        self
+    }
+
+    pub fn require<T: FromContext<B>>(&mut self) -> &mut Self {
+        T::declare(&mut self.spec.requirements);
+
+        self
+    }
+
     pub fn method<F, R>(&mut self, name: impl Into<MemberName>, function: F) -> &mut Self
     where
-        F: for<'py> Fn(&C, &Enter<'py, B>, Args<'py, B>) -> Result<R, Error> + 'static,
-        R: ToGuest<B> + 'static,
-    {
-        self.push(
-            name.into(),
-            Rc::new(MethodDeclaration::new(move |enter, receiver, args| {
-                function(&*C::from_guest_ref(enter, &receiver)?, enter, args)?.to_guest(enter)
-            })),
-        )
-    }
-
-    pub fn method_with_this<F, R>(&mut self, name: impl Into<MemberName>, function: F) -> &mut Self
-    where
-        F: for<'py> Fn(&C, &Object<B>, &Enter<'py, B>, Args<'py, B>) -> Result<R, Error> + 'static,
-        R: ToGuest<B> + 'static,
-    {
-        self.push(
-            name.into(),
-            Rc::new(MethodDeclaration::<B>::new(move |enter, receiver, args| {
-                function(
-                    &*C::from_guest_ref(enter, &receiver)?,
-                    &Object::from_guest(enter, receiver.clone())?,
-                    enter,
-                    args,
-                )?
-                .to_guest(enter)
-            })),
-        )
-    }
-
-    pub fn method_mut<F, R>(&mut self, name: impl Into<MemberName>, function: F) -> &mut Self
-    where
-        F: for<'py> Fn(&mut C, &Enter<'py, B>, Args<'py, B>) -> Result<R, Error> + 'static,
-        R: ToGuest<B> + 'static,
-    {
-        self.push(
-            name.into(),
-            Rc::new(MethodDeclaration::new(move |enter, receiver, args| {
-                function(&mut *C::from_guest_mut(enter, &receiver)?, enter, args)?.to_guest(enter)
-            })),
-        )
-    }
-
-    pub fn method_mut_with_this<F, R>(
-        &mut self,
-        name: impl Into<MemberName>,
-        function: F,
-    ) -> &mut Self
-    where
-        F: for<'py> Fn(&mut C, &Object<B>, &Enter<'py, B>, Args<'py, B>) -> Result<R, Error>
+        F: for<'a, 'py> Fn(Receiver<'a, 'py, B>, &Enter<'py, B>, Args<'py, B>) -> Result<R, Error>
             + 'static,
         R: ToGuest<B> + 'static,
     {
         self.push(
             name.into(),
-            Rc::new(MethodDeclaration::<B>::new(move |enter, receiver, args| {
-                function(
-                    &mut *C::from_guest_mut(enter, &receiver)?,
-                    &Object::from_guest(enter, receiver.clone())?,
-                    enter,
-                    args,
-                )?
-                .to_guest(enter)
-            })),
-        )
-    }
-
-    pub fn raw_method<F, R>(&mut self, name: impl Into<MemberName>, function: F) -> &mut Self
-    where
-        F: for<'py> Fn(&Object<B>, &Enter<'py, B>, Args<'py, B>) -> Result<R, Error> + 'static,
-        R: ToGuest<B> + 'static,
-    {
-        self.push(
-            name.into(),
             Rc::new(MethodDeclaration::new(move |enter, receiver, args| {
-                function(&Object::from_guest(enter, receiver)?, enter, args)?.to_guest(enter)
+                function(Receiver::new(enter, &receiver), enter, args)?.to_guest(enter)
             })),
         )
     }
 
     pub fn class_method<F, R>(&mut self, name: &str, function: F) -> &mut Self
     where
-        F: for<'py> Fn(&Enter<'py, B>, B::Value<'py>, Args<'py, B>) -> Result<R, Error> + 'static,
+        F: for<'a, 'py> Fn(Receiver<'a, 'py, B>, &Enter<'py, B>, Args<'py, B>) -> Result<R, Error>
+            + 'static,
         R: ToGuest<B> + 'static,
     {
         self.push(
             name.into(),
             Rc::new(ClassMethodDeclaration::new(move |enter, class, args| {
-                function(enter, class, args)?.to_guest(enter)
+                function(Receiver::new(enter, &class), enter, args)?.to_guest(enter)
             })),
         )
     }
@@ -821,12 +789,12 @@ where
 
     pub fn getter<F, R>(&mut self, name: &str, get: F) -> &mut Self
     where
-        F: for<'py> Fn(&C, &Enter<'py, B>) -> Result<R, Error> + 'static,
+        F: for<'a, 'py> Fn(Receiver<'a, 'py, B>, &Enter<'py, B>) -> Result<R, Error> + 'static,
         R: ToGuest<B> + 'static,
     {
         self.property_slot(name)
             .set_get(move |enter, receiver, _| {
-                get(&*C::from_guest_ref(enter, &receiver)?, enter)?.to_guest(enter)
+                get(Receiver::new(enter, &receiver), enter)?.to_guest(enter)
             });
 
         self
@@ -834,12 +802,12 @@ where
 
     pub fn setter<F, V>(&mut self, name: &str, set: F) -> &mut Self
     where
-        F: for<'py> Fn(&mut C, &Enter<'py, B>, V) -> Result<(), Error> + 'static,
+        F: for<'a, 'py> Fn(Receiver<'a, 'py, B>, &Enter<'py, B>, V) -> Result<(), Error> + 'static,
         V: FromGuest<B, Owned = V> + 'static,
     {
         self.property_slot(name)
             .set_set(move |enter, receiver, value| {
-                set(&mut *C::from_guest_mut(enter, &receiver)?, enter, V::from_guest(enter, value)?)
+                set(Receiver::new(enter, &receiver), enter, V::from_guest(enter, value)?)
             });
 
         self
@@ -847,18 +815,18 @@ where
 
     pub fn deleter<F>(&mut self, name: &str, del: F) -> &mut Self
     where
-        F: for<'py> Fn(&mut C, &Enter<'py, B>) -> Result<(), Error> + 'static,
+        F: for<'a, 'py> Fn(Receiver<'a, 'py, B>, &Enter<'py, B>) -> Result<(), Error> + 'static,
     {
         self.property_slot(name)
-            .set_del(move |enter, receiver| del(&mut *C::from_guest_mut(enter, &receiver)?, enter));
+            .set_del(move |enter, receiver| del(Receiver::new(enter, &receiver), enter));
 
         self
     }
 
     pub fn property<G, S, R, V>(&mut self, name: &str, get: G, set: S) -> &mut Self
     where
-        G: for<'py> Fn(&C, &Enter<'py, B>) -> Result<R, Error> + 'static,
-        S: for<'py> Fn(&mut C, &Enter<'py, B>, V) -> Result<(), Error> + 'static,
+        G: for<'a, 'py> Fn(Receiver<'a, 'py, B>, &Enter<'py, B>) -> Result<R, Error> + 'static,
+        S: for<'a, 'py> Fn(Receiver<'a, 'py, B>, &Enter<'py, B>, V) -> Result<(), Error> + 'static,
         R: ToGuest<B> + 'static,
         V: FromGuest<B, Owned = V> + 'static,
     {
@@ -879,7 +847,7 @@ where
     }
 
     pub fn generic(&mut self) -> &mut Self {
-        self.class_method("__class_getitem__", |enter, class, args| {
+        self.class_method("__class_getitem__", |receiver, enter, args| {
             let item = args
                 .required::<Value<B>>(enter, 0, "item")?
                 .to_guest(enter)?;
@@ -895,7 +863,10 @@ where
                 arguments.push(item);
             }
 
-            Value::<B>::from_guest(enter, B::generic_alias(enter.token(), &class, &arguments)?)
+            Value::<B>::from_guest(
+                enter,
+                B::generic_alias(enter.token(), receiver.value(), &arguments)?,
+            )
         })
     }
 }
@@ -941,34 +912,11 @@ where
 
     pub fn async_method<F, Fut, R>(&mut self, name: impl Into<MemberName>, function: F) -> &mut Self
     where
-        F: for<'py> Fn(&C, &Enter<'py, B>, Args<'py, B>) -> Result<Fut, Error> + 'static,
-        Fut: Future<Output = Result<R, Error>> + 'static,
-        R: ToGuest<B> + 'static,
-    {
-        let name = name.into();
-
-        self.push_async(
-            name.clone(),
-            Rc::new(MethodDeclaration::new(move |enter, receiver, args| {
-                Self::awaitable(
-                    enter,
-                    &name,
-                    Self::pending(
-                        enter,
-                        function(&*C::from_guest_ref(enter, &receiver)?, enter, args)?,
-                    )?,
-                )
-            })),
-        )
-    }
-
-    pub fn async_method_with_this<F, Fut, R>(
-        &mut self,
-        name: impl Into<MemberName>,
-        function: F,
-    ) -> &mut Self
-    where
-        F: for<'py> Fn(&C, &Object<B>, &Enter<'py, B>, Args<'py, B>) -> Result<Fut, Error>
+        F: for<'a, 'py> Fn(
+                Receiver<'a, 'py, B>,
+                &Enter<'py, B>,
+                Args<'py, B>,
+            ) -> Result<Fut, Error>
             + 'static,
         Fut: Future<Output = Result<R, Error>> + 'static,
         R: ToGuest<B> + 'static,
@@ -981,42 +929,7 @@ where
                 Self::awaitable(
                     enter,
                     &name,
-                    Self::pending(
-                        enter,
-                        function(
-                            &*C::from_guest_ref(enter, &receiver)?,
-                            &Object::from_guest(enter, receiver.clone())?,
-                            enter,
-                            args,
-                        )?,
-                    )?,
-                )
-            })),
-        )
-    }
-
-    pub fn async_raw_method<F, Fut, R>(
-        &mut self,
-        name: impl Into<MemberName>,
-        function: F,
-    ) -> &mut Self
-    where
-        F: for<'py> Fn(&Object<B>, &Enter<'py, B>, Args<'py, B>) -> Result<Fut, Error> + 'static,
-        Fut: Future<Output = Result<R, Error>> + 'static,
-        R: ToGuest<B> + 'static,
-    {
-        let name = name.into();
-
-        self.push_async(
-            name.clone(),
-            Rc::new(MethodDeclaration::new(move |enter, receiver, args| {
-                Self::awaitable(
-                    enter,
-                    &name,
-                    Self::pending(
-                        enter,
-                        function(&Object::from_guest(enter, receiver)?, enter, args)?,
-                    )?,
+                    Self::pending(enter, function(Receiver::new(enter, &receiver), enter, args)?)?,
                 )
             })),
         )

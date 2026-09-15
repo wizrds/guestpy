@@ -71,8 +71,8 @@ where
     ) -> Result<Val<'py, B>, Error> {
         match (value, site) {
             (RaiseValue::Text(text), _) => Ok(B::str(self.token(site), &text)),
-            (RaiseValue::Guest(thunk), ErrorSite::Guest(enter)) => thunk(enter),
-            (RaiseValue::Guest(_), ErrorSite::Runtime { .. }) => {
+            (RaiseValue::Guest { thunk, .. }, ErrorSite::Guest(enter)) => thunk(enter),
+            (RaiseValue::Guest { .. }, ErrorSite::Runtime { .. }) => {
                 Err(Error::unexpected("host raise needs an active guest"))
             }
         }

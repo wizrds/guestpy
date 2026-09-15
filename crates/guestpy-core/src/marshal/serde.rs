@@ -1,6 +1,6 @@
 use std::ops::{Deref, DerefMut};
 
-use ::serde::{
+use serde::{
     de::{self, DeserializeSeed, Visitor},
     forward_to_deserialize_any,
     ser::{
@@ -704,7 +704,7 @@ mod tests {
         backend::tests::{Stub, StubValue},
         errors::Error,
     };
-    use ::serde::{Deserialize, Serialize, de::DeserializeOwned};
+    use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
     #[derive(Debug, Deserialize, PartialEq, Serialize)]
     #[serde(rename_all = "camelCase")]
