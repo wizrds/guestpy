@@ -1,8 +1,8 @@
 //! Host-authored, guest-visible iterators and async iterators.
 
-use std::{cell::RefCell, pin::Pin, rc::Rc};
+use std::{cell::RefCell, future::{Future, poll_fn}, task::Poll, pin::Pin, rc::Rc};
 
-use futures::{Stream, StreamExt};
+use futures::Stream;
 
 use crate::{
     backend::{
@@ -16,7 +16,9 @@ use crate::{
     scope::Enter,
 };
 
-pub struct HostIter<T>(RefCell<Box<dyn Iterator<Item = Result<T, Error>>>>);
+type HostIterInner<T> = Box<dyn Iterator<Item = Result<T, Error>>>;
+
+pub struct HostIter<T>(RefCell<HostIterInner<T>>);
 
 impl<T: 'static> HostIter<T> {
     pub fn new<I>(iter: I) -> Self
@@ -103,6 +105,25 @@ impl<T: 'static> HostStream<T> {
     {
         Self(Rc::new(RefCell::new(Box::pin(stream))))
     }
+
+    fn next(&self) -> impl Future<Output = Result<T, Error>> + 'static {
+        let stream = self.0.clone();
+
+        poll_fn(move |context| {
+            let Ok(mut stream) = stream.try_borrow_mut() else {
+                return Poll::Ready(Err(Error::unexpected(
+                    "host stream is already being polled",
+                )));
+            };
+
+            match stream.as_mut().poll_next(context) {
+                Poll::Ready(Some(Ok(value))) => Poll::Ready(Ok(value)),
+                Poll::Ready(Some(Err(error))) => Poll::Ready(Err(error)),
+                Poll::Ready(None) => Poll::Ready(Err(Error::StopAsyncIteration)),
+                Poll::Pending => Poll::Pending,
+            }
+        })
+    }
 }
 
 impl<B, T> ToGuest<B> for HostStream<T>
@@ -145,23 +166,16 @@ where
                 enter
                     .guest()
                     .raw_body(Rc::new(|enter, args| {
-                        let stream = B::borrow::<Self>(enter.token(), &args.split_receiver()?.0)?
-                            .0
-                            .clone();
-
                         enter
                             .guest()
                             .ensure_async_driver(enter)?
                             .driver()
                             .register_host_future(
                                 enter,
-                                PendingValue::<B, T>::into_host_future(async move {
-                                    match stream.borrow_mut().next().await {
-                                        Some(Ok(value)) => Ok(value),
-                                        Some(Err(error)) => Err(error),
-                                        None => Err(Error::StopAsyncIteration),
-                                    }
-                                }),
+                                PendingValue::<B, T>::into_host_future(
+                                    B::borrow::<Self>(enter.token(), &args.split_receiver()?.0)?
+                                        .next(),
+                                )
                             )
                     })),
             )?,

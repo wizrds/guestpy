@@ -8,7 +8,7 @@ mod step;
 mod timer;
 
 pub(crate) use cursor::AsyncCursor;
-pub(crate) use runtime::{AsyncDriver, AsyncDriverSlot, AsyncRuntime, HostFutureReady};
+pub(crate) use runtime::{AsyncDriver, AsyncDriverSlot, AsyncRuntime};
 pub(crate) use step::AsyncStep;
 pub(crate) use timer::{Timer, WaitTimer};
 
