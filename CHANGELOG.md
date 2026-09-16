@@ -1,6 +1,12 @@
 # Changelog
 
 ---
+## [0.5.3](https://github.com/wizrds/guestpy/compare/0.5.2..0.5.3) - 2026-09-16
+
+### Bug Fixes
+
+- Support instantiating host class instances in host - ([4b2b33d](https://github.com/wizrds/guestpy/commit/4b2b33d5abdd34da70b6f664df16f35252702d6c)) - Timothy Pogue
+---
 ## [0.5.2](https://github.com/wizrds/guestpy/compare/0.5.1..0.5.2) - 2026-09-16
 
 ### Bug Fixes
