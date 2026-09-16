@@ -42,9 +42,40 @@ pub mod fixtures {
             BackendModules, BackendValues, guest_fixture,
         },
         errors::Error,
-        handle::{AsyncGenerator, AsyncIter, AsyncIterable, Object, ObjectProtocol},
+        handle::{AsyncGenerator, AsyncIter, AsyncIterable, Coroutine, Object, ObjectProtocol},
         runtime::Runtime,
+        host::{module::ModuleSpec, iter::HostStream},
     };
+
+    struct Streams;
+
+    impl Streams {
+        fn module<B>() -> ModuleSpec<B>
+        where
+            B: Backend
+                + BackendValues
+                + BackendCallables
+                + BackendClasses
+                + BackendModules
+                + BackendCoroutines
+                + BackendInterrupt,
+        {
+            ModuleSpec::new("streams")
+                .function("numbers", |_, _| {
+                    Ok::<_, Error>(HostStream::new(futures::stream::iter([
+                        Ok::<_, Error>(1_i64),
+                        Ok(2),
+                        Ok(3),
+                    ])))
+                })
+                .function("failing", |_, _| {
+                    Ok::<_, Error>(HostStream::new(futures::stream::iter([
+                        Ok::<_, Error>(1_i64),
+                        Err(Error::conversion("deliberate failure")),
+                    ])))
+                })
+        }
+    }
 
     guest_fixture! {
         pub async fn anext_advances_a_plain_async_iterator<B>()
@@ -234,6 +265,130 @@ async def values():
         }
     }
 
+    guest_fixture! {
+        pub async fn async_for_awaits_non_coroutine_anext_results<B>()
+        where B: [
+            Backend,
+            BackendValues,
+            BackendCallables,
+            BackendClasses,
+            BackendModules,
+            BackendCoroutines,
+            BackendInterrupt,
+        ]
+        using Runtime::<B>::builder();
+        |guest| {
+            guest
+                .exec(
+                    r#"
+class AwaitOnly:
+    def __init__(self, value):
+        self.value = value
+
+    def __await__(self):
+        return self.value
+        yield
+
+class Numbers:
+    def __init__(self):
+        self.remaining = [1, 2, 3]
+
+    def __aiter__(self):
+        return self
+
+    def __anext__(self):
+        if not self.remaining:
+            raise StopAsyncIteration
+        return AwaitOnly(self.remaining.pop(0))
+
+async def run():
+    return [value async for value in Numbers()]
+"#,
+                )
+                .unwrap();
+
+            assert_eq!(
+                guest
+                    .eval::<Coroutine<B, Vec<i64>>>("run()")
+                    .unwrap()
+                    .await
+                    .unwrap(),
+                vec![1, 2, 3],
+            );
+        }
+    }
+
+    guest_fixture! {
+        pub async fn async_for_drives_a_host_stream<B>()
+        where B: [
+            Backend,
+            BackendValues,
+            BackendCallables,
+            BackendClasses,
+            BackendModules,
+            BackendCoroutines,
+            BackendInterrupt,
+        ]
+        using Runtime::<B>::builder().bind(Streams::module());
+        |guest| {
+            guest
+                .exec(
+                    r#"
+import asyncio, inspect, streams
+
+async def collect():
+    return [value async for value in streams.numbers()]
+
+async def protocol():
+    stream = streams.numbers()
+    first = stream.__anext__()
+    assert inspect.isawaitable(first)
+    assert asyncio.isfuture(first)
+    assert await first == 1
+    assert await anext(stream) == 2
+    assert await anext(stream) == 3
+    return await anext(stream, 0)
+
+async def failing():
+    seen = []
+    try:
+        async for value in streams.failing():
+            seen.append(value)
+    except Exception as error:
+        return seen, str(error)
+"#,
+                )
+                .unwrap();
+
+            assert_eq!(
+                guest
+                    .eval::<Coroutine<B, Vec<i64>>>("collect()")
+                    .unwrap()
+                    .await
+                    .unwrap(),
+                vec![1, 2, 3],
+            );
+
+            assert_eq!(
+                guest
+                    .eval::<Coroutine<B, i64>>("protocol()")
+                    .unwrap()
+                    .await
+                    .unwrap(),
+                0,
+            );
+
+            let (seen, message) = guest
+                .eval::<Coroutine<B, (Vec<i64>, String)>>("failing()")
+                .unwrap()
+                .await
+                .unwrap();
+
+            assert_eq!(seen, vec![1]);
+            assert!(message.contains("deliberate failure"));
+        }
+    }
+
     #[doc(hidden)]
     #[macro_export]
     macro_rules! __guestpy_backend_coroutines_tests {
@@ -257,6 +412,20 @@ async def values():
             #[tokio::test]
             async fn controls_an_async_generator() {
                 $crate::backend::coroutines::fixtures::controls_an_async_generator::<$backend>()
+                    .await;
+            }
+
+            #[tokio::test]
+            async fn async_for_awaits_non_coroutine_anext_results() {
+                $crate::backend::coroutines::fixtures::async_for_awaits_non_coroutine_anext_results::<
+                    $backend,
+                >()
+                .await;
+            }
+
+            #[tokio::test]
+            async fn async_for_drives_a_host_stream() {
+                $crate::backend::coroutines::fixtures::async_for_drives_a_host_stream::<$backend>()
                     .await;
             }
         };
