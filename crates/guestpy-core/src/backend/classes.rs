@@ -144,11 +144,7 @@ pub mod fixtures {
                     return Err(Error::conversion("required must not be negative"));
                 }
 
-                Ok(Self {
-                    required,
-                    optional,
-                    named,
-                })
+                Ok(Self { required, optional, named })
             });
         }
     }
@@ -397,6 +393,30 @@ pub mod fixtures {
             builder
                 .base::<MappingParent>()
                 .imported_base("collections.abc", "Mapping");
+        }
+    }
+
+    struct HostConstructionOnly {
+        value: i64,
+    }
+
+    impl HostConstructionOnly {
+        pub fn new(value: i64) -> Self {
+            Self { value }
+        }
+    }
+
+    impl HostClass for HostConstructionOnly {
+        const NAME: &'static str = "HostConstructionOnly";
+    }
+
+    impl<B> HostClassDefinition<B> for HostConstructionOnly
+    where 
+        B: Backend + BackendValues + BackendCallables + BackendClasses + BackendModules,
+    {
+        fn build(builder: &mut ClassBuilder<B, Self>) {
+            builder
+                .getter("value", |receiver, _| Ok::<_, Error>(receiver.payload::<Self>()?.value));
         }
     }
 
@@ -1790,6 +1810,46 @@ assert len(value) == 1
         }
     }
 
+    guest_fixture! {
+        pub fn host_instantiates_host_class_with_payload<B>()
+        where B: [
+            Backend,
+            BackendValues,
+            BackendCallables,
+            BackendClasses,
+            BackendModules,
+            BackendCoroutines,
+            BackendExceptions,
+            BackendInterrupt,
+        ]
+        using Runtime::<B>::builder()
+            .bind(ModuleSpec::new("host_lib").class::<HostConstructionOnly>().unwrap());
+        |guest| {
+            guest.exec("import host_lib").unwrap();
+
+            let instance = guest
+                .enter(|enter| {
+                    Class::of::<HostConstructionOnly>(enter)?
+                        .instantiate(HostConstructionOnly::new(42))
+                })
+                .unwrap();
+
+            assert_eq!(
+                instance
+                    .get::<i64>("value")
+                    .unwrap(),
+                42,
+            );
+
+            let guest_error = guest
+                .eval::<Instance<B>>("host_lib.HostConstructionOnly(5)")
+                .err()
+                .unwrap();
+
+            assert!(guest_error.to_string().contains("cannot be constructed"));
+        }
+    }
+
     pub fn two_guests_share_one_realised_imported_base_class<B>()
     where
         B: Backend
@@ -2057,6 +2117,13 @@ assert len(value) == 1
             #[test]
             fn two_guests_share_one_realised_imported_base_class() {
                 $crate::backend::classes::fixtures::two_guests_share_one_realised_imported_base_class::<
+                    $backend,
+                >();
+            }
+
+            #[test]
+            fn host_instantiates_host_class_with_payload() {
+                $crate::backend::classes::fixtures::host_instantiates_host_class_with_payload::<
                     $backend,
                 >();
             }

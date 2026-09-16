@@ -101,6 +101,21 @@ where
     }
 }
 
+impl<B, C> Class<B, Instance<B, C>>
+where
+    B: Backend + BackendValues + BackendClasses + BackendModules,
+    C: HostClass + HostClassDefinition<B>,
+{
+    pub fn instantiate(&self, instance: C) -> Result<Instance<B, C>, Error> {
+        self.handle.with_enter(|enter, class| {
+            Instance::<B, C>::from_guest(
+                enter,
+                B::instantiate(enter.token(), class, instance)?
+            )
+        })
+    }
+}
+
 impl<B, R> Class<B, R>
 where
     B: Backend + BackendValues,
