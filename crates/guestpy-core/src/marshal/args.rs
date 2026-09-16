@@ -143,10 +143,10 @@ impl<'py, B: Backend + BackendValues> Args<'py, B> {
     {
         Ok(
             self.value(Argument::Named { index, name })
-            .cloned()
-            .map(|value| Option::<T>::from_guest(enter, value))
-            .transpose()?
-            .flatten()
+                .cloned()
+                .map(|value| Option::<T>::from_guest(enter, value))
+                .transpose()?
+                .flatten()
         )
     }
 
@@ -176,10 +176,13 @@ impl<'py, B: Backend + BackendValues> Args<'py, B> {
     where
         T: FromGuest<B>,
     {
-        self.value(Argument::Positional(index))
-            .cloned()
-            .map(|value| T::from_guest(enter, value))
-            .transpose()
+        Ok(
+            self.value(Argument::Positional(index))
+                .cloned()
+                .map(|value| Option::<T>::from_guest(enter, value))
+                .transpose()?
+                .flatten()
+        )
     }
 
     pub fn required_keyword<T>(&self, enter: &Enter<'py, B>, name: &str) -> Result<T::Owned, Error>
@@ -204,10 +207,13 @@ impl<'py, B: Backend + BackendValues> Args<'py, B> {
     where
         T: FromGuest<B>,
     {
-        self.value(Argument::Keyword(name))
-            .cloned()
-            .map(|value| T::from_guest(enter, value))
-            .transpose()
+        Ok(
+            self.value(Argument::Keyword(name))
+                .cloned()
+                .map(|value| Option::<T>::from_guest(enter, value))
+                .transpose()?
+                .flatten()
+        )
     }
 
     pub fn rest<T>(&self, enter: &Enter<'py, B>, index: usize) -> Result<Vec<T::Owned>, Error>

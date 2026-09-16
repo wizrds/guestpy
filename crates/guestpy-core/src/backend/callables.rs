@@ -118,6 +118,15 @@ pub mod fixtures {
                     args.required::<HashMap<String, i64>>(enter, 0, "value")
                 })
                 .function("echo_opt", |enter, args| args.required::<Option<i64>>(enter, 0, "value"))
+                .function("echo_optional", |enter, args| {
+                    args.optional::<String>(enter, 0, "value")
+                })
+                .function("echo_optional_positional", |enter, args| {
+                    args.optional_positional::<String>(enter, 0)
+                })
+                .function("echo_optional_keyword", |enter, args| {
+                    args.optional_keyword::<String>(enter, "value")
+                })
                 .function("add", |enter, args| {
                     Ok::<_, Error>(
                         args.required::<i64>(enter, 0, "left")?
@@ -353,6 +362,62 @@ except TypeError as e:
         }
     }
 
+    guest_fixture! {
+        pub fn optional_arguments_accept_explicit_none<B>()
+        where B: [
+            Backend,
+            BackendValues,
+            BackendCallables,
+            BackendClasses,
+            BackendModules,
+            BackendCoroutines,
+            BackendInterrupt,
+        ]
+        using Runtime::<B>::builder().bind(Codec::module());
+        |guest| {
+            guest.exec("import codec").unwrap();
+
+            for source in [
+                "codec.echo_optional()",
+                "codec.echo_optional(None)",
+                "codec.echo_optional(value=None)",
+                "codec.echo_optional_positional()",
+                "codec.echo_optional_positional(None)",
+                "codec.echo_optional_keyword()",
+                "codec.echo_optional_keyword(value=None)",
+            ] {
+                assert_eq!(guest.eval::<Option<String>>(source).unwrap(), None, "{source}");
+            }
+
+            for source in [
+                "codec.echo_optional('a')",
+                "codec.echo_optional(value='a')",
+                "codec.echo_optional_positional('a')",
+                "codec.echo_optional_keyword(value='a')",
+            ] {
+                assert_eq!(
+                    guest.eval::<Option<String>>(source).unwrap(),
+                    Some(String::from("a")),
+                    "{source}",
+                );
+            }
+
+            for source in [
+                "codec.echo_optional(1)",
+                "codec.echo_optional_positional(1)",
+                "codec.echo_optional_keyword(value=1)",
+            ] {
+                assert!(
+                    matches!(
+                        guest.eval::<Option<String>>(source),
+                        Err(Error::Guest(_)),
+                    ),
+                    "{source}",
+                );
+            }
+        }
+    }
+
     pub fn init_hooks_run_once_per_guest_in_bind_order<B>()
     where
         B: Backend
@@ -439,6 +504,13 @@ except TypeError as e:
             #[test]
             fn init_hooks_run_once_per_guest_in_bind_order() {
                 $crate::backend::callables::fixtures::init_hooks_run_once_per_guest_in_bind_order::<
+                    $backend,
+                >();
+            }
+
+            #[test]
+            fn optional_arguments_accept_explicit_none() {
+                $crate::backend::callables::fixtures::optional_arguments_accept_explicit_none::<
                     $backend,
                 >();
             }
