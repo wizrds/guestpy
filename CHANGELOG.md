@@ -1,6 +1,12 @@
 # Changelog
 
 ---
+## [0.5.2](https://github.com/wizrds/guestpy/compare/0.5.1..0.5.2) - 2026-09-16
+
+### Bug Fixes
+
+- Add construct_with for instantiating classes with keyword arguments - ([a7b1335](https://github.com/wizrds/guestpy/commit/a7b1335375e624eb68a12ea3899ca0cca3087903)) - Timothy Pogue
+---
 ## [0.5.1](https://github.com/wizrds/guestpy/compare/0.5.0..0.5.1) - 2026-09-15
 
 ### Bug Fixes
