@@ -1,6 +1,12 @@
 # Changelog
 
 ---
+## [0.5.5](https://github.com/wizrds/guestpy/compare/0.5.4..0.5.5) - 2026-09-16
+
+### Bug Fixes
+
+- Fix optional_positional and optional_keyword methods on Args - ([809011a](https://github.com/wizrds/guestpy/commit/809011a0befc64abae56f0ef39ac67178e78299e)) - Timothy Pogue
+---
 ## [0.5.4](https://github.com/wizrds/guestpy/compare/0.5.3..0.5.4) - 2026-09-16
 
 ### Bug Fixes
