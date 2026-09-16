@@ -1,6 +1,13 @@
 # Changelog
 
 ---
+## [0.5.4](https://github.com/wizrds/guestpy/compare/0.5.3..0.5.4) - 2026-09-16
+
+### Bug Fixes
+
+- Fix optional argument handling when explicit None provided - ([d5c29e9](https://github.com/wizrds/guestpy/commit/d5c29e9a3d3b84afc74947c5bc0de75ea1d3cddc)) - Timothy Pogue
+- Bump rustpython for async iterator fix - ([092933a](https://github.com/wizrds/guestpy/commit/092933abd664962e3a00c1c7431a0c338bdbdf4f)) - Timothy Pogue
+---
 ## [0.5.3](https://github.com/wizrds/guestpy/compare/0.5.2..0.5.3) - 2026-09-16
 
 ### Bug Fixes
