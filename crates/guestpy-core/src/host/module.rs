@@ -18,7 +18,7 @@ use crate::{
 
 pub(crate) type InitHook<B> = Rc<dyn for<'py> Fn(&Enter<'py, B>) -> Result<(), Error>>;
 
-pub struct ModuleSpec<B: Backend> {
+pub struct ModuleSpec<B: Backend + BackendValues> {
     name: String,
     doc: Option<String>,
     state: Option<Rc<dyn Any>>,
@@ -29,7 +29,7 @@ pub struct ModuleSpec<B: Backend> {
     requirements: Requirements<B>,
 }
 
-impl<B: Backend> ModuleSpec<B> {
+impl<B: Backend + BackendValues> ModuleSpec<B> {
     pub(crate) fn name(&self) -> &str {
         &self.name
     }

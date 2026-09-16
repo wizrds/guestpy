@@ -13,7 +13,7 @@ use crate::{
     scope::Enter,
 };
 
-pub(super) struct Realiser<'py, 'e, B: Backend> {
+pub(super) struct Realiser<'py, 'e, B: Backend + BackendValues> {
     enter: &'e Enter<'py, B>,
 }
 

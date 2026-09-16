@@ -7,7 +7,7 @@ use crate::{
     scope::Enter,
 };
 
-pub struct RawCall<'py, B: Backend> {
+pub struct RawCall<'py, B: Backend + BackendValues> {
     pub token: B::Token<'py>,
     pub positional: Vec<B::Value<'py>>,
     pub keyword: Vec<(String, B::Value<'py>)>,
@@ -19,7 +19,7 @@ pub type HostBody<B> =
 pub type RawBody<B> =
     Rc<dyn for<'py> Fn(RawCall<'py, B>) -> Result<<B as Backend>::Value<'py>, Error>>;
 
-pub(crate) trait PendingResult<B: Backend> {
+pub(crate) trait PendingResult<B: Backend + BackendValues> {
     fn complete<'py>(self: Box<Self>, enter: &Enter<'py, B>) -> Result<B::Value<'py>, Error>;
 }
 
@@ -29,14 +29,14 @@ pub(crate) type HostFuture<B> =
 pub(crate) type HostAsyncBody<B> =
     Rc<dyn for<'py> Fn(&Enter<'py, B>, Args<'py, B>) -> Result<HostFuture<B>, Error>>;
 
-pub(crate) struct PendingValue<B: Backend, T> {
+pub(crate) struct PendingValue<B: Backend + BackendValues, T> {
     value: T,
     backend: PhantomData<B>,
 }
 
 impl<B, T> PendingValue<B, T>
 where
-    B: Backend,
+    B: Backend + BackendValues,
     T: ToGuest<B> + 'static,
 {
     pub(crate) fn into_host_future<Fut>(future: Fut) -> HostFuture<B>
@@ -54,7 +54,7 @@ where
 
 impl<B, T> PendingResult<B> for PendingValue<B, T>
 where
-    B: Backend,
+    B: Backend + BackendValues,
     T: ToGuest<B>,
 {
     fn complete<'py>(self: Box<Self>, enter: &Enter<'py, B>) -> Result<B::Value<'py>, Error> {

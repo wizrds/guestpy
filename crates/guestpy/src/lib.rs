@@ -725,11 +725,11 @@ mod tests {
         }
     }
 
-    struct ManualClient<B: Backend> {
+    struct ManualClient<B: Backend + BackendValues> {
         instance: Instance<B>,
     }
 
-    impl<B: Backend> ManualClient<B> {
+    impl<B: Backend + BackendValues> ManualClient<B> {
         fn new(instance: Instance<B>) -> Self {
             Self { instance }
         }
@@ -741,31 +741,26 @@ mod tests {
         fn into_instance(self) -> Instance<B> {
             self.instance
         }
-    }
 
-    impl<B> ManualClient<B>
-    where
-        B: Backend + BackendValues,
-    {
         fn get(&self, path: String) -> Result<Response<B>, Error> {
             self.instance
                 .call_method::<_, Response<B>>("get", (path,))
         }
     }
 
-    impl<B: Backend> From<Instance<B>> for ManualClient<B> {
+    impl<B: Backend + BackendValues> From<Instance<B>> for ManualClient<B> {
         fn from(instance: Instance<B>) -> Self {
             Self::new(instance)
         }
     }
 
-    impl<B: Backend> From<ManualClient<B>> for Instance<B> {
+    impl<B: Backend + BackendValues> From<ManualClient<B>> for Instance<B> {
         fn from(val: ManualClient<B>) -> Self {
             val.into_instance()
         }
     }
 
-    impl<B: Backend> FromGuest<B> for ManualClient<B> {
+    impl<B: Backend + BackendValues> FromGuest<B> for ManualClient<B> {
         type Owned = Self;
 
         fn from_guest<'py>(
@@ -776,7 +771,7 @@ mod tests {
         }
     }
 
-    impl<B: Backend> ToGuest<B> for ManualClient<B> {
+    impl<B: Backend + BackendValues> ToGuest<B> for ManualClient<B> {
         fn to_guest<'py>(self, enter: &Enter<'py, B>) -> Result<<B as Backend>::Value<'py>, Error> {
             ToGuest::to_guest(self.into_instance(), enter)
         }
@@ -815,7 +810,7 @@ mod tests {
 
     #[derive(crate::FromGuest)]
     #[guestpy(union, backend = B)]
-    enum BackendValue<B: Backend> {
+    enum BackendValue<B: Backend + BackendValues> {
         Integer(i64),
         Object(Object<B>),
     }

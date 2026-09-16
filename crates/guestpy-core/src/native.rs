@@ -1,7 +1,7 @@
 use std::rc::Rc;
 
 use crate::{
-    backend::{Backend, BackendLibrary, Tok, Val},
+    backend::{Backend, BackendValues, BackendLibrary, Tok, Val},
     errors::Error,
     scope::Enter,
 };
@@ -22,16 +22,16 @@ impl<B: BackendLibrary> DeclareNative<B> for NativeDeclaration<B> {
     }
 }
 
-pub(crate) enum NativeLibraryEntry<B: Backend> {
+pub(crate) enum NativeLibraryEntry<B: Backend + BackendValues> {
     Module(NativeModule<B>),
     Initializer(NativeInitializer<B>),
 }
 
-pub struct NativeInitializer<B: Backend> {
+pub struct NativeInitializer<B: Backend + BackendValues> {
     initialize: InitializeNativeFn<B>,
 }
 
-impl<B: Backend> NativeInitializer<B> {
+impl<B: Backend + BackendValues> NativeInitializer<B> {
     pub fn new<F>(initialize: F) -> Self
     where
         F: for<'py> Fn(&Enter<'py, B>) -> Result<(), Error> + 'static,
@@ -44,13 +44,13 @@ impl<B: Backend> NativeInitializer<B> {
     }
 }
 
-pub struct NativeModule<B: Backend> {
+pub struct NativeModule<B: Backend + BackendValues> {
     name: String,
     aliases: Vec<String>,
     declare: Rc<dyn DeclareNative<B>>,
 }
 
-impl<B: Backend> NativeModule<B> {
+impl<B: Backend + BackendValues> NativeModule<B> {
     pub fn new<N>(name: N, native: B::NativeModule) -> Self
     where
         N: Into<String>,
@@ -90,11 +90,11 @@ impl<B: Backend> NativeModule<B> {
     }
 }
 
-pub struct NativeLibrary<B: Backend> {
+pub struct NativeLibrary<B: Backend + BackendValues> {
     entries: Vec<NativeLibraryEntry<B>>,
 }
 
-impl<B: Backend> NativeLibrary<B> {
+impl<B: Backend + BackendValues> NativeLibrary<B> {
     pub fn new() -> Self {
         Self { entries: Vec::new() }
     }
@@ -125,13 +125,13 @@ impl<B: Backend> NativeLibrary<B> {
     }
 }
 
-impl<B: Backend> Default for NativeLibrary<B> {
+impl<B: Backend + BackendValues> Default for NativeLibrary<B> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<B: Backend> From<NativeModule<B>> for NativeLibrary<B> {
+impl<B: Backend + BackendValues> From<NativeModule<B>> for NativeLibrary<B> {
     fn from(module: NativeModule<B>) -> Self {
         Self::new().with(module)
     }

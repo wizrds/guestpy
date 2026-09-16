@@ -8,20 +8,20 @@ use crate::{
 };
 
 /// Provides access to the guest value through which a host member was invoked.
-pub struct Receiver<'a, 'py, B: Backend> {
+pub struct Receiver<'a, 'py, B: Backend + BackendValues> {
     enter: &'a Enter<'py, B>,
     value: &'a B::Value<'py>,
 }
 
-impl<B: Backend> Clone for Receiver<'_, '_, B> {
+impl<B: Backend + BackendValues> Clone for Receiver<'_, '_, B> {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<B: Backend> Copy for Receiver<'_, '_, B> {}
+impl<B: Backend + BackendValues> Copy for Receiver<'_, '_, B> {}
 
-impl<'a, 'py, B: Backend> Receiver<'a, 'py, B> {
+impl<'a, 'py, B: Backend + BackendValues> Receiver<'a, 'py, B> {
     pub(crate) fn new(enter: &'a Enter<'py, B>, value: &'a B::Value<'py>) -> Self {
         Self { enter, value }
     }

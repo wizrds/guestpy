@@ -26,21 +26,21 @@ use crate::{
     scope::Enter,
 };
 
-pub struct Iter<B: Backend>(Handle<B>);
+pub struct Iter<B: Backend + BackendValues>(Handle<B>);
 
-impl<B: Backend> Clone for Iter<B> {
+impl<B: Backend + BackendValues> Clone for Iter<B> {
     fn clone(&self) -> Self {
         Self(self.0.clone())
     }
 }
 
-impl<B: Backend> Iter<B> {
+impl<B: Backend + BackendValues> Iter<B> {
     pub(crate) fn from_handle(handle: Handle<B>) -> Self {
         Self(handle)
     }
 }
 
-impl<B: Backend> HasHandle<B> for Iter<B> {
+impl<B: Backend + BackendValues> HasHandle<B> for Iter<B> {
     fn handle(&self) -> &Handle<B> {
         &self.0
     }
@@ -63,7 +63,7 @@ where
     }
 }
 
-impl<B: Backend> Describe for Iter<B> {
+impl<B: Backend + BackendValues> Describe for Iter<B> {
     fn describe(expected: &mut Expected) {
         expected.push("iterable");
     }

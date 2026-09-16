@@ -10,7 +10,7 @@ use crate::{
     scope::Enter,
 };
 
-pub(crate) struct EventLoop<B: Backend> {
+pub(crate) struct EventLoop<B: Backend + BackendValues> {
     asyncio_loop: B::Owned,
     started: Cell<bool>,
     selector_timeout: Rc<Cell<Option<f64>>>,
@@ -95,7 +95,7 @@ where
     }
 }
 
-impl<B: Backend> EventLoop<B> {
+impl<B: Backend + BackendValues> EventLoop<B> {
     pub(crate) fn asyncio_loop<'py>(&self, enter: &Enter<'py, B>) -> B::Value<'py> {
         B::attach(enter.token(), &self.asyncio_loop)
     }

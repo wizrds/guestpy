@@ -9,7 +9,7 @@ use std::{
 };
 
 use crate::{
-    backend::Backend,
+    backend::{Backend, BackendValues},
     bundle::{Bundle, BundleId},
     errors::GuestException,
     host::{
@@ -21,16 +21,16 @@ use crate::{
     native::{NativeInitializer, NativeModule},
 };
 
-struct InternedEntry<B: Backend, V> {
+struct InternedEntry<B: Backend + BackendValues, V> {
     spec: Rc<V>,
     realised: Option<B::Owned>,
 }
 
-struct Interned<B: Backend, K, V> {
+struct Interned<B: Backend + BackendValues, K, V> {
     entries: RefCell<HashMap<K, InternedEntry<B, V>>>,
 }
 
-impl<B: Backend, K, V> Interned<B, K, V>
+impl<B: Backend + BackendValues, K, V> Interned<B, K, V>
 where
     K: Eq + Hash,
 {
@@ -72,7 +72,7 @@ where
     }
 }
 
-pub(crate) struct Catalog<B: Backend> {
+pub(crate) struct Catalog<B: Backend + BackendValues> {
     modules: Vec<Rc<ModuleSpec<B>>>,
     natives: Vec<Rc<NativeModule<B>>>,
     bundles: Vec<Bundle>,
@@ -81,7 +81,7 @@ pub(crate) struct Catalog<B: Backend> {
     native_initializers: Vec<NativeInitializer<B>>,
 }
 
-impl<B: Backend> Catalog<B> {
+impl<B: Backend + BackendValues> Catalog<B> {
     pub(crate) fn new(
         modules: Vec<Rc<ModuleSpec<B>>>,
         natives: Vec<Rc<NativeModule<B>>>,
@@ -125,13 +125,13 @@ impl<B: Backend> Catalog<B> {
     }
 }
 
-pub(crate) struct RealisationCache<B: Backend> {
+pub(crate) struct RealisationCache<B: Backend + BackendValues> {
     classes: Interned<B, TypeId, ClassSpec<B>>,
     exceptions: Interned<B, ExceptionKey, ExceptionSpec>,
     code: RefCell<HashMap<(BundleId, String), B::Owned>>,
 }
 
-impl<B: Backend> RealisationCache<B> {
+impl<B: Backend + BackendValues> RealisationCache<B> {
     pub(crate) fn new() -> Self {
         Self {
             classes: Interned::new(),

@@ -12,23 +12,23 @@ use crate::{
     scope::Enter,
 };
 
-struct Pending<B: Backend> {
+struct Pending<B: Backend + BackendValues> {
     asyncio_future: B::Owned,
     future: HostFuture<B>,
 }
 
-struct Completed<B: Backend> {
+struct Completed<B: Backend + BackendValues> {
     asyncio_future: B::Owned,
     outcome: Result<Box<dyn PendingResult<B>>, Error>,
 }
 
-struct PendingHostFutureState<B: Backend> {
+struct PendingHostFutureState<B: Backend + BackendValues> {
     entries: Vec<Pending<B>>,
     polling: usize,
     ready: Vec<Completed<B>>,
 }
 
-impl<B: Backend> PendingHostFutureState<B> {
+impl<B: Backend + BackendValues> PendingHostFutureState<B> {
     fn take_entries(&mut self) -> Vec<Pending<B>> {
         let entries = self
             .entries
@@ -49,7 +49,7 @@ impl<B: Backend> PendingHostFutureState<B> {
     }
 }
 
-pub(crate) struct PendingHostFutures<B: Backend> {
+pub(crate) struct PendingHostFutures<B: Backend + BackendValues> {
     state: RefCell<PendingHostFutureState<B>>,
 }
 

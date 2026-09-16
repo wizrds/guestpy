@@ -5,7 +5,7 @@ use std::{
 };
 
 use crate::{
-    backend::Backend,
+    backend::{Backend, BackendValues},
     errors::Error,
     marshal::{FromGuest, FromGuestMut, FromGuestRef, ToGuest},
     scope::Enter,
@@ -17,14 +17,14 @@ enum Argument<'a> {
     Keyword(&'a str),
 }
 
-pub struct Args<'py, B: Backend> {
+pub struct Args<'py, B: Backend + BackendValues> {
     positional: Vec<B::Value<'py>>,
     keyword: Vec<(String, B::Value<'py>)>,
     consumed_positional: Vec<Cell<bool>>,
     consumed_keyword: Vec<Cell<bool>>,
 }
 
-impl<'py, B: Backend> Args<'py, B> {
+impl<'py, B: Backend + BackendValues> Args<'py, B> {
     pub(crate) fn new(
         positional: Vec<B::Value<'py>>,
         keyword: Vec<(String, B::Value<'py>)>,
@@ -141,10 +141,13 @@ impl<'py, B: Backend> Args<'py, B> {
     where
         T: FromGuest<B>,
     {
-        self.value(Argument::Named { index, name })
+        Ok(
+            self.value(Argument::Named { index, name })
             .cloned()
-            .map(|value| T::from_guest(enter, value))
-            .transpose()
+            .map(|value| Option::<T>::from_guest(enter, value))
+            .transpose()?
+            .flatten()
+        )
     }
 
     pub fn required_positional<T>(
@@ -274,7 +277,7 @@ impl<'py, B: Backend> Args<'py, B> {
     }
 }
 
-impl<B: Backend> Debug for Args<'_, B> {
+impl<B: Backend + BackendValues> Debug for Args<'_, B> {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         f.debug_struct("Args")
             .field("positional", &self.positional)
@@ -283,11 +286,11 @@ impl<B: Backend> Debug for Args<'_, B> {
     }
 }
 
-pub trait ToGuestArgs<B: Backend> {
+pub trait ToGuestArgs<B: Backend + BackendValues> {
     fn into_args<'py>(self, enter: &Enter<'py, B>) -> Result<Vec<B::Value<'py>>, Error>;
 }
 
-pub trait ToGuestKwargs<B: Backend> {
+pub trait ToGuestKwargs<B: Backend + BackendValues> {
     fn into_kwargs<'py>(self, enter: &Enter<'py, B>)
     -> Result<Vec<(String, B::Value<'py>)>, Error>;
 }
@@ -296,7 +299,7 @@ macro_rules! args {
     ($($type:ident:$index:tt),+ $(,)?) => {
         impl<B, $($type),+> ToGuestArgs<B> for ($($type,)+)
         where
-            B: Backend,
+            B: Backend + BackendValues,
             $($type: ToGuest<B>,)+
         {
             fn into_args<'py>(
@@ -313,7 +316,7 @@ macro_rules! kwargs {
     ($($type:ident:$index:tt),+ $(,)?) => {
         impl<B, $($type),+> ToGuestKwargs<B> for ($((&str, $type),)+)
         where
-            B: Backend,
+            B: Backend + BackendValues,
             $($type: ToGuest<B>,)+
         {
             fn into_kwargs<'py>(
@@ -335,7 +338,7 @@ macro_rules! kwargs {
 
 impl<B> ToGuestArgs<B> for ()
 where
-    B: Backend,
+    B: Backend + BackendValues,
 {
     fn into_args<'py>(self, _: &Enter<'py, B>) -> Result<Vec<B::Value<'py>>, Error> {
         Ok(Vec::new())
@@ -344,7 +347,7 @@ where
 
 impl<B, V> ToGuestArgs<B> for Vec<V>
 where
-    B: Backend,
+    B: Backend + BackendValues,
     V: ToGuest<B>,
 {
     fn into_args<'py>(self, enter: &Enter<'py, B>) -> Result<Vec<B::Value<'py>>, Error> {
@@ -474,7 +477,7 @@ kwargs!(
 
 impl<B> ToGuestKwargs<B> for ()
 where
-    B: Backend,
+    B: Backend + BackendValues,
 {
     fn into_kwargs<'py>(self, _: &Enter<'py, B>) -> Result<Vec<(String, B::Value<'py>)>, Error> {
         Ok(Vec::new())
@@ -483,7 +486,7 @@ where
 
 impl<B, V, const N: usize> ToGuestKwargs<B> for [(&str, V); N]
 where
-    B: Backend,
+    B: Backend + BackendValues,
     V: ToGuest<B>,
 {
     fn into_kwargs<'py>(
@@ -498,7 +501,7 @@ where
 
 impl<B, V> ToGuestKwargs<B> for Vec<(String, V)>
 where
-    B: Backend,
+    B: Backend + BackendValues,
     V: ToGuest<B>,
 {
     fn into_kwargs<'py>(
@@ -513,7 +516,7 @@ where
 
 impl<B, V> ToGuestKwargs<B> for HashMap<String, V>
 where
-    B: Backend,
+    B: Backend + BackendValues,
     V: ToGuest<B>,
 {
     fn into_kwargs<'py>(

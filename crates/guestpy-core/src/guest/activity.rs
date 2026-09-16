@@ -1,6 +1,6 @@
 use std::{cell::Cell, rc::Rc};
 
-use crate::{backend::Backend, errors::Error, guest::GuestInner, policy::ExecutionPolicy};
+use crate::{backend::{Backend, BackendValues}, errors::Error, guest::GuestInner, policy::ExecutionPolicy};
 
 #[derive(Copy, Clone)]
 pub(crate) enum Activation {
@@ -49,11 +49,11 @@ impl GuestActivity {
     }
 }
 
-pub(crate) struct ActiveGuest<B: Backend> {
+pub(crate) struct ActiveGuest<B: Backend + BackendValues> {
     guest: Rc<GuestInner<B>>,
 }
 
-impl<B: Backend> ActiveGuest<B> {
+impl<B: Backend + BackendValues> ActiveGuest<B> {
     pub(super) fn new(guest: &Rc<GuestInner<B>>, activation: Activation) -> Result<Self, Error> {
         guest.activity().begin(activation)?;
         guest.runtime().registry().push(guest);
@@ -70,7 +70,7 @@ impl<B: Backend> ActiveGuest<B> {
     }
 }
 
-impl<B: Backend> Drop for ActiveGuest<B> {
+impl<B: Backend + BackendValues> Drop for ActiveGuest<B> {
     fn drop(&mut self) {
         self.guest.runtime().registry().pop();
         self.guest.activity().finish();

@@ -49,12 +49,12 @@ impl<'a, B: BackendClasses, C: 'static> DerefMut for RefMut<'a, B, C> {
     }
 }
 
-pub struct Class<B: Backend, R = Instance<B>> {
+pub struct Class<B: Backend + BackendValues, R = Instance<B>> {
     handle: Handle<B>,
     marker: PhantomData<fn() -> R>,
 }
 
-impl<B: Backend, R> Clone for Class<B, R> {
+impl<B: Backend + BackendValues, R> Clone for Class<B, R> {
     fn clone(&self) -> Self {
         Self {
             handle: self.handle.clone(),
@@ -63,7 +63,7 @@ impl<B: Backend, R> Clone for Class<B, R> {
     }
 }
 
-impl<B: Backend, R> Class<B, R> {
+impl<B: Backend + BackendValues, R> Class<B, R> {
     pub(crate) fn from_handle(handle: Handle<B>) -> Self {
         Self { handle, marker: PhantomData }
     }
@@ -77,13 +77,13 @@ impl<B: Backend, R> Class<B, R> {
     }
 }
 
-impl<B: Backend, R> HasHandle<B> for Class<B, R> {
+impl<B: Backend + BackendValues, R> HasHandle<B> for Class<B, R> {
     fn handle(&self) -> &Handle<B> {
         &self.handle
     }
 }
 
-impl<B: Backend, R> IsType<B> for Class<B, R> {}
+impl<B: Backend + BackendValues, R> IsType<B> for Class<B, R> {}
 
 impl<B, R> Named<B> for Class<B, R> where B: Backend + BackendValues {}
 
@@ -170,7 +170,7 @@ where
     }
 }
 
-impl<B: Backend, R> Describe for Class<B, R> {
+impl<B: Backend + BackendValues, R> Describe for Class<B, R> {
     fn describe(expected: &mut Expected) {
         expected.push("class");
     }
@@ -192,18 +192,18 @@ where
     }
 }
 
-impl<B: Backend, R> ToGuest<B> for Class<B, R> {
+impl<B: Backend + BackendValues, R> ToGuest<B> for Class<B, R> {
     fn to_guest<'py>(self, enter: &Enter<'py, B>) -> Result<B::Value<'py>, Error> {
         Ok(B::attach(enter.token(), self.handle.owned()))
     }
 }
 
-pub struct Instance<B: Backend, T = Object<B>> {
+pub struct Instance<B: Backend + BackendValues, T = Object<B>> {
     object: Object<B>,
     marker: PhantomData<fn() -> T>,
 }
 
-impl<B: Backend, T> Clone for Instance<B, T> {
+impl<B: Backend + BackendValues, T> Clone for Instance<B, T> {
     fn clone(&self) -> Self {
         Self {
             object: self.object.clone(),
@@ -212,7 +212,7 @@ impl<B: Backend, T> Clone for Instance<B, T> {
     }
 }
 
-impl<B: Backend, T> Instance<B, T> {
+impl<B: Backend + BackendValues, T> Instance<B, T> {
     fn from_object(object: Object<B>) -> Self {
         Self { object, marker: PhantomData }
     }
@@ -226,13 +226,13 @@ impl<B: Backend, T> Instance<B, T> {
     }
 }
 
-impl<B: Backend, T> HasHandle<B> for Instance<B, T> {
+impl<B: Backend + BackendValues, T> HasHandle<B> for Instance<B, T> {
     fn handle(&self) -> &Handle<B> {
         self.object.handle()
     }
 }
 
-impl<B: Backend, T> Deref for Instance<B, T> {
+impl<B: Backend + BackendValues, T> Deref for Instance<B, T> {
     type Target = Object<B>;
 
     fn deref(&self) -> &Object<B> {
@@ -304,7 +304,7 @@ where
     }
 }
 
-impl<B: Backend> Describe for Instance<B> {
+impl<B: Backend + BackendValues> Describe for Instance<B> {
     fn describe(expected: &mut Expected) {
         expected.push("object");
     }
@@ -312,7 +312,7 @@ impl<B: Backend> Describe for Instance<B> {
 
 impl<B, C> Describe for Instance<B, C>
 where
-    B: Backend,
+    B: Backend + BackendValues,
     C: HostClass,
 {
     fn describe(expected: &mut Expected) {
@@ -320,7 +320,7 @@ where
     }
 }
 
-impl<B: Backend> FromGuest<B> for Instance<B> {
+impl<B: Backend + BackendValues> FromGuest<B> for Instance<B> {
     type Owned = Self;
 
     fn from_guest<'py>(enter: &Enter<'py, B>, value: B::Value<'py>) -> Result<Self::Owned, Error> {
@@ -342,7 +342,7 @@ where
     }
 }
 
-impl<B: Backend, T> ToGuest<B> for Instance<B, T> {
+impl<B: Backend + BackendValues, T> ToGuest<B> for Instance<B, T> {
     fn to_guest<'py>(self, enter: &Enter<'py, B>) -> Result<B::Value<'py>, Error> {
         self.object.to_guest(enter)
     }

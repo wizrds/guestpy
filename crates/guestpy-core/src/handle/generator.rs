@@ -27,15 +27,15 @@ use crate::{
     scope::Enter,
 };
 
-pub struct Generator<B: Backend>(Handle<B>);
+pub struct Generator<B: Backend + BackendValues>(Handle<B>);
 
-impl<B: Backend> Clone for Generator<B> {
+impl<B: Backend + BackendValues> Clone for Generator<B> {
     fn clone(&self) -> Self {
         Self(self.0.clone())
     }
 }
 
-impl<B: Backend> Generator<B> {
+impl<B: Backend + BackendValues> Generator<B> {
     fn validate<'py>(enter: &Enter<'py, B>, value: &B::Value<'py>) -> Result<(), Error>
     where
         B: BackendValues,
@@ -53,7 +53,7 @@ impl<B: Backend> Generator<B> {
     }
 }
 
-impl<B: Backend> HasHandle<B> for Generator<B> {
+impl<B: Backend + BackendValues> HasHandle<B> for Generator<B> {
     fn handle(&self) -> &Handle<B> {
         &self.0
     }
@@ -111,7 +111,7 @@ where
     }
 }
 
-impl<B: Backend> Describe for Generator<B> {
+impl<B: Backend + BackendValues> Describe for Generator<B> {
     fn describe(expected: &mut Expected) {
         expected.push("generator");
     }
@@ -132,7 +132,7 @@ where
 
 impl<B> ToGuest<B> for Generator<B>
 where
-    B: Backend,
+    B: Backend + BackendValues,
 {
     fn to_guest<'py>(self, enter: &Enter<'py, B>) -> Result<B::Value<'py>, Error> {
         Ok(B::attach(enter.token(), self.0.owned()))

@@ -14,21 +14,21 @@ use crate::{
     scope::Enter,
 };
 
-pub struct Function<B: Backend>(Handle<B>);
+pub struct Function<B: Backend + BackendValues>(Handle<B>);
 
-impl<B: Backend> Clone for Function<B> {
+impl<B: Backend + BackendValues> Clone for Function<B> {
     fn clone(&self) -> Self {
         Self(self.0.clone())
     }
 }
 
-impl<B: Backend> Function<B> {
+impl<B: Backend + BackendValues> Function<B> {
     pub(crate) fn from_handle(handle: Handle<B>) -> Self {
         Self(handle)
     }
 }
 
-impl<B: Backend> HasHandle<B> for Function<B> {
+impl<B: Backend + BackendValues> HasHandle<B> for Function<B> {
     fn handle(&self) -> &Handle<B> {
         &self.0
     }
@@ -57,7 +57,7 @@ where
     }
 }
 
-impl<B: Backend> Describe for Function<B> {
+impl<B: Backend + BackendValues> Describe for Function<B> {
     fn describe(expected: &mut Expected) {
         expected.push("callable");
     }
@@ -78,7 +78,7 @@ where
     }
 }
 
-impl<B: Backend> ToGuest<B> for Function<B> {
+impl<B: Backend + BackendValues> ToGuest<B> for Function<B> {
     fn to_guest<'py>(self, enter: &Enter<'py, B>) -> Result<B::Value<'py>, Error> {
         Ok(B::attach(enter.token(), self.0.owned()))
     }

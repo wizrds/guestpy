@@ -7,7 +7,12 @@ use std::{
 
 use crate::{
     backend::{
-        Backend, NativeExtensionLoader, PreparedNativeExtensions, PreparedNativeExtensionsOf, Tok,
+        Backend,
+        BackendValues,
+        NativeExtensionLoader,
+        PreparedNativeExtensions,
+        PreparedNativeExtensionsOf,
+        Tok,
     },
     bundle::{Bundle, BundleId},
     catalog::Catalog,
@@ -17,7 +22,7 @@ use crate::{
     native::NativeModule,
 };
 
-struct BindingState<B: Backend> {
+struct BindingState<B: Backend + BackendValues> {
     sources: HashMap<String, Bundle>,
     prepared: HashMap<BundleId, Rc<PreparedNativeExtensionsOf<B>>>,
     extensions: HashMap<String, Rc<PreparedNativeExtensionsOf<B>>>,
@@ -25,7 +30,7 @@ struct BindingState<B: Backend> {
     loaded: HashMap<String, BundleId>,
 }
 
-pub(crate) struct GuestBindings<B: Backend> {
+pub(crate) struct GuestBindings<B: Backend + BackendValues> {
     specs: HashMap<String, Rc<ModuleSpec<B>>>,
     owners: HashMap<TypeId, Rc<ModuleSpec<B>>>,
     natives: HashMap<String, Rc<NativeModule<B>>>,
@@ -33,7 +38,7 @@ pub(crate) struct GuestBindings<B: Backend> {
     state: RefCell<BindingState<B>>,
 }
 
-impl<B: Backend> GuestBindings<B> {
+impl<B: Backend + BackendValues> GuestBindings<B> {
     pub(crate) fn new<'py>(
         token: Tok<'py, B>,
         catalog: &Catalog<B>,
@@ -245,7 +250,7 @@ impl<B: Backend> GuestBindings<B> {
     }
 }
 
-impl<B: Backend> Drop for GuestBindings<B> {
+impl<B: Backend + BackendValues> Drop for GuestBindings<B> {
     fn drop(&mut self) {
         for value in self
             .state

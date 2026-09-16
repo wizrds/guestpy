@@ -17,7 +17,7 @@ use crate::{
     scope::Enter,
 };
 
-pub struct CoroutineFuture<B: Backend, T> {
+pub struct CoroutineFuture<B: Backend + BackendValues, T> {
     guest: Guest<B>,
     owned: B::Owned,
     task: Option<B::Owned>,
@@ -26,7 +26,7 @@ pub struct CoroutineFuture<B: Backend, T> {
     marker: PhantomData<fn() -> T>,
 }
 
-impl<B: Backend, T> Unpin for CoroutineFuture<B, T> {}
+impl<B: Backend + BackendValues, T> Unpin for CoroutineFuture<B, T> {}
 
 impl<B, T> CoroutineFuture<B, T>
 where

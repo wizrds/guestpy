@@ -18,7 +18,7 @@ use crate::{
     policy::{CancelSignal, ExecutionPolicy},
 };
 
-pub(crate) struct RuntimeInner<B: Backend> {
+pub(crate) struct RuntimeInner<B: Backend + BackendValues> {
     engine: B::Engine,
     catalog: Catalog<B>,
     realisation: RealisationCache<B>,
@@ -30,7 +30,7 @@ pub(crate) struct RuntimeInner<B: Backend> {
     release: Cell<bool>,
 }
 
-impl<B: Backend> RuntimeInner<B> {
+impl<B: Backend + BackendValues> RuntimeInner<B> {
     pub(crate) fn engine(&self) -> &B::Engine {
         &self.engine
     }
@@ -71,17 +71,17 @@ impl<B: Backend> RuntimeInner<B> {
     }
 }
 
-pub struct Runtime<B: Backend> {
+pub struct Runtime<B: Backend + BackendValues> {
     pub(crate) inner: Rc<RuntimeInner<B>>,
 }
 
-impl<B: Backend> Clone for Runtime<B> {
+impl<B: Backend + BackendValues> Clone for Runtime<B> {
     fn clone(&self) -> Self {
         Self { inner: self.inner.clone() }
     }
 }
 
-impl<B: Backend> Runtime<B> {
+impl<B: Backend + BackendValues> Runtime<B> {
     pub fn builder() -> RuntimeBuilder<B> {
         RuntimeBuilder {
             modules: Vec::new(),
@@ -111,7 +111,7 @@ impl<B: Backend> Runtime<B> {
     }
 }
 
-pub struct RuntimeBuilder<B: Backend> {
+pub struct RuntimeBuilder<B: Backend + BackendValues> {
     modules: Vec<Rc<ModuleSpec<B>>>,
     natives: Vec<Rc<NativeModule<B>>>,
     bundles: Vec<Bundle>,
@@ -122,7 +122,7 @@ pub struct RuntimeBuilder<B: Backend> {
     policy: ExecutionPolicy,
 }
 
-impl<B: Backend> RuntimeBuilder<B> {
+impl<B: Backend + BackendValues> RuntimeBuilder<B> {
     pub fn bind(mut self, library: impl Into<HostLibrary<B>>) -> Self {
         for entry in library.into().into_entries() {
             match entry {
@@ -177,7 +177,7 @@ impl<B: Backend> RuntimeBuilder<B> {
 
 impl<B> RuntimeBuilder<B>
 where
-    B: Backend + BackendLibrary,
+    B: Backend + BackendValues + BackendLibrary,
 {
     pub fn bind_native(mut self, library: impl Into<NativeLibrary<B>>) -> Self {
         for entry in library.into().into_entries() {

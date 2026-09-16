@@ -17,12 +17,12 @@ use crate::{
 #[cfg(feature = "serde")]
 use crate::marshal::serde::{Deserializer, Serializer};
 
-pub struct Scope<'a, B: Backend> {
+pub struct Scope<'a, B: Backend + BackendValues> {
     guest: &'a Guest<B>,
     _brand: PhantomData<&'a mut &'a ()>,
 }
 
-impl<'a, B: Backend> Scope<'a, B> {
+impl<'a, B: Backend + BackendValues> Scope<'a, B> {
     pub(crate) fn new(guest: &'a Guest<B>) -> Self {
         Self { guest, _brand: PhantomData }
     }
@@ -72,12 +72,12 @@ where
     }
 }
 
-pub struct Enter<'py, B: Backend> {
+pub struct Enter<'py, B: Backend + BackendValues> {
     token: B::Token<'py>,
     guest: Guest<B>,
 }
 
-impl<'py, B: Backend> Enter<'py, B> {
+impl<'py, B: Backend + BackendValues> Enter<'py, B> {
     pub(crate) fn new(token: B::Token<'py>, guest: Guest<B>) -> Self {
         Self { token, guest }
     }

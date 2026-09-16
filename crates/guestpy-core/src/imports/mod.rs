@@ -18,7 +18,7 @@ use crate::{
 use name::DottedName;
 use realise::Realiser;
 
-pub(crate) struct Imports<'py, 'e, B: Backend> {
+pub(crate) struct Imports<'py, 'e, B: Backend + BackendValues> {
     enter: &'e Enter<'py, B>,
 }
 
@@ -97,11 +97,10 @@ where
         index: usize,
         name: &str,
     ) -> Result<Option<B::Value<'py>>, Error> {
-        Ok(args
+        args
             .optional::<Value<B>>(self.enter, index, name)?
             .map(|value| value.to_guest(self.enter))
-            .transpose()?
-            .filter(|value| !B::is_none(self.enter.token(), value)))
+            .transpose()
     }
 
     fn delegate(

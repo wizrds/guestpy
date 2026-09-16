@@ -17,7 +17,7 @@ use crate::{
     scope::Enter,
 };
 
-pub(crate) struct ExceptionRealiser<'py, 'r, B: Backend> {
+pub(crate) struct ExceptionRealiser<'py, 'r, B: Backend + BackendValues> {
     token: Tok<'py, B>,
     realisation: &'r RealisationCache<B>,
 }
@@ -265,12 +265,12 @@ impl ExceptionSpec {
 
 type Thunk<B> = Box<dyn for<'py> FnOnce(&Enter<'py, B>) -> Result<Val<'py, B>, Error>>;
 
-pub(crate) enum RaiseValue<B: Backend> {
+pub(crate) enum RaiseValue<B: Backend + BackendValues> {
     Text(Cow<'static, str>),
     Guest(Thunk<B>),
 }
 
-impl<B: Backend> RaiseValue<B> {
+impl<B: Backend + BackendValues> RaiseValue<B> {
     pub(crate) fn text(&self) -> Option<&str> {
         match self {
             Self::Text(text) => Some(text),
@@ -279,14 +279,14 @@ impl<B: Backend> RaiseValue<B> {
     }
 }
 
-pub struct Raise<B: Backend> {
+pub struct Raise<B: Backend + BackendValues> {
     pub(crate) class: ExceptionClass,
     pub(crate) args: Vec<RaiseValue<B>>,
     pub(crate) attrs: Vec<(String, RaiseValue<B>)>,
     pub(crate) cause: Option<Error>,
 }
 
-impl<B: Backend> Raise<B> {
+impl<B: Backend + BackendValues> Raise<B> {
     pub fn new(class: ExceptionClass) -> Self {
         Self {
             class,
@@ -346,7 +346,7 @@ impl<B: Backend> Raise<B> {
     }
 }
 
-impl<B: Backend> From<Raise<B>> for Error {
+impl<B: Backend + BackendValues> From<Raise<B>> for Error {
     fn from(raise: Raise<B>) -> Self {
         Self::Raise(Box::new(ErasedRaise::new(
             raise.class.to_string(),
@@ -373,11 +373,11 @@ pub trait HostException: Sized + 'static {
     }
 }
 
-pub trait IntoRaise<B: Backend>: HostException {
+pub trait IntoRaise<B: Backend + BackendValues>: HostException {
     fn values(self, raise: Raise<B>) -> Raise<B>;
 }
 
-pub struct Raised<'py, 'e, B: Backend> {
+pub struct Raised<'py, 'e, B: Backend + BackendValues> {
     enter: &'e Enter<'py, B>,
     exception: Val<'py, B>,
 }
@@ -404,10 +404,6 @@ where
         )
     }
 
-    // pub fn attr<T: FromGuest<B>>(&self, name: &str) -> Result<T::Owned, Error> {
-    //     T::from_guest(self.enter, B::get_attr(self.enter.token(), &self.exception, name)?)
-    // }
-
     pub fn attr<T: FromGuest<B>>(&self, name: &str) -> Result<T::Owned, Error> {
         T::from_guest(
             self.enter,
@@ -417,7 +413,7 @@ where
     }
 }
 
-pub trait FromRaised<B: Backend>: HostException {
+pub trait FromRaised<B: Backend + BackendValues>: HostException {
     fn from_raised<'py>(raised: &Raised<'py, '_, B>) -> Result<Self, Error>;
 
     fn caught<'py>(enter: &Enter<'py, B>, exception: &GuestException) -> Result<Option<Self>, Error>
@@ -473,7 +469,7 @@ impl FatalExceptions {
         })
     }
 
-    pub(crate) fn reserve<B: Backend>(modules: &[Rc<ModuleSpec<B>>]) -> Result<(), Error> {
+    pub(crate) fn reserve<B: Backend + BackendValues>(modules: &[Rc<ModuleSpec<B>>]) -> Result<(), Error> {
         if modules
             .iter()
             .any(|module| module.name() == Self::MODULE)

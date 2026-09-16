@@ -230,6 +230,7 @@ impl HostExceptionDerive {
 
         predicates.push(parse_quote!(
             #backend: #crate_path::backend::Backend
+                + #crate_path::backend::BackendValues
         ));
         for ty in self.field_types() {
             predicates.push(parse_quote!(

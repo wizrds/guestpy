@@ -13,7 +13,7 @@ use crate::{
     scope::Enter,
 };
 
-pub(crate) trait AsyncDriver<B: Backend> {
+pub(crate) trait AsyncDriver<B: Backend + BackendValues> {
     fn register_host_future<'py>(
         &self,
         enter: &Enter<'py, B>,
@@ -35,11 +35,11 @@ pub(crate) trait AsyncDriver<B: Backend> {
     fn close<'py>(&self, enter: &Enter<'py, B>) -> Result<(), Error>;
 }
 
-pub(crate) struct AsyncDriverSlot<B: Backend> {
+pub(crate) struct AsyncDriverSlot<B: Backend + BackendValues> {
     driver: RefCell<Option<Box<dyn AsyncDriver<B>>>>,
 }
 
-impl<B: Backend> AsyncDriverSlot<B> {
+impl<B: Backend + BackendValues> AsyncDriverSlot<B> {
     pub(crate) fn new() -> Self {
         Self { driver: RefCell::new(None) }
     }
@@ -69,7 +69,7 @@ impl<B: Backend> AsyncDriverSlot<B> {
     }
 }
 
-pub(crate) struct AsyncRuntime<B: Backend> {
+pub(crate) struct AsyncRuntime<B: Backend + BackendValues> {
     event_loop: EventLoop<B>,
     pending: PendingHostFutures<B>,
 }

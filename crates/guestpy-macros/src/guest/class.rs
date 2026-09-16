@@ -90,16 +90,17 @@ impl GuestClassDefinition {
             })
             .unwrap_or_else(|| {
                 quote! {
-                    B: #crate_path::backend::Backend,
+                    B: #crate_path::backend::Backend
+                        + #crate_path::backend::BackendValues,
                 }
             });
 
         quote! {
-            #visibility struct #name<B: #crate_path::backend::Backend> {
+            #visibility struct #name<B: #crate_path::backend::Backend + #crate_path::backend::BackendValues> {
                 instance: #instance_type,
             }
 
-            impl<B: #crate_path::backend::Backend> ::core::clone::Clone for #name<B> {
+            impl<B: #crate_path::backend::Backend + #crate_path::backend::BackendValues> ::core::clone::Clone for #name<B> {
                 fn clone(&self) -> Self {
                     Self {
                         instance: self.instance.clone(),
@@ -107,7 +108,7 @@ impl GuestClassDefinition {
                 }
             }
 
-            impl<B: #crate_path::backend::Backend> #name<B> {
+            impl<B: #crate_path::backend::Backend + #crate_path::backend::BackendValues> #name<B> {
                 fn new(instance: #instance_type) -> Self {
                     Self { instance }
                 }
@@ -128,7 +129,7 @@ impl GuestClassDefinition {
                 #(#methods)*
             }
 
-            impl<B: #crate_path::backend::Backend>
+            impl<B: #crate_path::backend::Backend + #crate_path::backend::BackendValues>
                 ::core::convert::AsRef<#instance_type> for #name<B>
             {
                 fn as_ref(&self) -> &#instance_type {
@@ -136,7 +137,7 @@ impl GuestClassDefinition {
                 }
             }
 
-            impl<B: #crate_path::backend::Backend>
+            impl<B: #crate_path::backend::Backend + #crate_path::backend::BackendValues>
                 ::core::convert::From<#instance_type> for #name<B>
             {
                 fn from(instance: #instance_type) -> Self {
@@ -144,7 +145,7 @@ impl GuestClassDefinition {
                 }
             }
 
-            impl<B: #crate_path::backend::Backend>
+            impl<B: #crate_path::backend::Backend + #crate_path::backend::BackendValues>
                 ::core::convert::Into<#instance_type> for #name<B>
             {
                 fn into(self) -> #instance_type {
@@ -152,7 +153,7 @@ impl GuestClassDefinition {
                 }
             }
 
-            impl<B> #crate_path::marshal::FromGuest<B> for #name<B>
+            impl<B: #crate_path::backend::Backend + #crate_path::backend::BackendValues> #crate_path::marshal::FromGuest<B> for #name<B>
             where
                 #from_guest_bounds
             {
@@ -175,7 +176,7 @@ impl GuestClassDefinition {
 
             impl<B> #crate_path::marshal::ToGuest<B> for #name<B>
             where
-                B: #crate_path::backend::Backend,
+                B: #crate_path::backend::Backend + #crate_path::backend::BackendValues,
             {
                 fn to_guest<'py>(
                     self,

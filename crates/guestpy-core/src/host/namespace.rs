@@ -17,23 +17,23 @@ use crate::{
     scope::Enter,
 };
 
-struct ConstantValue<B: Backend, V> {
+struct ConstantValue<B: Backend + BackendValues, V> {
     value: V,
     backend: PhantomData<B>,
 }
 
-struct GetterValue<B: Backend, F, R> {
+struct GetterValue<B: Backend + BackendValues, F, R> {
     get: F,
     backend: PhantomData<fn() -> (B, R)>,
 }
 
-pub(crate) trait ValueThunkBody<B: Backend> {
+pub(crate) trait ValueThunkBody<B: Backend + BackendValues> {
     fn produce<'py>(&self, enter: &Enter<'py, B>) -> Result<B::Value<'py>, Error>;
 }
 
 impl<B, V> ValueThunkBody<B> for ConstantValue<B, V>
 where
-    B: Backend,
+    B: Backend + BackendValues,
     V: ToGuest<B> + Clone + 'static,
 {
     fn produce<'py>(&self, enter: &Enter<'py, B>) -> Result<B::Value<'py>, Error> {
@@ -43,7 +43,7 @@ where
 
 impl<B, F, R> ValueThunkBody<B> for GetterValue<B, F, R>
 where
-    B: Backend,
+    B: Backend + BackendValues,
     F: for<'py> Fn(&Enter<'py, B>) -> Result<R, Error> + 'static,
     R: ToGuest<B> + 'static,
 {
@@ -58,14 +58,14 @@ pub(crate) type SetThunk<B> = Rc<dyn for<'py> Fn(&Enter<'py, B>, Val<'py, B>) ->
 
 pub(crate) type DelThunk<B> = Rc<dyn for<'py> Fn(&Enter<'py, B>) -> Result<(), Error>>;
 
-struct PropertyDeclaration<B: Backend> {
+struct PropertyDeclaration<B: Backend + BackendValues> {
     get: Option<ValueThunk<B>>,
     set: Option<SetThunk<B>>,
     del: Option<DelThunk<B>>,
     module_getter: Option<ModuleGetter<B>>,
 }
 
-impl<B: Backend> PropertyDeclaration<B> {
+impl<B: Backend + BackendValues> PropertyDeclaration<B> {
     fn new(get: Option<ValueThunk<B>>, set: Option<SetThunk<B>>, del: Option<DelThunk<B>>) -> Self {
         let module_getter = get
             .clone()
@@ -157,11 +157,11 @@ where
     }
 }
 
-struct ObjectDeclaration<B: Backend> {
+struct ObjectDeclaration<B: Backend + BackendValues> {
     namespace: Namespace<B>,
 }
 
-impl<B: Backend> ObjectDeclaration<B> {
+impl<B: Backend + BackendValues> ObjectDeclaration<B> {
     fn new(namespace: Namespace<B>) -> Self {
         Self { namespace }
     }
@@ -202,17 +202,17 @@ where
     }
 }
 
-pub(crate) struct ValueDeclaration<B: Backend> {
+pub(crate) struct ValueDeclaration<B: Backend + BackendValues> {
     value: ValueThunk<B>,
 }
 
-impl<B: Backend> ValueDeclaration<B> {
+impl<B: Backend + BackendValues> ValueDeclaration<B> {
     pub(crate) fn new(value: ValueThunk<B>) -> Self {
         Self { value }
     }
 }
 
-impl<B: Backend> DeclareMember<B> for ValueDeclaration<B> {
+impl<B: Backend + BackendValues> DeclareMember<B> for ValueDeclaration<B> {
     fn realise<'py>(
         &self,
         context: &DeclarationContext<'py, '_, B>,
@@ -222,7 +222,7 @@ impl<B: Backend> DeclareMember<B> for ValueDeclaration<B> {
     }
 }
 
-pub struct Namespace<B: Backend> {
+pub struct Namespace<B: Backend + BackendValues> {
     members: Vec<(String, Member<B>)>,
 }
 

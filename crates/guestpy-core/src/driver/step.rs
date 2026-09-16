@@ -14,14 +14,14 @@ use crate::{
     marshal::FromGuest,
 };
 
-pub(crate) enum AsyncStep<B: Backend, T> {
+pub(crate) enum AsyncStep<B: Backend + BackendValues, T> {
     Pending(CoroutineFuture<B, T>),
     Failed(Option<Error>),
 }
 
-impl<B: Backend, T> Unpin for AsyncStep<B, T> {}
+impl<B: Backend + BackendValues, T> Unpin for AsyncStep<B, T> {}
 
-impl<B: Backend, T> From<Result<CoroutineFuture<B, T>, Error>> for AsyncStep<B, T> {
+impl<B: Backend + BackendValues, T> From<Result<CoroutineFuture<B, T>, Error>> for AsyncStep<B, T> {
     fn from(started: Result<CoroutineFuture<B, T>, Error>) -> Self {
         match started {
             Ok(future) => Self::Pending(future),

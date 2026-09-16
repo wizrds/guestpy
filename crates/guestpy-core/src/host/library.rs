@@ -1,19 +1,19 @@
 use std::rc::Rc;
 
-use crate::{backend::Backend, errors::Error, host::module::ModuleSpec, scope::Enter};
+use crate::{backend::{Backend, BackendValues}, errors::Error, host::module::ModuleSpec, scope::Enter};
 
 pub(crate) type InitializeFn<B> = Rc<dyn for<'py> Fn(&Enter<'py, B>) -> Result<(), Error>>;
 
-pub(crate) enum HostLibraryEntry<B: Backend> {
+pub(crate) enum HostLibraryEntry<B: Backend + BackendValues> {
     Module(Rc<ModuleSpec<B>>),
     Initializer(HostInitializer<B>),
 }
 
-pub struct HostInitializer<B: Backend> {
+pub struct HostInitializer<B: Backend + BackendValues> {
     initialize: InitializeFn<B>,
 }
 
-impl<B: Backend> HostInitializer<B> {
+impl<B: Backend + BackendValues> HostInitializer<B> {
     pub fn new<F>(initialize: F) -> Self
     where
         F: for<'py> Fn(&Enter<'py, B>) -> Result<(), Error> + 'static,
@@ -26,11 +26,11 @@ impl<B: Backend> HostInitializer<B> {
     }
 }
 
-pub struct HostLibrary<B: Backend> {
+pub struct HostLibrary<B: Backend + BackendValues> {
     entries: Vec<HostLibraryEntry<B>>,
 }
 
-impl<B: Backend> HostLibrary<B> {
+impl<B: Backend + BackendValues> HostLibrary<B> {
     pub fn new() -> Self {
         Self { entries: Vec::new() }
     }
@@ -61,13 +61,13 @@ impl<B: Backend> HostLibrary<B> {
     }
 }
 
-impl<B: Backend> Default for HostLibrary<B> {
+impl<B: Backend + BackendValues> Default for HostLibrary<B> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<B: Backend> From<ModuleSpec<B>> for HostLibrary<B> {
+impl<B: Backend + BackendValues> From<ModuleSpec<B>> for HostLibrary<B> {
     fn from(module: ModuleSpec<B>) -> Self {
         Self::new().with(module)
     }

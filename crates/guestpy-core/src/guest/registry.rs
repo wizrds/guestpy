@@ -5,17 +5,17 @@ use std::{
 };
 
 use crate::{
-    backend::Backend,
+    backend::{Backend, BackendValues},
     errors::Error,
     guest::{GuestId, GuestInner},
 };
 
-pub(crate) struct GuestRegistry<B: Backend> {
+pub(crate) struct GuestRegistry<B: Backend + BackendValues> {
     registered: RefCell<HashMap<GuestId, Weak<GuestInner<B>>>>,
     active: RefCell<Vec<Weak<GuestInner<B>>>>,
 }
 
-impl<B: Backend> GuestRegistry<B> {
+impl<B: Backend + BackendValues> GuestRegistry<B> {
     pub(crate) fn new() -> Self {
         Self {
             registered: RefCell::new(HashMap::new()),

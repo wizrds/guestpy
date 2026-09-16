@@ -9,7 +9,7 @@ use crate::{
     scope::Enter,
 };
 
-pub(crate) trait GuestErrorHandler<B: Backend> {
+pub(crate) trait GuestErrorHandler<B: Backend + BackendValues> {
     fn raise_runtime<'py>(
         &self,
         token: Tok<'py, B>,
@@ -22,7 +22,7 @@ pub(crate) trait GuestErrorHandler<B: Backend> {
     fn exception<'py>(&self, enter: &Enter<'py, B>, error: Error) -> Val<'py, B>;
 }
 
-enum ErrorSite<'py, 'e, B: Backend> {
+enum ErrorSite<'py, 'e, B: Backend + BackendValues> {
     Guest(&'e Enter<'py, B>),
     Runtime {
         token: Tok<'py, B>,

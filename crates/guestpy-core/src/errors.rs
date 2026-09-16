@@ -29,15 +29,15 @@ trait ErasedOwnedInner {
     fn as_any(&self) -> &dyn Any;
 }
 
-struct Held<B: Backend>(Option<B::Owned>);
+struct Held<B: Backend + BackendValues>(Option<B::Owned>);
 
-impl<B: Backend> ErasedOwnedInner for Held<B> {
+impl<B: Backend + BackendValues> ErasedOwnedInner for Held<B> {
     fn as_any(&self) -> &dyn Any {
         self
     }
 }
 
-impl<B: Backend> Drop for Held<B> {
+impl<B: Backend + BackendValues> Drop for Held<B> {
     fn drop(&mut self) {
         if let Some(owned) = self.0.take() {
             B::release(owned);
@@ -48,11 +48,11 @@ impl<B: Backend> Drop for Held<B> {
 pub struct ErasedOwned(Box<dyn ErasedOwnedInner>);
 
 impl ErasedOwned {
-    pub fn new<B: Backend>(owned: B::Owned) -> Self {
+    pub fn new<B: Backend + BackendValues>(owned: B::Owned) -> Self {
         Self(Box::new(Held::<B>(Some(owned))))
     }
 
-    pub fn get<B: Backend>(&self) -> Option<&B::Owned> {
+    pub fn get<B: Backend + BackendValues>(&self) -> Option<&B::Owned> {
         self.0
             .as_any()
             .downcast_ref::<Held<B>>()?
@@ -241,7 +241,7 @@ impl GuestException {
         self.typed_mro.contains(&id)
     }
 
-    pub fn object<B: Backend>(&self) -> Option<&B::Owned> {
+    pub fn object<B: Backend + BackendValues>(&self) -> Option<&B::Owned> {
         self.object.as_ref()?.get::<B>()
     }
 }
@@ -417,7 +417,7 @@ impl Error {
         }
     }
 
-    pub(crate) fn resolve_exception_types<B: Backend>(
+    pub(crate) fn resolve_exception_types<B: Backend + BackendValues>(
         mut self,
         realisation: &RealisationCache<B>,
     ) -> Self {

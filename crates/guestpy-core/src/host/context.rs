@@ -1,7 +1,7 @@
 use std::{any::TypeId, rc::Rc};
 
 use crate::{
-    backend::Backend,
+    backend::{Backend, BackendValues},
     errors::Error,
     host::{class::HostClass, module::ModuleSpec},
     scope::Enter,
@@ -13,12 +13,12 @@ pub enum Owner<'a> {
     Module(&'a str),
 }
 
-pub struct CallContext<'py, 'a, B: Backend> {
+pub struct CallContext<'py, 'a, B: Backend + BackendValues> {
     enter: &'a Enter<'py, B>,
     owner: Owner<'a>,
 }
 
-impl<'py, 'a, B: Backend> CallContext<'py, 'a, B> {
+impl<'py, 'a, B: Backend + BackendValues> CallContext<'py, 'a, B> {
     pub fn class<C: HostClass>(enter: &'a Enter<'py, B>) -> Self {
         Self {
             enter,
@@ -49,21 +49,21 @@ impl<'py, 'a, B: Backend> CallContext<'py, 'a, B> {
     }
 }
 
-pub trait FromContext<B: Backend>: Sized {
+pub trait FromContext<B: Backend + BackendValues>: Sized {
     fn from_context<'py>(context: &CallContext<'py, '_, B>) -> Result<Self, Error>;
 
     fn declare(_requirements: &mut Requirements<B>) {}
 }
 
-pub trait Requirement<B: Backend> {
+pub trait Requirement<B: Backend + BackendValues> {
     fn check(&self, module: &ModuleSpec<B>) -> Result<(), Error>;
 }
 
-pub struct Requirements<B: Backend> {
+pub struct Requirements<B: Backend + BackendValues> {
     entries: Vec<Rc<dyn Requirement<B>>>,
 }
 
-impl<B: Backend> Requirements<B> {
+impl<B: Backend + BackendValues> Requirements<B> {
     pub(crate) fn new() -> Self {
         Self { entries: Vec::new() }
     }

@@ -16,7 +16,7 @@ use crate::{
     scope::Enter,
 };
 
-pub struct GuestBuilder<'r, B: Backend> {
+pub struct GuestBuilder<'r, B: Backend + BackendValues> {
     runtime: &'r Runtime<B>,
     modules: Vec<Rc<ModuleSpec<B>>>,
     natives: Vec<Rc<NativeModule<B>>>,
@@ -27,7 +27,7 @@ pub struct GuestBuilder<'r, B: Backend> {
     timeout: Option<Duration>,
 }
 
-impl<'r, B: Backend> GuestBuilder<'r, B> {
+impl<'r, B: Backend + BackendValues> GuestBuilder<'r, B> {
     pub(crate) fn new(runtime: &'r Runtime<B>) -> Self {
         Self {
             runtime,
@@ -75,7 +75,7 @@ impl<'r, B: Backend> GuestBuilder<'r, B> {
 
 impl<'r, B> GuestBuilder<'r, B>
 where
-    B: Backend + BackendLibrary,
+    B: Backend + BackendValues + BackendLibrary,
 {
     pub fn bind_native(mut self, library: impl Into<NativeLibrary<B>>) -> Self {
         for entry in library.into().into_entries() {

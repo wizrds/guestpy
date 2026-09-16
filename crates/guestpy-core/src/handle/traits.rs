@@ -12,13 +12,13 @@ use crate::{
 };
 
 mod sealed {
-    use crate::{backend::Backend, handle::Handle};
+    use crate::{backend::{Backend, BackendValues}, handle::Handle};
 
-    pub trait HasHandle<B: Backend> {
+    pub trait HasHandle<B: Backend + BackendValues> {
         fn handle(&self) -> &Handle<B>;
     }
 
-    pub trait IsType<B: Backend>: HasHandle<B> {}
+    pub trait IsType<B: Backend + BackendValues>: HasHandle<B> {}
 }
 
 pub(crate) use sealed::{HasHandle, IsType};
@@ -390,7 +390,7 @@ where
 {
 }
 
-pub struct GenericAlias<B: Backend> {
+pub struct GenericAlias<B: Backend + BackendValues> {
     alias: Object<B>,
 }
 
@@ -416,13 +416,13 @@ where
     }
 }
 
-impl<B: Backend> Clone for GenericAlias<B> {
+impl<B: Backend + BackendValues> Clone for GenericAlias<B> {
     fn clone(&self) -> Self {
         Self { alias: self.alias.clone() }
     }
 }
 
-impl<B: Backend> HasHandle<B> for GenericAlias<B> {
+impl<B: Backend + BackendValues> HasHandle<B> for GenericAlias<B> {
     fn handle(&self) -> &Handle<B> {
         self.alias.handle()
     }

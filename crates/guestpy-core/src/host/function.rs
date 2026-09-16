@@ -11,11 +11,11 @@ use crate::{
     scope::Enter,
 };
 
-pub(crate) struct FunctionDeclaration<B: Backend> {
+pub(crate) struct FunctionDeclaration<B: Backend + BackendValues> {
     body: HostBody<B>,
 }
 
-impl<B: Backend> FunctionDeclaration<B> {
+impl<B: Backend + BackendValues> FunctionDeclaration<B> {
     pub(crate) fn new(body: HostBody<B>) -> Self {
         Self { body }
     }
@@ -42,11 +42,11 @@ where
     }
 }
 
-pub(crate) struct AsyncFunctionDeclaration<B: Backend> {
+pub(crate) struct AsyncFunctionDeclaration<B: Backend + BackendValues> {
     body: HostAsyncBody<B>,
 }
 
-impl<B: Backend> AsyncFunctionDeclaration<B> {
+impl<B: Backend + BackendValues> AsyncFunctionDeclaration<B> {
     pub(crate) fn new(body: HostAsyncBody<B>) -> Self {
         Self { body }
     }
@@ -81,7 +81,7 @@ where
     }
 }
 
-pub struct HostFn<B: Backend>(Member<B>);
+pub struct HostFn<B: Backend + BackendValues>(Member<B>);
 
 impl<B> HostFn<B>
 where
@@ -114,7 +114,7 @@ where
     }
 }
 
-impl<B: Backend> ToGuest<B> for HostFn<B> {
+impl<B: Backend + BackendValues> ToGuest<B> for HostFn<B> {
     fn to_guest<'py>(self, enter: &Enter<'py, B>) -> Result<B::Value<'py>, Error> {
         self.0
             .realise(&DeclarationContext::new(enter), "<host_fn>")

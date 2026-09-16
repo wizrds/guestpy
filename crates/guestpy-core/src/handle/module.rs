@@ -14,21 +14,21 @@ use crate::{
     scope::Enter,
 };
 
-pub struct Module<B: Backend>(Handle<B>);
+pub struct Module<B: Backend + BackendValues>(Handle<B>);
 
-impl<B: Backend> Clone for Module<B> {
+impl<B: Backend + BackendValues> Clone for Module<B> {
     fn clone(&self) -> Self {
         Self(self.0.clone())
     }
 }
 
-impl<B: Backend> Module<B> {
+impl<B: Backend + BackendValues> Module<B> {
     pub fn ptr_eq(&self, other: &Self) -> bool {
         self.0.ptr_eq(&other.0)
     }
 }
 
-impl<B: Backend> HasHandle<B> for Module<B> {
+impl<B: Backend + BackendValues> HasHandle<B> for Module<B> {
     fn handle(&self) -> &Handle<B> {
         &self.0
     }
@@ -38,7 +38,7 @@ impl<B> Named<B> for Module<B> where B: Backend + BackendValues {}
 
 impl<B> Annotated<B> for Module<B> where B: Backend + BackendValues {}
 
-impl<B: Backend> Describe for Module<B> {
+impl<B: Backend + BackendValues> Describe for Module<B> {
     fn describe(expected: &mut Expected) {
         expected.push("module");
     }
@@ -59,7 +59,7 @@ where
     }
 }
 
-impl<B: Backend> ToGuest<B> for Module<B> {
+impl<B: Backend + BackendValues> ToGuest<B> for Module<B> {
     fn to_guest<'py>(self, enter: &Enter<'py, B>) -> Result<B::Value<'py>, Error> {
         Ok(B::attach(enter.token(), self.0.owned()))
     }

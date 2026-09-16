@@ -10,7 +10,7 @@ use crate::{
 pub(crate) type ModuleGetter<B> =
     Rc<dyn for<'py, 'e> Fn(&DeclarationContext<'py, 'e, B>) -> Result<Val<'py, B>, Error>>;
 
-pub(crate) trait DeclareMember<B: Backend> {
+pub(crate) trait DeclareMember<B: Backend + BackendValues> {
     fn realise<'py>(
         &self,
         context: &DeclarationContext<'py, '_, B>,
@@ -24,11 +24,11 @@ pub(crate) trait DeclareMember<B: Backend> {
 
 pub(crate) type Member<B> = Rc<dyn DeclareMember<B>>;
 
-pub(crate) struct DeclarationContext<'py, 'e, B: Backend> {
+pub(crate) struct DeclarationContext<'py, 'e, B: Backend + BackendValues> {
     enter: &'e Enter<'py, B>,
 }
 
-impl<'py, 'e, B: Backend> DeclarationContext<'py, 'e, B> {
+impl<'py, 'e, B: Backend + BackendValues> DeclarationContext<'py, 'e, B> {
     pub(crate) fn new(enter: &'e Enter<'py, B>) -> Self {
         Self { enter }
     }

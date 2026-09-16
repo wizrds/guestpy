@@ -14,7 +14,7 @@ use crate::{
     scope::Enter,
 };
 
-pub struct Coroutine<B: Backend, T> {
+pub struct Coroutine<B: Backend + BackendValues, T> {
     owned: B::Owned,
     guest: Guest<B>,
     marker: PhantomData<fn() -> T>,
@@ -58,13 +58,13 @@ where
     }
 }
 
-pub struct Awaitable<B: Backend, T> {
+pub struct Awaitable<B: Backend + BackendValues, T> {
     owned: B::Owned,
     guest: Guest<B>,
     marker: PhantomData<fn() -> T>,
 }
 
-impl<B: Backend, T: 'static> FromGuest<B> for Awaitable<B, T> {
+impl<B: Backend + BackendValues, T: 'static> FromGuest<B> for Awaitable<B, T> {
     type Owned = Self;
 
     fn from_guest<'py>(enter: &Enter<'py, B>, value: B::Value<'py>) -> Result<Self, Error> {

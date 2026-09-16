@@ -67,7 +67,10 @@ impl GuestModuleDefinition {
             .map(|member| member.render(&crate_path, &receiver));
 
         quote! {
-            #visibility struct #name<B: #crate_path::backend::Backend> {
+            #visibility struct #name<B>
+            where
+                B: #crate_path::backend::Backend + #crate_path::backend::BackendValues,
+            {
                 module: #crate_path::handle::Module<B>,
             }
 
@@ -78,8 +81,9 @@ impl GuestModuleDefinition {
                 #(#methods)*
             }
 
-            impl<B: #crate_path::backend::Backend>
-                ::core::convert::From<#crate_path::handle::Module<B>> for #name<B>
+            impl<B> ::core::convert::From<#crate_path::handle::Module<B>> for #name<B>
+            where
+                B: #crate_path::backend::Backend + #crate_path::backend::BackendValues,
             {
                 fn from(module: #crate_path::handle::Module<B>) -> Self {
                     Self { module }

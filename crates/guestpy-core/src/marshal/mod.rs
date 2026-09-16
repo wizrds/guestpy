@@ -8,22 +8,22 @@ pub mod primitives;
 pub mod serde;
 
 use crate::{
-    backend::{Backend, Tok, Val},
+    backend::{Backend, BackendValues, Tok, Val},
     errors::Error,
     scope::Enter,
 };
 
-pub trait ToGuest<B: Backend> {
+pub trait ToGuest<B: Backend + BackendValues> {
     fn to_guest<'py>(self, enter: &Enter<'py, B>) -> Result<B::Value<'py>, Error>;
 }
 
-pub trait FromGuest<B: Backend> {
+pub trait FromGuest<B: Backend + BackendValues> {
     type Owned: 'static;
 
     fn from_guest<'py>(enter: &Enter<'py, B>, value: B::Value<'py>) -> Result<Self::Owned, Error>;
 }
 
-pub trait FromGuestRef<'py, B: Backend> {
+pub trait FromGuestRef<'py, B: Backend + BackendValues> {
     type Ref<'a>
     where
         Self: 'a;
@@ -34,7 +34,7 @@ pub trait FromGuestRef<'py, B: Backend> {
     ) -> Result<Self::Ref<'a>, Error>;
 }
 
-pub trait FromGuestMut<'py, B: Backend> {
+pub trait FromGuestMut<'py, B: Backend + BackendValues> {
     type Mut<'a>
     where
         Self: 'a;
@@ -45,7 +45,7 @@ pub trait FromGuestMut<'py, B: Backend> {
     ) -> Result<Self::Mut<'a>, Error>;
 }
 
-pub trait FromException<B: Backend> {
+pub trait FromException<B: Backend + BackendValues> {
     fn from_exception<'py>(token: Tok<'py, B>, exception: Val<'py, B>) -> Self;
 }
 

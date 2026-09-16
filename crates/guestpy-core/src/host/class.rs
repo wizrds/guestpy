@@ -78,11 +78,11 @@ impl From<String> for MemberName {
     }
 }
 
-struct MethodDeclaration<B: Backend> {
+struct MethodDeclaration<B: Backend + BackendValues> {
     body: MethodBody<B>,
 }
 
-impl<B: Backend> MethodDeclaration<B> {
+impl<B: Backend + BackendValues> MethodDeclaration<B> {
     fn new<F>(body: F) -> Self
     where
         F: for<'py> Fn(&Enter<'py, B>, Val<'py, B>, Args<'py, B>) -> Result<Val<'py, B>, Error>
@@ -105,11 +105,11 @@ where
     }
 }
 
-struct ClassMethodDeclaration<B: Backend> {
+struct ClassMethodDeclaration<B: Backend + BackendValues> {
     body: MethodBody<B>,
 }
 
-impl<B: Backend> ClassMethodDeclaration<B> {
+impl<B: Backend + BackendValues> ClassMethodDeclaration<B> {
     fn new<F>(body: F) -> Self
     where
         F: for<'py> Fn(&Enter<'py, B>, Val<'py, B>, Args<'py, B>) -> Result<Val<'py, B>, Error>
@@ -139,11 +139,11 @@ where
     }
 }
 
-struct StaticMethodDeclaration<B: Backend> {
+struct StaticMethodDeclaration<B: Backend + BackendValues> {
     body: HostBody<B>,
 }
 
-impl<B: Backend> StaticMethodDeclaration<B> {
+impl<B: Backend + BackendValues> StaticMethodDeclaration<B> {
     fn new<F>(body: F) -> Self
     where
         F: for<'py> Fn(&Enter<'py, B>, Args<'py, B>) -> Result<Val<'py, B>, Error> + 'static,
@@ -175,13 +175,13 @@ where
     }
 }
 
-struct ClassPropertyDeclaration<B: Backend> {
+struct ClassPropertyDeclaration<B: Backend + BackendValues> {
     get: RefCell<Option<MethodBody<B>>>,
     set: RefCell<Option<SetterBody<B>>>,
     del: RefCell<Option<DeleterBody<B>>>,
 }
 
-impl<B: Backend> ClassPropertyDeclaration<B> {
+impl<B: Backend + BackendValues> ClassPropertyDeclaration<B> {
     fn new() -> Self {
         Self {
             get: RefCell::new(None),
@@ -282,7 +282,7 @@ where
     }
 }
 
-pub(crate) enum ClassBase<B: Backend> {
+pub(crate) enum ClassBase<B: Backend + BackendValues> {
     Host(Rc<ClassSpec<B>>),
     Imported {
         module: Cow<'static, str>,
@@ -290,7 +290,7 @@ pub(crate) enum ClassBase<B: Backend> {
     },
 }
 
-pub struct ClassSpec<B: Backend> {
+pub struct ClassSpec<B: Backend + BackendValues> {
     name: &'static str,
     doc: Option<&'static str>,
     module: RefCell<Option<String>>,
@@ -303,7 +303,7 @@ pub struct ClassSpec<B: Backend> {
     requirements: Requirements<B>,
 }
 
-impl<B: Backend> ClassSpec<B> {
+impl<B: Backend + BackendValues> ClassSpec<B> {
     fn push_member(&mut self, name: MemberName, member: Member<B>) {
         self.members.push((name, member));
     }
@@ -432,7 +432,7 @@ where
     }
 }
 
-struct ClassRealiser<'py, 'e, B: Backend> {
+struct ClassRealiser<'py, 'e, B: Backend + BackendValues> {
     enter: &'e Enter<'py, B>,
 }
 
@@ -615,11 +615,11 @@ where
     }
 }
 
-pub(crate) struct ClassDeclaration<B: Backend> {
+pub(crate) struct ClassDeclaration<B: Backend + BackendValues> {
     spec: Rc<ClassSpec<B>>,
 }
 
-impl<B: Backend> ClassDeclaration<B> {
+impl<B: Backend + BackendValues> ClassDeclaration<B> {
     pub(crate) fn new(spec: Rc<ClassSpec<B>>) -> Self {
         Self { spec }
     }
@@ -643,11 +643,11 @@ pub trait HostClass: Sized + 'static {
     const DOC: Option<&'static str> = None;
 }
 
-pub trait HostClassDefinition<B: Backend>: HostClass {
+pub trait HostClassDefinition<B: Backend + BackendValues>: HostClass {
     fn build(builder: &mut ClassBuilder<B, Self>);
 }
 
-pub struct ClassBuilder<B: Backend, C> {
+pub struct ClassBuilder<B: Backend + BackendValues, C> {
     spec: ClassSpec<B>,
     error: Option<Error>,
     properties: HashMap<String, Rc<ClassPropertyDeclaration<B>>>,

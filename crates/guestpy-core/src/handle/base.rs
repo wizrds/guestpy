@@ -1,5 +1,5 @@
 use crate::{
-    backend::{Backend, BackendClasses, BackendCoroutines, BackendModules},
+    backend::{Backend, BackendClasses, BackendCoroutines, BackendModules, BackendValues},
     driver::{AsyncStep, CoroutineFuture},
     errors::Error,
     guest::Guest,
@@ -10,12 +10,12 @@ use crate::{
     scope::{Enter, Scope},
 };
 
-pub struct Handle<B: Backend> {
+pub struct Handle<B: Backend + BackendValues> {
     owned: B::Owned,
     guest: Guest<B>,
 }
 
-impl<B: Backend> Clone for Handle<B> {
+impl<B: Backend + BackendValues> Clone for Handle<B> {
     fn clone(&self) -> Self {
         Self {
             owned: self.owned.clone(),
@@ -24,7 +24,7 @@ impl<B: Backend> Clone for Handle<B> {
     }
 }
 
-impl<B: Backend> Handle<B> {
+impl<B: Backend + BackendValues> Handle<B> {
     pub fn new(owned: B::Owned, guest: Guest<B>) -> Self {
         Self { owned, guest }
     }
@@ -58,7 +58,10 @@ impl<B: Backend> Handle<B> {
     }
 }
 
-impl<B: Backend + BackendCoroutines + BackendClasses + BackendModules> Handle<B> {
+impl<B> Handle<B>
+where
+    B: Backend + BackendValues + BackendCoroutines + BackendClasses + BackendModules,
+{
     pub(crate) fn with_async_step<R>(
         &self,
         f: impl for<'py> FnOnce(&Enter<'py, B>, &B::Value<'py>) -> Result<B::Value<'py>, Error>,
@@ -75,11 +78,11 @@ impl<B: Backend + BackendCoroutines + BackendClasses + BackendModules> Handle<B>
 }
 
 #[derive(Clone)]
-pub struct Value<B: Backend> {
+pub struct Value<B: Backend + BackendValues> {
     owned: B::Owned,
 }
 
-impl<B: Backend> Value<B> {
+impl<B: Backend + BackendValues> Value<B> {
     pub(crate) fn new(owned: B::Owned) -> Self {
         Self { owned }
     }
@@ -98,19 +101,19 @@ impl<B: Backend> Value<B> {
     }
 }
 
-impl<B: Backend> Describe for Value<B> {
+impl<B: Backend + BackendValues> Describe for Value<B> {
     fn describe(expected: &mut Expected) {
         expected.push("object");
     }
 }
 
-impl<B: Backend> ToGuest<B> for Value<B> {
+impl<B: Backend + BackendValues> ToGuest<B> for Value<B> {
     fn to_guest<'py>(self, enter: &Enter<'py, B>) -> Result<B::Value<'py>, Error> {
         Ok(B::attach(enter.token(), &self.owned))
     }
 }
 
-impl<B: Backend> FromGuest<B> for Value<B> {
+impl<B: Backend + BackendValues> FromGuest<B> for Value<B> {
     type Owned = Self;
 
     fn from_guest<'py>(enter: &Enter<'py, B>, value: B::Value<'py>) -> Result<Self::Owned, Error> {

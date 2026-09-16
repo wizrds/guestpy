@@ -55,7 +55,7 @@ impl GuestId {
     }
 }
 
-pub(crate) struct GuestInner<B: Backend> {
+pub(crate) struct GuestInner<B: Backend + BackendValues> {
     id: GuestId,
     runtime: Rc<RuntimeInner<B>>,
     context: B::Context,
@@ -65,7 +65,7 @@ pub(crate) struct GuestInner<B: Backend> {
     async_driver: AsyncDriverSlot<B>,
 }
 
-impl<B: Backend> Drop for GuestInner<B> {
+impl<B: Backend + BackendValues> Drop for GuestInner<B> {
     fn drop(&mut self) {
         self.runtime
             .registry()
@@ -75,7 +75,7 @@ impl<B: Backend> Drop for GuestInner<B> {
 
 impl<B> GuestInner<B>
 where
-    B: Backend,
+    B: Backend + BackendValues,
 {
     fn new(
         id: GuestId,
@@ -254,17 +254,17 @@ where
     }
 }
 
-pub struct Guest<B: Backend> {
+pub struct Guest<B: Backend + BackendValues> {
     inner: Rc<GuestInner<B>>,
 }
 
-impl<B: Backend> Clone for Guest<B> {
+impl<B: Backend + BackendValues> Clone for Guest<B> {
     fn clone(&self) -> Self {
         Self { inner: self.inner.clone() }
     }
 }
 
-impl<B: Backend> Guest<B> {
+impl<B: Backend + BackendValues> Guest<B> {
     pub(crate) fn enter_cleanup<F, R>(&self, f: F) -> Result<R, Error>
     where
         F: for<'py> FnOnce(&Enter<'py, B>) -> Result<R, Error>,
@@ -304,30 +304,6 @@ impl<B: Backend> Guest<B> {
         self.inner.runtime.errors()
     }
 
-    pub fn id(&self) -> GuestId {
-        self.inner.id
-    }
-
-    pub fn runtime(&self) -> Runtime<B> {
-        Runtime { inner: self.inner.runtime.clone() }
-    }
-
-    pub fn is_closed(&self) -> bool {
-        self.inner.closed.get()
-    }
-
-    pub fn enter<F, R>(&self, f: F) -> Result<R, Error>
-    where
-        F: for<'py> FnOnce(&Enter<'py, B>) -> Result<R, Error>,
-    {
-        self.inner.enter(f)
-    }
-}
-
-impl<B> Guest<B>
-where
-    B: Backend + BackendValues,
-{
     pub(crate) fn raw_body(&self, body: HostBody<B>) -> RawBody<B> {
         GuestInner::raw_body(&self.inner.runtime, self.inner.id, body)
     }
@@ -356,6 +332,25 @@ where
         }
 
         Ok(module)
+    }
+
+    pub fn id(&self) -> GuestId {
+        self.inner.id
+    }
+
+    pub fn runtime(&self) -> Runtime<B> {
+        Runtime { inner: self.inner.runtime.clone() }
+    }
+
+    pub fn is_closed(&self) -> bool {
+        self.inner.closed.get()
+    }
+
+    pub fn enter<F, R>(&self, f: F) -> Result<R, Error>
+    where
+        F: for<'py> FnOnce(&Enter<'py, B>) -> Result<R, Error>,
+    {
+        self.inner.enter(f)
     }
 }
 
@@ -571,7 +566,7 @@ where
     }
 }
 
-pub struct ActiveAsyncDriver<'a, B: Backend> {
+pub struct ActiveAsyncDriver<'a, B: Backend + BackendValues> {
     guest: &'a Guest<B>,
 }
 

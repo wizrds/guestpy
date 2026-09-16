@@ -1,7 +1,7 @@
 use std::{any::type_name, marker::PhantomData, ops::Deref, rc::Rc};
 
 use crate::{
-    backend::Backend,
+    backend::{Backend, BackendValues},
     errors::Error,
     host::{
         context::{CallContext, FromContext, Requirement, Requirements},
@@ -25,7 +25,7 @@ impl<S> Deref for ModuleState<S> {
     }
 }
 
-impl<B: Backend, S: 'static> FromContext<B> for ModuleState<S> {
+impl<B: Backend + BackendValues, S: 'static> FromContext<B> for ModuleState<S> {
     fn from_context<'py>(context: &CallContext<'py, '_, B>) -> Result<Self, Error> {
         let module = context.owning_module()?;
 
@@ -43,7 +43,7 @@ impl<B: Backend, S: 'static> FromContext<B> for ModuleState<S> {
 struct ModuleStateRequirement<S>(PhantomData<fn() -> S>);
 
 impl<S: 'static> ModuleStateRequirement<S> {
-    fn missing<B: Backend>(module: &ModuleSpec<B>) -> Error {
+    fn missing<B: Backend + BackendValues>(module: &ModuleSpec<B>) -> Error {
         Error::unsupported(format!(
             "module {} has no state of type {}",
             module.name(),
@@ -52,7 +52,7 @@ impl<S: 'static> ModuleStateRequirement<S> {
     }
 }
 
-impl<B: Backend, S: 'static> Requirement<B> for ModuleStateRequirement<S> {
+impl<B: Backend + BackendValues, S: 'static> Requirement<B> for ModuleStateRequirement<S> {
     fn check(&self, module: &ModuleSpec<B>) -> Result<(), Error> {
         module
             .state_of::<S>()

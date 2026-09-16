@@ -167,7 +167,7 @@ pub mod fixtures {
 
     impl<B> IntoRaise<B> for TransportError
     where
-        B: Backend,
+        B: Backend + BackendValues,
         String: ToGuest<B>,
     {
         fn values(self, raise: Raise<B>) -> Raise<B> {
@@ -200,7 +200,7 @@ pub mod fixtures {
 
     impl<B> IntoRaise<B> for RequestTimeout
     where
-        B: Backend,
+        B: Backend + BackendValues,
         String: ToGuest<B>,
     {
         fn values(self, raise: Raise<B>) -> Raise<B> {
@@ -233,13 +233,13 @@ pub mod fixtures {
         }
     }
 
-    impl<B: Backend> IntoRaise<B> for InvalidInput {
+    impl<B: Backend + BackendValues> IntoRaise<B> for InvalidInput {
         fn values(self, raise: Raise<B>) -> Raise<B> {
             raise
         }
     }
 
-    impl<B: Backend> FromRaised<B> for InvalidInput {
+    impl<B: Backend + BackendValues> FromRaised<B> for InvalidInput {
         fn from_raised<'py>(_: &Raised<'py, '_, B>) -> Result<Self, Error> {
             Ok(Self)
         }
@@ -251,13 +251,13 @@ pub mod fixtures {
         const NAME: &'static str = "UnitError";
     }
 
-    impl<B: Backend> IntoRaise<B> for UnitError {
+    impl<B: Backend + BackendValues> IntoRaise<B> for UnitError {
         fn values(self, raise: Raise<B>) -> Raise<B> {
             raise
         }
     }
 
-    impl<B: Backend> FromRaised<B> for UnitError {
+    impl<B: Backend + BackendValues> FromRaised<B> for UnitError {
         fn from_raised<'py>(_: &Raised<'py, '_, B>) -> Result<Self, Error> {
             Ok(Self)
         }
@@ -269,7 +269,7 @@ pub mod fixtures {
         const NAME: &'static str = "UnregisteredError";
     }
 
-    impl<B: Backend> IntoRaise<B> for UnregisteredError {
+    impl<B: Backend + BackendValues> IntoRaise<B> for UnregisteredError {
         fn values(self, raise: Raise<B>) -> Raise<B> {
             raise
         }
