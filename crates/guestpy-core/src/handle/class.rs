@@ -17,7 +17,7 @@ use crate::{
     host::class::{ClassSpec, HostClass, HostClassDefinition},
     marshal::{
         FromGuest, FromGuestMut, FromGuestRef, ToGuest,
-        args::ToGuestArgs,
+        args::{ToGuestArgs, ToGuestKwargs},
         describe::{Describe, Expected},
     },
     scope::Enter,
@@ -110,7 +110,16 @@ where
         A: ToGuestArgs<B>,
         R: FromGuest<B>,
     {
-        self.construct_as::<A, R>(args)
+        self.construct_with(args, ())
+    }
+
+    pub fn construct_with<A, K>(&self, args: A, kwargs: K) -> Result<R::Owned, Error>
+    where
+        A: ToGuestArgs<B>,
+        K: ToGuestKwargs<B>,
+        R: FromGuest<B>,
+    {
+        self.construct_as_with::<A, K, R>(args, kwargs)
     }
 
     pub fn construct_as<A, O>(&self, args: A) -> Result<O::Owned, Error>
@@ -118,8 +127,30 @@ where
         A: ToGuestArgs<B>,
         O: FromGuest<B>,
     {
+        self.construct_as_with::<A, (), O>(args, ())
+    }
+
+    pub fn construct_as_with<A, K, O>(&self, args: A, kwargs: K) -> Result<O::Owned, Error>
+    where
+        A: ToGuestArgs<B>,
+        K: ToGuestKwargs<B>,
+        O: FromGuest<B>,
+    {
         self.handle.with_enter(|enter, class| {
-            O::from_guest(enter, B::call(enter.token(), class, &args.into_args(enter)?, &[])?)
+            let kwargs = kwargs.into_kwargs(enter)?;
+
+            O::from_guest(
+                enter,
+                B::call(
+                    enter.token(),
+                    class,
+                    &args.into_args(enter)?,
+                    &kwargs
+                        .iter()
+                        .map(|(name, value)| (name.as_str(), value.clone()))
+                        .collect::<Vec<_>>(),
+                )?,
+            )
         })
     }
 }

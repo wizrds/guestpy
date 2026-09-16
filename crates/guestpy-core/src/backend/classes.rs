@@ -118,6 +118,41 @@ pub mod fixtures {
         }
     }
 
+    struct KeywordContract {
+        required: i64,
+        optional: Option<String>,
+        named: bool,
+    }
+
+    impl HostClass for KeywordContract {
+        const NAME: &'static str = "KeywordContract";
+    }
+
+    impl<B> HostClassDefinition<B> for KeywordContract
+    where
+        B: Backend + BackendValues + BackendCallables + BackendClasses,
+    {
+        fn build(builder: &mut ClassBuilder<B, Self>) {
+            builder.constructor(|enter, args| {
+                let required = args.required::<i64>(enter, 0, "required")?;
+                let optional = args.optional::<String>(enter, 1, "optional")?;
+                let named = args.required_keyword::<bool>(enter, "named")?;
+
+                args.finish()?;
+
+                if required < 0 {
+                    return Err(Error::conversion("required must not be negative"));
+                }
+
+                Ok(Self {
+                    required,
+                    optional,
+                    named,
+                })
+            });
+        }
+    }
+
     struct Contract;
 
     impl HostClass for Contract {
@@ -521,6 +556,92 @@ def callable_value():
                 12.0,
             );
             assert!(class.value().ptr_eq(&retyped.value()));
+        }
+    }
+
+    guest_fixture! {
+        pub fn class_constructs_with_keyword_arguments<B>()
+        where B: [
+            Backend,
+            BackendValues,
+            BackendCallables,
+            BackendClasses,
+            BackendModules,
+            BackendCoroutines,
+            BackendInterrupt,
+        ]
+        using Runtime::<B>::builder().bind(
+            ModuleSpec::new("construct")
+                .class::<KeywordContract>()
+                .expect("KeywordContract registers cleanly"),
+        );
+        |guest| {
+            guest.exec("import construct").unwrap();
+
+            let class = guest
+                .eval::<Class<_, KeywordContract>>("construct.KeywordContract")
+                .unwrap();
+            let contract = class
+                .construct_with(
+                    (42_i64, Some(String::from("value"))),
+                    (("named", true),),
+                )
+                .unwrap();
+            let dynamic = class
+                .construct_as_with::<_, _, Instance<_>>(
+                    (7_i64, None::<String>),
+                    (("named", false),),
+                )
+                .unwrap();
+
+            contract
+                .borrow_with(|contract| {
+                    assert_eq!(contract.required, 42);
+                    assert_eq!(contract.optional.as_deref(), Some("value"));
+                    assert!(contract.named);
+                })
+                .unwrap();
+            dynamic
+                .borrow_as_with::<KeywordContract, _, _>(|contract| {
+                    assert_eq!(contract.required, 7);
+                    assert_eq!(contract.optional, None);
+                    assert!(!contract.named);
+                })
+                .unwrap();
+
+            let error = match class.construct_with((42_i64,), ()) {
+                Ok(_) => panic!("missing keyword-only arguments must fail"),
+                Err(error) => error,
+            };
+
+            assert!(error.to_string().contains("missing required keyword argument 'named'"));
+
+            let error = match class.construct_with(
+                (42_i64,),
+                (("named", true), ("unknown", String::from("value"))),
+            ) {
+                Ok(_) => panic!("unknown keyword arguments must fail"),
+                Err(error) => error,
+            };
+
+            assert!(error.to_string().contains("unexpected keyword argument 'unknown'"));
+
+            let error = match class.construct_with(
+                (42_i64, None::<String>, 3_i64),
+                (("named", true),),
+            ) {
+                Ok(_) => panic!("excess positional arguments must fail"),
+                Err(error) => error,
+            };
+
+            assert!(error.to_string().contains("expected at most 2 positional arguments, got 3"));
+
+            let error = match class.construct_with((-1_i64,), (("named", true),)) {
+                Ok(_) => panic!("constructor failures must propagate"),
+                Err(error) => error,
+            };
+
+            assert!(error.to_string().contains("required must not be negative"));
         }
     }
 

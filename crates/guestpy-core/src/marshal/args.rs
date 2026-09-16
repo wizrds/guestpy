@@ -309,6 +309,30 @@ macro_rules! args {
     };
 }
 
+macro_rules! kwargs {
+    ($($type:ident:$index:tt),+ $(,)?) => {
+        impl<B, $($type),+> ToGuestKwargs<B> for ($((&str, $type),)+)
+        where
+            B: Backend,
+            $($type: ToGuest<B>,)+
+        {
+            fn into_kwargs<'py>(
+                self,
+                enter: &Enter<'py, B>,
+            ) -> Result<Vec<(String, B::Value<'py>)>, Error> {
+                Ok(vec![
+                    $(
+                        (
+                            self.$index.0.to_owned(),
+                            self.$index.1.to_guest(enter)?,
+                        ),
+                    )+
+                ])
+            }
+        }
+    };
+}
+
 impl<B> ToGuestArgs<B> for ()
 where
     B: Backend,
@@ -387,6 +411,65 @@ args!(
     A10: 9,
     A11: 10,
     A12: 11,
+);
+
+kwargs!(K1: 0);
+kwargs!(K1: 0, K2: 1);
+kwargs!(K1: 0, K2: 1, K3: 2);
+kwargs!(K1: 0, K2: 1, K3: 2, K4: 3);
+kwargs!(K1: 0, K2: 1, K3: 2, K4: 3, K5: 4);
+kwargs!(K1: 0, K2: 1, K3: 2, K4: 3, K5: 4, K6: 5);
+kwargs!(K1: 0, K2: 1, K3: 2, K4: 3, K5: 4, K6: 5, K7: 6);
+kwargs!(K1: 0, K2: 1, K3: 2, K4: 3, K5: 4, K6: 5, K7: 6, K8: 7);
+kwargs!(
+    K1: 0,
+    K2: 1,
+    K3: 2,
+    K4: 3,
+    K5: 4,
+    K6: 5,
+    K7: 6,
+    K8: 7,
+    K9: 8,
+);
+kwargs!(
+    K1: 0,
+    K2: 1,
+    K3: 2,
+    K4: 3,
+    K5: 4,
+    K6: 5,
+    K7: 6,
+    K8: 7,
+    K9: 8,
+    K10: 9,
+);
+kwargs!(
+    K1: 0,
+    K2: 1,
+    K3: 2,
+    K4: 3,
+    K5: 4,
+    K6: 5,
+    K7: 6,
+    K8: 7,
+    K9: 8,
+    K10: 9,
+    K11: 10,
+);
+kwargs!(
+    K1: 0,
+    K2: 1,
+    K3: 2,
+    K4: 3,
+    K5: 4,
+    K6: 5,
+    K7: 6,
+    K8: 7,
+    K9: 8,
+    K10: 9,
+    K11: 10,
+    K12: 11,
 );
 
 impl<B> ToGuestKwargs<B> for ()

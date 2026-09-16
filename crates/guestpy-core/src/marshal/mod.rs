@@ -144,6 +144,7 @@ mod tests {
         args::<Vec<i64>>();
         kwargs::<()>();
         kwargs::<[(&str, i64); 1]>();
+        kwargs::<((&str, i64), (&str, String), (&str, bool))>();
         kwargs::<Vec<(String, i64)>>();
         kwargs::<HashMap<String, i64>>();
     }
