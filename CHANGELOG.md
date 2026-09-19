@@ -1,6 +1,12 @@
 # Changelog
 
 ---
+## [0.5.6](https://github.com/wizrds/guestpy/compare/0.5.5..0.5.6) - 2026-09-19
+
+### Bug Fixes
+
+- Add support for positional only args in host callable macros - ([c8fed7f](https://github.com/wizrds/guestpy/commit/c8fed7fad0207cf323fbfc0a184766dd9b767908)) - Timothy Pogue
+---
 ## [0.5.5](https://github.com/wizrds/guestpy/compare/0.5.4..0.5.5) - 2026-09-16
 
 ### Bug Fixes
