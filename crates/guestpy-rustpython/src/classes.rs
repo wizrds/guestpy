@@ -259,7 +259,7 @@ mod tests {
                     Ok::<_, Error>(format!("Vector2({}, {})", vector.x, vector.y))
                 })
                 .method(Dunder::Eq, |receiver, enter, args| {
-                    let other = args.borrow::<Vector2>(enter, 0)?;
+                    let other = args.borrow::<Vector2>(enter, 0, "other")?;
                     let vector = receiver.payload::<Self>()?;
 
                     Ok::<_, Error>(other.x.eq(&vector.x) && other.y.eq(&vector.y))

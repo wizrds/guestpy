@@ -885,6 +885,29 @@ mod tests {
     }
 
     #[test]
+    fn generates_positional_only_function_parameters() {
+        let output = expand(
+            quote!(name = "files", crate_path = crate),
+            parse_quote! {
+                impl Files {
+                    #[guestpy(function)]
+                    fn open(
+                        #[guestpy(positional)] path: String,
+                        mode: Option<String>,
+                    ) -> Result<(), Error> {
+                        Ok(())
+                    }
+                }
+            },
+        );
+
+        assert!(output.contains("required_positional :: < String >"));
+        assert!(output.contains("\"path\""));
+        assert!(output.contains("optional :: < String >"));
+        assert!(output.contains("\"mode\""));
+    }
+
+    #[test]
     fn renders_an_async_function_module() {
         let output = expand(
             quote!(name = "mathx", crate_path = crate),

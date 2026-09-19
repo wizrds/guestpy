@@ -121,8 +121,11 @@ pub mod fixtures {
                 .function("echo_optional", |enter, args| {
                     args.optional::<String>(enter, 0, "value")
                 })
+                .function("echo_positional", |enter, args| {
+                    args.required_positional::<String>(enter, 0, "value")
+                })
                 .function("echo_optional_positional", |enter, args| {
-                    args.optional_positional::<String>(enter, 0)
+                    args.optional_positional::<String>(enter, 0, "value")
                 })
                 .function("echo_optional_keyword", |enter, args| {
                     args.optional_keyword::<String>(enter, "value")
@@ -376,6 +379,14 @@ except TypeError as e:
         using Runtime::<B>::builder().bind(Codec::module());
         |guest| {
             guest.exec("import codec").unwrap();
+
+            assert!(
+                guest
+                    .eval::<String>("codec.echo_positional()")
+                    .unwrap_err()
+                    .to_string()
+                    .contains("missing required positional argument 'value'"),
+            );
 
             for source in [
                 "codec.echo_optional()",

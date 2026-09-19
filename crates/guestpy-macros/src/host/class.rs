@@ -601,7 +601,7 @@ naming the backend type parameter inside use<..>
                 || callable
                     .parameters()
                     .iter()
-                    .any(Parameter::is_rest_or_borrow_or_kw)
+                    .any(Parameter::is_non_plain_value)
             {
                 return Err(syn::Error::new(
                     callable.span(),
@@ -874,6 +874,40 @@ mod tests {
         assert!(output.contains("from_str (\"__repr__\")"));
         assert!(output.contains("builder . base :: < BaseVector > ()"));
         assert!(output.contains("BackendClasses"));
+    }
+
+    #[test]
+    fn generates_positional_only_constructor_and_method_parameters() {
+        let output = expand(
+            quote!(name = "Document", crate_path = crate),
+            parse_quote! {
+                impl Document {
+                    #[guestpy(constructor)]
+                    fn new(
+                        #[guestpy(positional)] path: String,
+                    ) -> Result<Self, Error> {
+                        Ok(Self)
+                    }
+
+                    #[guestpy(method)]
+                    fn rename(
+                        &self,
+                        #[guestpy(positional)] name: String,
+                    ) -> Result<(), Error> {
+                        Ok(())
+                    }
+                }
+            },
+        );
+
+        assert_eq!(
+            output
+                .matches("required_positional :: < String >")
+                .count(),
+            2,
+        );
+        assert!(output.contains("\"path\""));
+        assert!(output.contains("\"name\""));
     }
 
     #[test]

@@ -154,6 +154,7 @@ impl<'py, B: Backend + BackendValues> Args<'py, B> {
         &self,
         enter: &Enter<'py, B>,
         index: usize,
+        name: &str,
     ) -> Result<T::Owned, Error>
     where
         T: FromGuest<B>,
@@ -163,7 +164,9 @@ impl<'py, B: Backend + BackendValues> Args<'py, B> {
             self.value(Argument::Positional(index))
                 .cloned()
                 .ok_or_else(|| {
-                    Error::conversion(format!("missing required positional argument {index}",))
+                    Error::conversion(format!(
+                        "missing required positional argument '{name}'",
+                    ))
                 })?,
         )
     }
@@ -172,6 +175,7 @@ impl<'py, B: Backend + BackendValues> Args<'py, B> {
         &self,
         enter: &Enter<'py, B>,
         index: usize,
+        _name: &str,
     ) -> Result<Option<T::Owned>, Error>
     where
         T: FromGuest<B>,
@@ -245,7 +249,12 @@ impl<'py, B: Backend + BackendValues> Args<'py, B> {
             .collect()
     }
 
-    pub fn borrow<C>(&self, enter: &Enter<'py, B>, index: usize) -> Result<C::Ref<'_>, Error>
+    pub fn borrow<C>(
+        &self,
+        enter: &Enter<'py, B>,
+        index: usize,
+        name: &str,
+    ) -> Result<C::Ref<'_>, Error>
     where
         C: FromGuestRef<'py, B>,
     {
@@ -253,12 +262,19 @@ impl<'py, B: Backend + BackendValues> Args<'py, B> {
             enter,
             self.value(Argument::Positional(index))
                 .ok_or_else(|| {
-                    Error::conversion(format!("missing required positional argument {index}",))
+                    Error::conversion(format!(
+                        "missing required positional argument '{name}'",
+                    ))
                 })?,
         )
     }
 
-    pub fn borrow_mut<C>(&self, enter: &Enter<'py, B>, index: usize) -> Result<C::Mut<'_>, Error>
+    pub fn borrow_mut<C>(
+        &self,
+        enter: &Enter<'py, B>,
+        index: usize,
+        name: &str,
+    ) -> Result<C::Mut<'_>, Error>
     where
         C: FromGuestMut<'py, B>,
     {
@@ -266,7 +282,9 @@ impl<'py, B: Backend + BackendValues> Args<'py, B> {
             enter,
             self.value(Argument::Positional(index))
                 .ok_or_else(|| {
-                    Error::conversion(format!("missing required positional argument {index}",))
+                    Error::conversion(format!(
+                        "missing required positional argument '{name}'",
+                    ))
                 })?,
         )
     }

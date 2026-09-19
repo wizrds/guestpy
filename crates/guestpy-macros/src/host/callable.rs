@@ -70,6 +70,7 @@ impl TypeShape {
 #[derive(Default, FromMeta)]
 #[darling(default)]
 struct ParameterOptions {
+    positional: Flag,
     kw: Flag,
     rest: Flag,
     borrow: Flag,
@@ -82,6 +83,7 @@ struct ParameterOptions {
 impl ParameterOptions {
     fn role_count(&self) -> usize {
         [
+            self.positional.is_present(),
             self.kw.is_present(),
             self.rest.is_present(),
             self.borrow.is_present(),
@@ -98,6 +100,7 @@ impl ParameterOptions {
 
 enum ParameterRole {
     Value { descriptor: Type, optional: bool },
+    Positional { descriptor: Type, optional: bool },
     Keyword { descriptor: Type, optional: bool },
     Rest { descriptor: Type },
     Borrow { value_type: Type, mutable: bool },
@@ -179,7 +182,7 @@ impl Parameter {
         if options.role_count() > 1 {
             return Err(syn::Error::new(
                 argument.span(),
-                "a host parameter may declare only one of kw, rest, borrow, borrow_mut, enter, this, context",
+                "a host parameter may declare only one of positional, kw, rest, borrow, borrow_mut, enter, this, context",
             )
             .into());
         }
@@ -219,6 +222,17 @@ impl Parameter {
                         "a #[guestpy(rest)] parameter must have type Vec<T>",
                     )
                 })?,
+            }
+        } else if options.positional.is_present() {
+            match TypeShape::inner(value_type, "Option") {
+                Some(descriptor) => ParameterRole::Positional {
+                    descriptor,
+                    optional: true,
+                },
+                None => ParameterRole::Positional {
+                    descriptor: value_type.clone(),
+                    optional: false,
+                },
             }
         } else if options.kw.is_present() {
             match TypeShape::inner(value_type, "Option") {
@@ -263,6 +277,18 @@ impl Parameter {
 
         if parameters
             .iter()
+            .skip_while(|parameter| !parameter.is_positional_or_keyword())
+            .any(Self::is_positional_only)
+        {
+            return Err(syn::Error::new(
+                signature.inputs.span(),
+                "a positional-only parameter cannot follow a positional-or-keyword parameter",
+            )
+            .into());
+        }
+
+        if parameters
+            .iter()
             .filter(|parameter| parameter.is_rest())
             .count()
             > 1
@@ -292,8 +318,19 @@ impl Parameter {
     fn consumes_positional(&self) -> bool {
         matches!(
             self.role,
-            ParameterRole::Value { .. } | ParameterRole::Rest { .. } | ParameterRole::Borrow { .. }
+            ParameterRole::Value { .. }
+                | ParameterRole::Positional { .. }
+                | ParameterRole::Rest { .. }
+                | ParameterRole::Borrow { .. }
         )
+    }
+
+    fn is_positional_only(&self) -> bool {
+        matches!(self.role, ParameterRole::Positional { .. })
+    }
+
+    fn is_positional_or_keyword(&self) -> bool {
+        matches!(self.role, ParameterRole::Value { .. })
     }
 
     pub(crate) fn consumes_arg(&self) -> bool {
@@ -351,6 +388,26 @@ impl Parameter {
                         )?
                 )
             }
+            ParameterRole::Positional { descriptor, optional: false } => {
+                quote!(
+                    __guestpy_args
+                        .required_positional::<#descriptor>(
+                            __guestpy_enter,
+                            #index,
+                            #name,
+                        )?
+                )
+            }
+            ParameterRole::Positional { descriptor, optional: true } => {
+                quote!(
+                    __guestpy_args
+                        .optional_positional::<#descriptor>(
+                            __guestpy_enter,
+                            #index,
+                            #name,
+                        )?
+                )
+            }
             ParameterRole::Keyword { descriptor, optional: false } => {
                 quote!(
                     __guestpy_args
@@ -384,6 +441,7 @@ impl Parameter {
                         .borrow::<#value_type>(
                             __guestpy_enter,
                             #index,
+                            #name,
                         )?
                 )
             }
@@ -393,6 +451,7 @@ impl Parameter {
                         .borrow_mut::<#value_type>(
                             __guestpy_enter,
                             #index,
+                            #name,
                         )?
                 )
             }
@@ -407,10 +466,11 @@ impl Parameter {
         }
     }
 
-    pub(crate) fn is_rest_or_borrow_or_kw(&self) -> bool {
+    pub(crate) fn is_non_plain_value(&self) -> bool {
         matches!(
             self.role,
-            ParameterRole::Rest { .. }
+            ParameterRole::Positional { .. }
+                | ParameterRole::Rest { .. }
                 | ParameterRole::Borrow { .. }
                 | ParameterRole::Keyword { .. }
         )
@@ -427,7 +487,8 @@ impl Parameter {
                 quote!(&__guestpy_receiver.resolve::<#value_type>()?)
             }
             ParameterRole::Context { .. } => quote!(__guestpy_context.resolve()?),
-            ParameterRole::Keyword { .. }
+            ParameterRole::Positional { .. }
+            | ParameterRole::Keyword { .. }
             | ParameterRole::Rest { .. }
             | ParameterRole::Borrow { .. } => unreachable!(),
         }
@@ -663,5 +724,58 @@ mod tests {
         assert!(output.contains("optional :: < String >"));
         assert!(output.contains("required_keyword :: < bool >"));
         assert_eq!(output.matches("finish () ?").count(), 1);
+    }
+
+    #[test]
+    fn positional_parameters_use_named_positional_accessors() {
+        let mut method = parse_quote! {
+            fn call(
+                #[guestpy(positional)] required: i64,
+                #[guestpy(positional)] optional: Option<String>,
+                #[guestpy(borrow)] borrowed: &Payload,
+                #[guestpy(borrow_mut)] borrowed_mut: &mut Payload,
+            ) -> Result<(), Error> {
+                Ok(())
+            }
+        };
+        let output = Callable::parse(&mut method, String::from("call"))
+            .unwrap()
+            .argument_setup()
+            .to_string();
+
+        assert!(output.contains("required_positional :: < i64 >"));
+        assert!(output.contains("\"required\""));
+        assert!(output.contains("optional_positional :: < String >"));
+        assert!(output.contains("\"optional\""));
+        assert!(output.contains("borrow :: < Payload >"));
+        assert!(output.contains("\"borrowed\""));
+        assert!(output.contains("borrow_mut :: < Payload >"));
+        assert!(output.contains("\"borrowed_mut\""));
+    }
+
+    #[test]
+    fn rejects_positional_only_after_positional_or_keyword() {
+        let mut method = parse_quote! {
+            fn call(
+                named: i64,
+                #[guestpy(positional)] positional: i64,
+            ) -> Result<(), Error> {
+                Ok(())
+            }
+        };
+
+        let error = match Callable::parse(&mut method, String::from("call")) {
+            Ok(_) => panic!("positional-only parameters after named parameters must fail"),
+            Err(error) => error,
+        };
+
+        assert!(
+            error
+                .write_errors()
+                .to_string()
+                .contains(
+                    "a positional-only parameter cannot follow a positional-or-keyword parameter",
+                ),
+        );
     }
 }
