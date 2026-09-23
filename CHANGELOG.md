@@ -1,6 +1,12 @@
 # Changelog
 
 ---
+## [0.5.7](https://github.com/wizrds/guestpy/compare/0.5.6..0.5.7) - 2026-09-23
+
+### Bug Fixes
+
+- Bump rustpython for malachite 0.12 release - ([a097b69](https://github.com/wizrds/guestpy/commit/a097b69d166a443e3075926a74467fed3f164f8a)) - Timothy Pogue
+---
 ## [0.5.6](https://github.com/wizrds/guestpy/compare/0.5.5..0.5.6) - 2026-09-19
 
 ### Bug Fixes
