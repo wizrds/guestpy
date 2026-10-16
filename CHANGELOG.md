@@ -1,6 +1,12 @@
 # Changelog
 
 ---
+## [0.6.0](https://github.com/wizrds/guestpy/compare/0.5.7..0.6.0) - 2026-10-16
+
+### Features
+
+- Bump rustpython and msrv to 1.99 - ([87ee88b](https://github.com/wizrds/guestpy/commit/87ee88b192e45c3997947b0252a960ab707745d8)) - Timothy Pogue
+---
 ## [0.5.7](https://github.com/wizrds/guestpy/compare/0.5.6..0.5.7) - 2026-09-23
 
 ### Bug Fixes
