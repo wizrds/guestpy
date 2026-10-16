@@ -1,6 +1,7 @@
 [workspace.package]
 version = "0.5.7"
 edition = "2024"
+rust-version = "1.99.0"
 description = "guestpy is a Rust library for executing guest Python code transparently."
 repository = "https://github.com/wizrds/guestpy"
 license = "ISC"

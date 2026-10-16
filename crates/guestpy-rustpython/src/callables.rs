@@ -10,7 +10,7 @@ use guestpy_core::{
     errors::Error,
 };
 use rustpython_vm::{
-    Context, Py, PyObjectRef, PyPayload, PyResult, VirtualMachine,
+    Context, Py, PyObject, PyObjectRef, PyPayload, PyResult, VirtualMachine,
     builtins::PyType,
     class::{PyClassImpl, StaticType},
     function::FuncArgs,
@@ -126,32 +126,32 @@ impl fmt::Debug for HostMethod {
 #[pyclass(with(GetDescriptor, Callable, Representable))]
 impl HostMethod {
     #[pygetset]
-    fn __name__(&self) -> String {
-        self.name.clone()
+    fn __name__(zelf: &Py<Self>) -> String {
+        zelf.name.clone()
     }
 
     #[pygetset]
-    fn __doc__(&self) -> Option<String> {
-        self.doc.clone()
+    fn __doc__(zelf: &Py<Self>) -> Option<String> {
+        zelf.doc.clone()
     }
 }
 
 impl GetDescriptor for HostMethod {
     fn descr_get(
-        zelf: PyObjectRef,
-        obj: Option<PyObjectRef>,
-        _: Option<PyObjectRef>,
+        zelf: &PyObject,
+        obj: Option<&PyObject>,
+        _: Option<&PyObject>,
         vm: &VirtualMachine,
     ) -> PyResult {
         let Some(receiver) = obj else {
-            return Ok(zelf);
+            return Ok(zelf.to_owned());
         };
-        let method = zelf.downcast_ref::<Self>().unwrap();
+        let method = Self::_as_pyref(zelf, vm)?;
 
         Ok(BoundHostMethod {
             body: method.body.clone(),
             name: method.name.clone(),
-            receiver,
+            receiver: receiver.to_owned(),
         }
         .into_ref(&vm.ctx)
         .into())
@@ -198,13 +198,13 @@ impl fmt::Debug for HostFunction {
 #[pyclass(with(Callable, Representable))]
 impl HostFunction {
     #[pygetset]
-    fn __name__(&self) -> String {
-        self.name.clone()
+    fn __name__(zelf: &Py<Self>) -> String {
+        zelf.name.clone()
     }
 
     #[pygetset]
-    fn __doc__(&self) -> Option<String> {
-        self.doc.clone()
+    fn __doc__(zelf: &Py<Self>) -> Option<String> {
+        zelf.doc.clone()
     }
 }
 
